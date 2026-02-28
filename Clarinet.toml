@@ -1,0 +1,52 @@
+[project]
+name = "sse"
+description = "Stacks Stablecoin Engine (SSE) minimal prototype scaffold"
+authors = []
+telemetry = true
+cache_dir = "./.cache"
+clarity_version = 3
+epoch = "3.1"
+
+[contracts.sip-010-trait]
+path = "contracts/sip-010-trait.clar"
+epoch = "3.1"
+
+[contracts.oracle-trait]
+path = "contracts/oracle-trait.clar"
+epoch = "3.1"
+
+[contracts.price-oracle-mock]
+path = "contracts/price-oracle-mock.clar"
+epoch = "3.1"
+
+[contracts.collateral-registry]
+path = "contracts/collateral-registry.clar"
+epoch = "3.1"
+
+[contracts.stablecoin-token]
+path = "contracts/stablecoin-token.clar"
+epoch = "3.1"
+
+[contracts.vault-engine]
+path = "contracts/vault-engine.clar"
+epoch = "3.1"
+
+[contracts.liquidation-engine]
+path = "contracts/liquidation-engine.clar"
+epoch = "3.1"
+
+[contracts.stability-pool]
+path = "contracts/stability-pool.clar"
+epoch = "3.1"
+
+[repl.analysis]
+passes = ["check_checker"]
+check_checker = { trusted_sender = false, trusted_caller = false, callee_filter = false }
+
+# Check-checker settings:
+# trusted_sender: if true, inputs are trusted after tx_sender has been checked.
+# trusted_caller: if true, inputs are trusted after contract-caller has been checked.
+# callee_filter: if true, untrusted data may be passed into a private function without a
+# warning, if it gets checked inside. This check will also propagate up to the
+# caller.
+# More informations: https://www.hiro.so/blog/new-safety-checks-in-clarinet
