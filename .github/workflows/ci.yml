@@ -29,7 +29,7 @@ jobs:
             -v "$PWD:/workspace" \
             -w /workspace \
             hirosystems/clarinet:latest \
-            clarinet check -d
+            check -d
 
       - name: Run test suite
         run: npm test
