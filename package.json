@@ -6,6 +6,8 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "lint": "clarinet check -d",
+    "ci": "npm run lint && npm test",
     "test": "vitest run",
     "test:report": "vitest run -- --coverage --costs",
     "test:watch": "chokidar \"tests/**/*.ts\" \"contracts/**/*.clar\" -c \"npm run test:report\""
