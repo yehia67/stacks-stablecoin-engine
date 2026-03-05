@@ -2,10 +2,21 @@
 (define-constant ERR_NO_VAULT u201)
 (define-constant ERR_INSUFFICIENT_COLLATERAL u202)
 (define-constant ERR_INSUFFICIENT_DEBT u203)
+(define-constant ERR_UNSAFE_HEALTH_FACTOR u204)
+
+(define-constant MIN-HEALTH-FACTOR u150)
+(define-constant ZERO-DEBT-HEALTH-FACTOR u1000000)
 
 (define-map vaults
   {owner: principal}
   {collateral: uint, debt: uint}
+)
+
+(define-private (calculate-health-factor (collateral uint) (debt uint))
+  (if (is-eq debt u0)
+    ZERO-DEBT-HEALTH-FACTOR
+    (/ (* collateral u100) debt)
+  )
 )
 
 (define-public (open-vault)
@@ -20,7 +31,7 @@
   (match (map-get? vaults {owner: tx-sender})
     vault
       (let ((new-collateral (+ (get collateral vault) amount)))
-        ;; TODO: transfer sBTC from user to vault
+        ;; TODO(sBTC): transfer sBTC from user to protocol custody vault
         (map-set vaults
           {owner: tx-sender}
           {collateral: new-collateral, debt: (get debt vault)}
@@ -34,12 +45,18 @@
 (define-public (mint (amount uint))
   (match (map-get? vaults {owner: tx-sender})
     vault
-      (let ((new-debt (+ (get debt vault) amount)))
-        ;; TODO: use oracle + collateral registry for health checks
+      (let (
+          (collateral (get collateral vault))
+          (new-debt (+ (get debt vault) amount))
+          (health-factor (calculate-health-factor (get collateral vault) (+ (get debt vault) amount)))
+        )
+        ;; Placeholder health check: collateral and debt are same-unit values for prototype only.
+        ;; TODO: use oracle + collateral registry + asset decimals for production risk checks.
+        (asserts! (>= health-factor MIN-HEALTH-FACTOR) (err ERR_UNSAFE_HEALTH_FACTOR))
         (try! (contract-call? .stablecoin-token mint amount tx-sender))
         (map-set vaults
           {owner: tx-sender}
-          {collateral: (get collateral vault), debt: new-debt}
+          {collateral: collateral, debt: new-debt}
         )
         (ok new-debt)
       )
@@ -68,12 +85,19 @@
     vault
       (begin
         (asserts! (>= (get collateral vault) amount) (err ERR_INSUFFICIENT_COLLATERAL))
-        (let ((new-collateral (- (get collateral vault) amount)))
-          ;; TODO: enforce health factor checks
-          ;; TODO: transfer sBTC back to user
+        (let (
+            (debt (get debt vault))
+            (new-collateral (- (get collateral vault) amount))
+            (health-factor (calculate-health-factor (- (get collateral vault) amount) (get debt vault)))
+          )
+          (if (is-eq debt u0)
+            true
+            (asserts! (>= health-factor MIN-HEALTH-FACTOR) (err ERR_UNSAFE_HEALTH_FACTOR))
+          )
+          ;; TODO(sBTC): transfer sBTC from protocol custody vault back to user
           (map-set vaults
             {owner: tx-sender}
-            {collateral: new-collateral, debt: (get debt vault)}
+            {collateral: new-collateral, debt: debt}
           )
           (ok new-collateral)
         )
@@ -84,9 +108,7 @@
 
 (define-read-only (get-health-factor (owner principal))
   (let ((vault (default-to {collateral: u0, debt: u0} (map-get? vaults {owner: owner}))))
-    (if (is-eq (get debt vault) u0)
-      u1000000
-      (/ (* (get collateral vault) u100) (get debt vault))
-    )
+    ;; Minimal placeholder ratio math, intentionally not using oracle pricing in prototype scope.
+    (calculate-health-factor (get collateral vault) (get debt vault))
   )
 )

@@ -51,7 +51,7 @@ describe("stablecoin-token hardening", () => {
     expect(authorized.result).toBeOk(Cl.bool(true));
   });
 
-  it("allows mint and burn only via vault-engine and tracks total supply", () => {
+  it("runs vault lifecycle end-to-end and tracks total supply", () => {
     const accounts = simnet.getAccounts();
     const deployer = accounts.get("deployer");
     const wallet1 = accounts.get("wallet_1");
@@ -84,18 +84,18 @@ describe("stablecoin-token hardening", () => {
     result = simnet.callPublicFn(
       "vault-engine",
       "deposit-collateral",
-      [Cl.uint(1000)],
+      [Cl.uint(1200)],
       wallet1
     );
-    expect(result.result).toBeOk(Cl.uint(1000));
+    expect(result.result).toBeOk(Cl.uint(1200));
 
     result = simnet.callPublicFn(
       "vault-engine",
       "mint",
-      [Cl.uint(500)],
+      [Cl.uint(600)],
       wallet1
     );
-    expect(result.result).toBeOk(Cl.uint(500));
+    expect(result.result).toBeOk(Cl.uint(600));
 
     const totalSupplyAfterMint = simnet.callReadOnlyFn(
       "stablecoin-token",
@@ -103,7 +103,7 @@ describe("stablecoin-token hardening", () => {
       [],
       wallet1
     );
-    expect(totalSupplyAfterMint.result).toBeOk(Cl.uint(500));
+    expect(totalSupplyAfterMint.result).toBeOk(Cl.uint(600));
 
     const directBurn = simnet.callPublicFn(
       "stablecoin-token",
@@ -121,13 +121,21 @@ describe("stablecoin-token hardening", () => {
     );
     expect(result.result).toBeOk(Cl.bool(true));
 
+    result = simnet.callPublicFn(
+      "vault-engine",
+      "withdraw-collateral",
+      [Cl.uint(300)],
+      wallet1
+    );
+    expect(result.result).toBeOk(Cl.uint(900));
+
     const balance = simnet.callReadOnlyFn(
       "stablecoin-token",
       "get-balance",
       [Cl.principal(wallet1)],
       wallet1
     );
-    expect(balance.result).toBeOk(Cl.uint(300));
+    expect(balance.result).toBeOk(Cl.uint(400));
 
     const totalSupplyAfterBurn = simnet.callReadOnlyFn(
       "stablecoin-token",
@@ -135,6 +143,69 @@ describe("stablecoin-token hardening", () => {
       [],
       wallet1
     );
-    expect(totalSupplyAfterBurn.result).toBeOk(Cl.uint(300));
+    expect(totalSupplyAfterBurn.result).toBeOk(Cl.uint(400));
+
+    const health = simnet.callReadOnlyFn(
+      "vault-engine",
+      "get-health-factor",
+      [Cl.principal(wallet1)],
+      wallet1
+    );
+    expect(health.result).toBeUint(225);
+  });
+
+  it("rejects minting that would break minimum health factor", () => {
+    const accounts = simnet.getAccounts();
+    const deployer = accounts.get("deployer");
+    const wallet1 = accounts.get("wallet_1");
+
+    if (!deployer || !wallet1) {
+      throw new Error("Missing default simnet accounts");
+    }
+
+    const vaultEnginePrincipal = `${deployer}.vault-engine`;
+
+    let result = simnet.callPublicFn(
+      "stablecoin-token",
+      "set-vault-engine",
+      [Cl.principal(vaultEnginePrincipal)],
+      deployer
+    );
+    expect(result.result).toBeOk(Cl.bool(true));
+
+    result = simnet.callPublicFn("vault-engine", "open-vault", [], wallet1);
+    expect(result.result).toBeOk(Cl.bool(true));
+
+    result = simnet.callPublicFn(
+      "vault-engine",
+      "deposit-collateral",
+      [Cl.uint(1000)],
+      wallet1
+    );
+    expect(result.result).toBeOk(Cl.uint(1000));
+
+    result = simnet.callPublicFn(
+      "vault-engine",
+      "mint",
+      [Cl.uint(700)],
+      wallet1
+    );
+    expect(result.result).toBeErr(Cl.uint(204));
+
+    const balance = simnet.callReadOnlyFn(
+      "stablecoin-token",
+      "get-balance",
+      [Cl.principal(wallet1)],
+      wallet1
+    );
+    expect(balance.result).toBeOk(Cl.uint(0));
+
+    const totalSupply = simnet.callReadOnlyFn(
+      "stablecoin-token",
+      "get-total-supply",
+      [],
+      wallet1
+    );
+    expect(totalSupply.result).toBeOk(Cl.uint(0));
   });
 });
