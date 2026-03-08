@@ -69,6 +69,16 @@ plan:
             path: contracts/collateral-registry.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: oracle-trait
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/oracle-trait.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-mock
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-mock.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: sip-010-trait
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sip-010-trait.clar
@@ -87,16 +97,6 @@ plan:
             contract-name: liquidation-engine
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidation-engine.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: oracle-trait
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/oracle-trait.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: price-oracle-mock
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/price-oracle-mock.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: stability-pool

@@ -14,7 +14,7 @@
 
 (define-public (deposit (amount uint))
   (let ((current (balance-of tx-sender)))
-    ;; TODO: transfer stablecoin from user to stability pool
+    ;; TODO(stability-pool): transfer stablecoin from user to pool custody.
     (map-set balances {owner: tx-sender} {balance: (+ current amount)})
     (ok true)
   )
@@ -23,8 +23,8 @@
 (define-public (withdraw (amount uint))
   (let ((current (balance-of tx-sender)))
     (asserts! (>= current amount) (err ERR_INSUFFICIENT_BALANCE))
-    ;; TODO: transfer stablecoin back to user
-    ;; TODO: account for liquidation rewards distribution
+    ;; TODO(stability-pool): transfer stablecoin back from pool custody to user.
+    ;; TODO(stability-pool): account for liquidation redistribution and reward accounting.
     (map-set balances {owner: tx-sender} {balance: (- current amount)})
     (ok true)
   )

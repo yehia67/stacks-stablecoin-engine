@@ -6,7 +6,9 @@
     (if (>= health-factor MIN_HEALTH)
       (err ERR_HEALTHY)
       (begin
-        ;; TODO: implement full liquidation flow and distribution logic
+        ;; TODO(liquidation): offset vault debt against stability pool balances.
+        ;; TODO(liquidation): account collateral seizure and liquidator settlement.
+        ;; TODO(liquidation): add detailed event/accounting outputs.
         (ok true)
       )
     )

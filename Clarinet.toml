@@ -18,6 +18,7 @@ epoch = "3.1"
 [contracts.price-oracle-mock]
 path = "contracts/price-oracle-mock.clar"
 epoch = "3.1"
+depends_on = ["oracle-trait"]
 
 [contracts.collateral-registry]
 path = "contracts/collateral-registry.clar"
@@ -26,14 +27,17 @@ epoch = "3.1"
 [contracts.stablecoin-token]
 path = "contracts/stablecoin-token.clar"
 epoch = "3.1"
+depends_on = ["sip-010-trait"]
 
 [contracts.vault-engine]
 path = "contracts/vault-engine.clar"
 epoch = "3.1"
+depends_on = ["stablecoin-token", "price-oracle-mock"]
 
 [contracts.liquidation-engine]
 path = "contracts/liquidation-engine.clar"
 epoch = "3.1"
+depends_on = ["vault-engine"]
 
 [contracts.stability-pool]
 path = "contracts/stability-pool.clar"

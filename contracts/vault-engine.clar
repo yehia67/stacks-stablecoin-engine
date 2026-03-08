@@ -6,16 +6,22 @@
 
 (define-constant MIN-HEALTH-FACTOR u150)
 (define-constant ZERO-DEBT-HEALTH-FACTOR u1000000)
+(define-constant PRICE-SCALE u100000000)
 
 (define-map vaults
   {owner: principal}
   {collateral: uint, debt: uint}
 )
 
+(define-private (get-oracle-price)
+  ;; TODO(oracle): add stale-price checks, decimals normalization, and feed reliability rules.
+  (unwrap-panic (contract-call? .price-oracle-mock get-price))
+)
+
 (define-private (calculate-health-factor (collateral uint) (debt uint))
   (if (is-eq debt u0)
     ZERO-DEBT-HEALTH-FACTOR
-    (/ (* collateral u100) debt)
+    (/ (* (* collateral (get-oracle-price)) u100) (* debt PRICE-SCALE))
   )
 )
 
@@ -50,8 +56,8 @@
           (new-debt (+ (get debt vault) amount))
           (health-factor (calculate-health-factor (get collateral vault) (+ (get debt vault) amount)))
         )
-        ;; Placeholder health check: collateral and debt are same-unit values for prototype only.
-        ;; TODO: use oracle + collateral registry + asset decimals for production risk checks.
+        ;; Placeholder health check uses mock-oracle price and fixed scale assumptions.
+        ;; TODO: use oracle + collateral registry + asset-specific risk parameters for production checks.
         (asserts! (>= health-factor MIN-HEALTH-FACTOR) (err ERR_UNSAFE_HEALTH_FACTOR))
         (try! (contract-call? .stablecoin-token mint amount tx-sender))
         (map-set vaults
@@ -108,7 +114,7 @@
 
 (define-read-only (get-health-factor (owner principal))
   (let ((vault (default-to {collateral: u0, debt: u0} (map-get? vaults {owner: owner}))))
-    ;; Minimal placeholder ratio math, intentionally not using oracle pricing in prototype scope.
+    ;; Minimal placeholder ratio math using oracle price. Not production-grade risk logic.
     (calculate-health-factor (get collateral vault) (get debt vault))
   )
 )
