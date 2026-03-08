@@ -14,7 +14,9 @@
     (debt-ceiling uint)
   )
   (begin
+    ;; TODO(governance): replace owner-only writes with timelocked governance control.
     (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    ;; TODO(governance): add governance-managed per-asset config update flow.
     (map-set collateral-configs
       {asset: asset}
       {
