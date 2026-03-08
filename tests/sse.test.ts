@@ -209,3 +209,47 @@ describe("stablecoin-token hardening", () => {
     expect(totalSupply.result).toBeOk(Cl.uint(0));
   });
 });
+
+describe("collateral-registry config flow", () => {
+  it("supports owner add/get and rejects non-owner writes", () => {
+    const accounts = simnet.getAccounts();
+    const deployer = accounts.get("deployer");
+    const wallet1 = accounts.get("wallet_1");
+
+    if (!deployer || !wallet1) {
+      throw new Error("Missing default simnet accounts");
+    }
+
+    const assetPrincipal = `${deployer}.stablecoin-token`;
+
+    const unauthorized = simnet.callPublicFn(
+      "collateral-registry",
+      "add-collateral-type",
+      [Cl.principal(assetPrincipal), Cl.uint(150), Cl.uint(10), Cl.uint(1000000)],
+      wallet1
+    );
+    expect(unauthorized.result).toBeErr(Cl.uint(100));
+
+    const authorized = simnet.callPublicFn(
+      "collateral-registry",
+      "add-collateral-type",
+      [Cl.principal(assetPrincipal), Cl.uint(150), Cl.uint(10), Cl.uint(1000000)],
+      deployer
+    );
+    expect(authorized.result).toBeOk(Cl.bool(true));
+
+    const config = simnet.callReadOnlyFn(
+      "collateral-registry",
+      "get-collateral-config",
+      [Cl.principal(assetPrincipal)],
+      deployer
+    );
+    expect(config.result).toBeSome(
+      Cl.tuple({
+        "min-collateral-ratio": Cl.uint(150),
+        "liquidation-penalty": Cl.uint(10),
+        "debt-ceiling": Cl.uint(1000000),
+      })
+    );
+  });
+});

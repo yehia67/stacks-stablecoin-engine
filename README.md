@@ -37,6 +37,24 @@ User → VaultEngine → StablecoinToken
 - `price-oracle-mock.clar`: Mock oracle returning a constant price for testing.
 - `sip-010-trait.clar`: Local SIP-010 trait definition used by the token.
 
+## Collateral Registry Example Config
+```clarity
+;; Add one collateral config (example values only)
+(contract-call? .collateral-registry add-collateral-type
+  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.stablecoin-token
+  u150
+  u10
+  u1000000
+)
+
+;; Read back the stored config
+(contract-call? .collateral-registry get-collateral-config
+  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.stablecoin-token
+)
+```
+
+Note: this is a prototype example. Registry values are available for integration, but not all modules enforce every parameter yet.
+
 ## Installation Instructions
 1. Install Clarinet (Homebrew):
    ```bash
