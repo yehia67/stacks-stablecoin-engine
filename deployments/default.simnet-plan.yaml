@@ -64,6 +64,16 @@ plan:
     - id: 0
       transactions:
         - emulated-contract-publish:
+            contract-name: bridge-adapter-trait
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/bridge-adapter-trait.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: bridge-registry
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/bridge-registry.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: collateral-registry
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/collateral-registry.clar
@@ -102,5 +112,10 @@ plan:
             contract-name: stability-pool
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stability-pool.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: xreserve-adapter
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/xreserve-adapter.clar
             clarity-version: 3
       epoch: "3.1"

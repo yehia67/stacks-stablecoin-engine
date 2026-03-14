@@ -12,7 +12,6 @@ This project is intentionally scoped to an 8–12 week grant timeline and focuse
 - No tokenomics
 - No emissions model
 - No frontend
-- No cross-chain bridging logic
 - No AI components
 - No advanced liquidation math
 
@@ -28,14 +27,23 @@ User → VaultEngine → StablecoinToken
 ```
 
 ## Contract Breakdown
+
+### Core Contracts
 - `vault-engine.clar`: Core CDP logic. Tracks vaults, collateral, and debt. Includes minimal health checks and TODOs for production math and sBTC transfers.
 - `collateral-registry.clar`: Registry for collateral configurations (min ratio, liquidation penalty, debt ceiling).
-- `stablecoin-token.clar`: Minimal SIP-010 token with mint/burn restricted to `vault-engine`.
+- `stablecoin-token.clar`: Minimal SIP-010 token with mint/burn restricted to `vault-engine` and cross-chain bridge support.
 - `liquidation-engine.clar`: Stub liquidation entry point with placeholder health checks.
 - `stability-pool.clar`: Simple deposit/withdraw tracking with TODO for liquidation redistribution.
+
+### Oracle Contracts
 - `oracle-trait.clar`: Trait defining `get-price`.
 - `price-oracle-mock.clar`: Mock oracle returning a constant price for testing.
 - `sip-010-trait.clar`: Local SIP-010 trait definition used by the token.
+
+### Cross-Chain Bridge Contracts
+- `bridge-adapter-trait.clar`: Trait defining the interface for cross-chain bridge adapters (`mint-from-remote`, `burn-to-remote`).
+- `xreserve-adapter.clar`: Adapter implementing the bridge trait for Circle's xReserve protocol (USDCx-style bridging).
+- `bridge-registry.clar`: Registry mapping tokens to their bridge adapters and remote chain configurations.
 
 ## Collateral Registry Example Config
 ```clarity
@@ -82,6 +90,77 @@ This project uses Clarinet deployment plans.
    ```bash
    clarinet deployments apply --testnet
    ```
+
+## Testnet Deployment (March 9, 2026)
+Deployer principal:
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
+
+Published contract identifiers:
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.oracle-trait`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-mock`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sip-010-trait`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool`
+
+Deployment summary:
+- Total cost: `0.100090 STX`
+- Confirmation time: `1 block`
+
+## Post-Deployment Initialization (Required)
+Before minting through `vault-engine`, the deployer must authorize it inside `stablecoin-token`:
+
+```clarity
+(contract-call? .stablecoin-token set-vault-engine
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine
+)
+```
+
+If this is skipped, `vault-engine` mint/burn calls will fail with `err u401`.
+
+## How to Test on Testnet
+
+### 1) Vault lifecycle smoke test
+Use a testnet wallet account and call in this order:
+
+1. `open-vault`
+2. `deposit-collateral u1200`
+3. `mint u600`
+4. `burn u200`
+5. `withdraw-collateral u300`
+
+Then verify:
+- `get-health-factor '<YOUR_TESTNET_PRINCIPAL>` is at least `u150`
+- `stablecoin-token::get-balance '<YOUR_TESTNET_PRINCIPAL>` returns the expected remaining balance
+- `stablecoin-token::get-total-supply` tracks aggregate mint/burn changes
+
+### 2) Oracle sensitivity check
+As deployer:
+1. Call `price-oracle-mock::set-price u50000000` (drops price from 1.0 to 0.5 in 1e8 scale).
+2. Re-check `vault-engine::get-health-factor '<YOUR_TESTNET_PRINCIPAL>`.
+3. If health factor is below `u150`, call `liquidation-engine::liquidate '<YOUR_TESTNET_PRINCIPAL>`.
+
+Expected behavior:
+- Healthy vault: `liquidate` returns `(err u300)`
+- Undercollateralized vault: `liquidate` returns `(ok true)` (stub liquidation path)
+
+### 3) Collateral registry config check
+As deployer:
+
+```clarity
+(contract-call? .collateral-registry add-collateral-type
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token
+  u150
+  u10
+  u1000000
+)
+
+(contract-call? .collateral-registry get-collateral-config
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token
+)
+```
 
 ## Example Usage Flow
 1. `open-vault`
@@ -205,11 +284,110 @@ sequenceDiagram
     GovernanceContract->>VaultEngine: update MCR / penalty
 ```
 
+## Cross-Chain Bridge Infrastructure
+
+SSE includes bridge-ready infrastructure so stablecoins created through the protocol can move cross-chain (Ethereum ↔ Stacks) using a USDCx/xReserve-style pattern.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Ethereum / EVM                           │
+│  ┌──────────────┐        ┌─────────────────────────────────┐    │
+│  │   USDC/ERC20 │───────▶│  xReserve (depositToRemote)     │    │
+│  └──────────────┘        └─────────────────────────────────┘    │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │ Attestation Service
+┌────────────────────────────────▼────────────────────────────────┐
+│                           Stacks                                │
+│  ┌─────────────────────┐    ┌─────────────────────────────────┐ │
+│  │ bridge-adapter-trait│◀───│ xreserve-adapter                │ │
+│  └─────────────────────┘    └───────────┬─────────────────────┘ │
+│                                         │                       │
+│  ┌──────────────────────────────────────▼─────────────────────┐ │
+│  │ stablecoin-token (with bridge hooks)                       │ │
+│  │  • mint-from-bridge (adapter-only)                         │ │
+│  │  • burn-to-remote (user-callable via adapter)              │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ bridge-registry                                            │ │
+│  │  • token → remote-chain-id, remote-address, adapter        │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Bridge Setup (Post-Deployment)
+
+1. **Set the bridge adapter on the token:**
+```clarity
+(contract-call? .stablecoin-token set-bridge-adapter
+  '<DEPLOYER>.xreserve-adapter
+)
+```
+
+2. **Configure the adapter:**
+```clarity
+;; Set the attestation service (authorized to mint)
+(contract-call? .xreserve-adapter set-attestation-service '<ATTESTATION_SERVICE_PRINCIPAL>)
+
+;; Set the bridged token
+(contract-call? .xreserve-adapter set-bridged-token '<DEPLOYER>.stablecoin-token)
+
+;; Add supported chains
+(contract-call? .xreserve-adapter add-supported-chain u1 "Ethereum Mainnet")
+(contract-call? .xreserve-adapter add-supported-chain u11155111 "Ethereum Sepolia")
+```
+
+3. **Register token in bridge registry:**
+```clarity
+(contract-call? .bridge-registry add-chain u1 "Ethereum Mainnet")
+(contract-call? .bridge-registry register-token
+  '<DEPLOYER>.stablecoin-token
+  '<DEPLOYER>.xreserve-adapter
+)
+```
+
+### Cross-Chain Flow
+
+**Deposit (Ethereum → Stacks):**
+1. User approves xReserve on Ethereum to spend USDC
+2. User calls `depositToRemote` with encoded Stacks recipient
+3. Attestation service picks up the event
+4. Attestation service calls `mint-from-remote` on xreserve-adapter
+5. Adapter calls `mint-from-bridge` on stablecoin-token
+6. User receives tokens on Stacks
+
+**Withdrawal (Stacks → Ethereum):**
+1. User calls `burn-to-remote` on xreserve-adapter with encoded EVM recipient
+2. Adapter calls `burn-to-remote` on stablecoin-token
+3. Token emits burn event with remote recipient data
+4. Attestation service picks up the event
+5. xReserve releases USDC to user on Ethereum
+
+### TypeScript SDK Helpers
+
+The `scripts/bridge/` directory contains helpers for cross-chain operations:
+
+```typescript
+import {
+  encodeStacksAddressToBytes32,
+  encodeEvmAddressToBytes32,
+  depositToStacks,
+  withdrawToEvm,
+} from './scripts/bridge';
+
+// Encode addresses for cross-chain calls
+const stacksBytes32 = encodeStacksAddressToBytes32('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM');
+const evmBytes32 = encodeEvmAddressToBytes32('0x742d35Cc6634C0532925a3b844Bc9e7595f5bE21');
+```
+
 ## Future Roadmap (Out of Scope for Current Grant)
 - Multi-asset collateral
-- Cross-chain integrations
+- Non-xReserve bridge providers (LayerZero, Wormhole)
 - Governance and parameter updates
 - Advanced liquidation auctions
+- Frontend UI for bridging
 
 
 ## Disclaimer
