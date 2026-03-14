@@ -16,9 +16,12 @@
   "license": "ISC",
   "dependencies": {
     "@hirosystems/clarinet-sdk": "^3.6.0",
-    "@types/node": "^24.4.0",
+    "@stacks/network": "^7.0.0",
     "@stacks/transactions": "^7.2.0",
+    "@types/node": "^24.4.0",
+    "c32check": "^2.0.0",
     "chokidar-cli": "^3.0.0",
+    "viem": "^2.0.0",
     "vitest": "^3.2.4",
     "vitest-environment-clarinet": "^2.3.0"
   }

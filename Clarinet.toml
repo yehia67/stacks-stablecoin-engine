@@ -43,6 +43,19 @@ depends_on = ["vault-engine"]
 path = "contracts/stability-pool.clar"
 epoch = "3.1"
 
+[contracts.bridge-adapter-trait]
+path = "contracts/bridge-adapter-trait.clar"
+epoch = "3.1"
+
+[contracts.bridge-registry]
+path = "contracts/bridge-registry.clar"
+epoch = "3.1"
+
+[contracts.xreserve-adapter]
+path = "contracts/xreserve-adapter.clar"
+epoch = "3.1"
+depends_on = ["bridge-adapter-trait", "stablecoin-token"]
+
 [repl.analysis]
 passes = ["check_checker"]
 check_checker = { trusted_sender = false, trusted_caller = false, callee_filter = false }

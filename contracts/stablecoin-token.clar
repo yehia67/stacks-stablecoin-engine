@@ -11,6 +11,7 @@
 
 (define-data-var total-supply uint u0)
 (define-data-var vault-engine (optional principal) none)
+(define-data-var bridge-adapter (optional principal) none)
 
 (define-map balances
   {owner: principal}
@@ -31,10 +32,25 @@
   )
 )
 
+(define-read-only (is-bridge-adapter (caller principal))
+  (match (var-get bridge-adapter)
+    adapter (is-eq adapter caller)
+    false
+  )
+)
+
 (define-public (set-vault-engine (new principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
     (var-set vault-engine (some new))
+    (ok true)
+  )
+)
+
+(define-public (set-bridge-adapter (new principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (var-set bridge-adapter (some new))
     (ok true)
   )
 )
@@ -75,6 +91,51 @@
   )
 )
 
+;; ============================================
+;; Bridge Functions (Cross-Chain Support)
+;; ============================================
+
+;; Mint tokens from a cross-chain deposit
+;; Only callable by the authorized bridge adapter
+(define-public (mint-from-bridge (amount uint) (recipient principal))
+  (begin
+    (asserts! (is-bridge-adapter contract-caller) (err ERR_UNAUTHORIZED))
+    (let ((current (balance-of recipient)))
+      (map-set balances {owner: recipient} {balance: (+ current amount)})
+      (var-set total-supply (+ (var-get total-supply) amount))
+      (ok true)
+    )
+  )
+)
+
+;; Burn tokens to initiate a cross-chain withdrawal
+;; Called by the bridge adapter on behalf of the user
+;; Emits event data for the attestation service
+(define-public (burn-to-remote 
+    (amount uint) 
+    (owner principal) 
+    (remote-recipient (buff 32)) 
+    (remote-chain-id uint))
+  (begin
+    ;; Allow either the bridge adapter or the token owner (via adapter) to call
+    (asserts! (is-bridge-adapter contract-caller) (err ERR_UNAUTHORIZED))
+    (let ((current (balance-of owner)))
+      (asserts! (>= current amount) (err ERR_INSUFFICIENT_BALANCE))
+      (map-set balances {owner: owner} {balance: (- current amount)})
+      (var-set total-supply (- (var-get total-supply) amount))
+      ;; Print event for attestation service to pick up
+      (print {
+        event: "burn-to-remote",
+        amount: amount,
+        owner: owner,
+        remote-recipient: remote-recipient,
+        remote-chain-id: remote-chain-id
+      })
+      (ok true)
+    )
+  )
+)
+
 (define-read-only (get-name)
   (ok TOKEN-NAME)
 )
@@ -97,4 +158,8 @@
 
 (define-read-only (get-token-uri)
   (ok none)
+)
+
+(define-read-only (get-bridge-adapter)
+  (var-get bridge-adapter)
 )
