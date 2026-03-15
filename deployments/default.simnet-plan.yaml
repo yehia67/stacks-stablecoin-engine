@@ -109,6 +109,11 @@ plan:
             path: contracts/liquidation-engine.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: multi-asset-vault-engine
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/multi-asset-vault-engine.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: stability-pool
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stability-pool.clar
