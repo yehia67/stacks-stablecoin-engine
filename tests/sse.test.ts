@@ -355,11 +355,21 @@ describe("collateral-registry config flow", () => {
   it("supports owner add/get and rejects non-owner writes", () => {
     const { deployer, wallet1 } = getTestAccounts();
     const assetPrincipal = `${deployer}.stablecoin-token`;
+    const oraclePrincipal = `${deployer}.price-oracle-mock`;
 
     const unauthorized = simnet.callPublicFn(
       "collateral-registry",
       "add-collateral-type",
-      [Cl.principal(assetPrincipal), Cl.uint(150), Cl.uint(10), Cl.uint(1000000)],
+      [
+        Cl.principal(assetPrincipal),
+        Cl.uint(150),       // min-collateral-ratio
+        Cl.uint(120),       // liquidation-ratio
+        Cl.uint(10),        // liquidation-penalty
+        Cl.uint(200),       // stability-fee
+        Cl.uint(1000000),   // debt-ceiling
+        Cl.uint(100),       // debt-floor
+        Cl.principal(oraclePrincipal),
+      ],
       wallet1
     );
     expect(unauthorized.result).toBeErr(Cl.uint(100));
@@ -367,7 +377,16 @@ describe("collateral-registry config flow", () => {
     const authorized = simnet.callPublicFn(
       "collateral-registry",
       "add-collateral-type",
-      [Cl.principal(assetPrincipal), Cl.uint(150), Cl.uint(10), Cl.uint(1000000)],
+      [
+        Cl.principal(assetPrincipal),
+        Cl.uint(150),
+        Cl.uint(120),
+        Cl.uint(10),
+        Cl.uint(200),
+        Cl.uint(1000000),
+        Cl.uint(100),
+        Cl.principal(oraclePrincipal),
+      ],
       deployer
     );
     expect(authorized.result).toBeOk(Cl.bool(true));
@@ -381,8 +400,13 @@ describe("collateral-registry config flow", () => {
     expect(config.result).toBeSome(
       Cl.tuple({
         "min-collateral-ratio": Cl.uint(150),
+        "liquidation-ratio": Cl.uint(120),
         "liquidation-penalty": Cl.uint(10),
+        "stability-fee": Cl.uint(200),
         "debt-ceiling": Cl.uint(1000000),
+        "debt-floor": Cl.uint(100),
+        "enabled": Cl.bool(true),
+        "oracle": Cl.principal(oraclePrincipal),
       })
     );
   });

@@ -29,9 +29,10 @@ User → VaultEngine → StablecoinToken
 ## Contract Breakdown
 
 ### Core Contracts
-- `vault-engine.clar`: Core CDP logic. Tracks vaults, collateral, and debt. Includes minimal health checks and TODOs for production math and sBTC transfers.
-- `collateral-registry.clar`: Registry for collateral configurations (min ratio, liquidation penalty, debt ceiling).
-- `stablecoin-token.clar`: Minimal SIP-010 token with mint/burn restricted to `vault-engine` and cross-chain bridge support.
+- `vault-engine.clar`: Original single-asset CDP logic. Tracks vaults, collateral, and debt.
+- `multi-asset-vault-engine.clar`: **Multi-asset CDP engine** supporting multiple collateral types with per-asset positions, health factors, and debt tracking.
+- `collateral-registry.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, and per-asset oracles.
+- `stablecoin-token.clar`: Minimal SIP-010 token with mint/burn restricted to vault engines and cross-chain bridge support.
 - `liquidation-engine.clar`: Stub liquidation entry point with placeholder health checks.
 - `stability-pool.clar`: Simple deposit/withdraw tracking with TODO for liquidation redistribution.
 
@@ -45,23 +46,63 @@ User → VaultEngine → StablecoinToken
 - `xreserve-adapter.clar`: Adapter implementing the bridge trait for Circle's xReserve protocol (USDCx-style bridging).
 - `bridge-registry.clar`: Registry mapping tokens to their bridge adapters and remote chain configurations.
 
-## Collateral Registry Example Config
-```clarity
-;; Add one collateral config (example values only)
-(contract-call? .collateral-registry add-collateral-type
-  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.stablecoin-token
-  u150
-  u10
-  u1000000
-)
+## Multi-Asset Collateral System
 
-;; Read back the stored config
-(contract-call? .collateral-registry get-collateral-config
-  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.stablecoin-token
+SSE supports multiple collateral types with asset-specific risk parameters.
+
+### Adding a Collateral Type
+```clarity
+;; Add a new collateral type with full configuration
+(contract-call? .collateral-registry add-collateral-type
+  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token  ;; Asset principal
+  u150        ;; min-collateral-ratio: 150%
+  u120        ;; liquidation-ratio: 120%
+  u10         ;; liquidation-penalty: 10%
+  u200        ;; stability-fee: 2% (200 basis points)
+  u10000000   ;; debt-ceiling: 10M max debt
+  u100        ;; debt-floor: 100 minimum debt per position
+  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.price-oracle-mock  ;; Oracle
 )
 ```
 
-Note: this is a prototype example. Registry values are available for integration, but not all modules enforce every parameter yet.
+### Multi-Asset Vault Operations
+```clarity
+;; Open a vault
+(contract-call? .multi-asset-vault-engine open-vault)
+
+;; Deposit multiple collateral types
+(contract-call? .multi-asset-vault-engine deposit-collateral 
+  'ST...sbtc-token u1000)
+(contract-call? .multi-asset-vault-engine deposit-collateral 
+  'ST...stx-token u5000)
+
+;; Mint against specific collateral
+(contract-call? .multi-asset-vault-engine mint-against-asset 
+  'ST...sbtc-token u500)
+
+;; Repay debt against specific collateral
+(contract-call? .multi-asset-vault-engine repay-against-asset 
+  'ST...sbtc-token u200)
+
+;; Withdraw collateral (health factor permitting)
+(contract-call? .multi-asset-vault-engine withdraw-collateral 
+  'ST...sbtc-token u300)
+```
+
+### Collateral Registry Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `min-collateral-ratio` | Minimum ratio required to mint (e.g., 150 = 150%) |
+| `liquidation-ratio` | Ratio at which liquidation can occur (e.g., 120 = 120%) |
+| `liquidation-penalty` | Penalty applied during liquidation (e.g., 10 = 10%) |
+| `stability-fee` | Annual fee in basis points (e.g., 200 = 2%) |
+| `debt-ceiling` | Maximum total debt for this collateral type |
+| `debt-floor` | Minimum debt per position (dust limit) |
+| `enabled` | Whether this collateral type is active |
+| `oracle` | Price oracle contract for this asset |
+
+Note: This is a prototype. The multi-asset vault engine tracks per-asset positions and health factors independently.
 
 ## Installation Instructions
 1. Install Clarinet (Homebrew):
