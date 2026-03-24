@@ -61,6 +61,10 @@ path = "contracts/multi-asset-vault-engine.clar"
 epoch = "3.1"
 depends_on = ["stablecoin-token", "price-oracle-mock", "collateral-registry"]
 
+[contracts.stablecoin-factory]
+path = "contracts/stablecoin-factory.clar"
+epoch = "3.1"
+
 [repl.analysis]
 passes = ["check_checker"]
 check_checker = { trusted_sender = false, trusted_caller = false, callee_filter = false }
