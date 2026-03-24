@@ -33,6 +33,7 @@ User → VaultEngine → StablecoinToken
 - `multi-asset-vault-engine.clar`: **Multi-asset CDP engine** supporting multiple collateral types with per-asset positions, health factors, and debt tracking.
 - `collateral-registry.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, and per-asset oracles.
 - `stablecoin-token.clar`: Minimal SIP-010 token with mint/burn restricted to vault engines and cross-chain bridge support.
+- `stablecoin-factory.clar`: **Stablecoin registration factory** with configurable STX fees and treasury address.
 - `liquidation-engine.clar`: Stub liquidation entry point with placeholder health checks.
 - `stability-pool.clar`: Simple deposit/withdraw tracking with TODO for liquidation redistribution.
 
@@ -103,6 +104,63 @@ SSE supports multiple collateral types with asset-specific risk parameters.
 | `oracle` | Price oracle contract for this asset |
 
 Note: This is a prototype. The multi-asset vault engine tracks per-asset positions and health factors independently.
+
+## Stablecoin Registration Factory
+
+SSE includes a factory contract for registering new stablecoins with configurable fees.
+
+### Features
+- **Configurable registration fee** paid in STX
+- **Configurable treasury address** for fee collection
+- **Fee can be set to 0** to disable (for testnet/experimental deployments)
+- **Unique name/symbol enforcement** prevents duplicates
+- **Creator tracking** for per-user stablecoin enumeration
+
+### Registering a Stablecoin
+```clarity
+;; Register a new stablecoin (pays fee to treasury)
+(contract-call? .stablecoin-factory register-stablecoin
+  "My Stablecoin"   ;; Name (max 32 chars)
+  "MUSD"            ;; Symbol (max 10 chars)
+)
+;; Returns: (ok stablecoin-id)
+
+;; Link deployed token contract to registration
+(contract-call? .stablecoin-factory set-token-contract
+  u0                                              ;; stablecoin-id
+  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.my-token
+)
+```
+
+### Admin Configuration
+```clarity
+;; Set registration fee (only owner)
+;; Default: 10 STX (10,000,000 microSTX)
+(contract-call? .stablecoin-factory set-registration-fee u5000000)  ;; 5 STX
+
+;; Disable fee (set to 0)
+(contract-call? .stablecoin-factory set-registration-fee u0)
+
+;; Set treasury address (only owner)
+(contract-call? .stablecoin-factory set-treasury-address 'ST...treasury)
+```
+
+### Read-Only Functions
+```clarity
+;; Get current fee
+(contract-call? .stablecoin-factory get-registration-fee)
+
+;; Get treasury address
+(contract-call? .stablecoin-factory get-treasury-address)
+
+;; Lookup stablecoin by name or symbol
+(contract-call? .stablecoin-factory get-stablecoin-by-name "My Stablecoin")
+(contract-call? .stablecoin-factory get-stablecoin-by-symbol "MUSD")
+
+;; Check if name/symbol is taken
+(contract-call? .stablecoin-factory is-name-taken "My Stablecoin")
+(contract-call? .stablecoin-factory is-symbol-taken "MUSD")
+```
 
 ## Installation Instructions
 1. Install Clarinet (Homebrew):
