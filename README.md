@@ -203,9 +203,10 @@ Published contract identifiers:
 - `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine`
 - `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine`
 - `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool`
+- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v2`
 
 Deployment summary:
-- Total cost: `0.100090 STX`
+- Total cost: `0.150090 STX`
 - Confirmation time: `1 block`
 
 ## Post-Deployment Initialization (Required)
