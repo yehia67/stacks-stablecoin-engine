@@ -1,0 +1,18 @@
+---
+id: 1
+name: Stablecoin Factory Deployment
+network: testnet
+stacks-node: "https://api.testnet.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: stablecoin-factory
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 15000
+            path: contracts/stablecoin-factory.clar
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.1"
