@@ -128,8 +128,8 @@
     ;; Check symbol is not already taken
     (asserts! (is-none (map-get? stablecoin-symbols {symbol: symbol})) (err ERR_STABLECOIN_ALREADY_REGISTERED))
     
-    ;; Transfer fee if fee > 0
-    (if (> fee u0)
+    ;; Transfer fee if fee > 0 AND sender is not treasury (can't transfer to self)
+    (if (and (> fee u0) (not (is-eq tx-sender treasury)))
       (try! (stx-transfer? fee tx-sender treasury))
       true
     )
