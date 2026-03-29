@@ -7,6 +7,8 @@ import {
   uintCV,
   stringAsciiCV,
   principalCV,
+  makeStandardSTXPostCondition,
+  FungibleConditionCode,
 } from "@stacks/transactions";
 import { CONTRACTS } from "@/lib/constants";
 
@@ -148,13 +150,27 @@ export function useContract() {
       name: string,
       symbol: string,
       onSuccess?: (txId: string) => void,
-      onError?: (error: Error) => void
+      onError?: (error: Error) => void,
+      senderAddress?: string,
+      feeAmount?: number // Fee in microSTX (e.g., 500000 for 0.5 STX)
     ) => {
+      // Create post condition to show STX transfer in wallet
+      const postConditions = senderAddress && feeAmount && feeAmount > 0
+        ? [
+            makeStandardSTXPostCondition(
+              senderAddress,
+              FungibleConditionCode.Equal,
+              feeAmount
+            ),
+          ]
+        : [];
+
       return callContract({
         contractName: CONTRACTS.STABLECOIN_FACTORY,
         functionName: "register-stablecoin",
         functionArgs: [stringAsciiCV(name), stringAsciiCV(symbol)],
-        postConditionMode: PostConditionMode.Allow, // Allow STX transfer for fee
+        postConditionMode: PostConditionMode.Deny, // Strict mode with explicit post conditions
+        postConditions,
         onSuccess,
         onError,
       });

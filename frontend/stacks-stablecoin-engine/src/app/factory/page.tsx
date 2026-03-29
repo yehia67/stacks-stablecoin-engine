@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Info, Coins, CheckCircle, Loader2, ExternalLink } from "lucide-react";
+import { ArrowLeft, Info, Coins, CheckCircle, Loader2, ExternalLink, XCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,9 @@ export default function FactoryPage() {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [txSuccess, setTxSuccess] = useState(false);
+  const [txId, setTxId] = useState<string | null>(null);
+  const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'failed' | null>(null);
+  const [txError, setTxError] = useState<string | null>(null);
 
   // Fetch registered stablecoins from contract
   const { stablecoins: registeredStablecoins, isLoading: coinsLoading, refetch: refetchCoins } = useRegisteredStablecoins();
@@ -29,30 +31,87 @@ export default function FactoryPage() {
   const { fee: registrationFee, isLoading: feeLoading, error: feeError } = useRegistrationFee();
   const isValidForm = name.length >= 3 && symbol.length >= 2 && symbol.length <= 5;
 
+  // Poll transaction status
+  const checkTxStatus = useCallback(async (txHash: string) => {
+    try {
+      const response = await fetch(
+        `https://api.testnet.hiro.so/extended/v1/tx/${txHash}`,
+        { headers: { 'x-api-key': process.env.NEXT_PUBLIC_HIRO_API_KEY || '' } }
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!txId || txStatus === 'success' || txStatus === 'failed') return;
+
+    const pollInterval = setInterval(async () => {
+      const txData = await checkTxStatus(txId);
+      if (txData) {
+        if (txData.tx_status === 'success') {
+          setTxStatus('success');
+          setIsLoading(false);
+          refetchCoins();
+          clearInterval(pollInterval);
+        } else if (txData.tx_status === 'abort_by_response' || txData.tx_status === 'abort_by_post_condition') {
+          setTxStatus('failed');
+          setTxError(txData.tx_result?.repr || 'Transaction failed');
+          setIsLoading(false);
+          clearInterval(pollInterval);
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [txId, txStatus, checkTxStatus, refetchCoins]);
+
   const handleRegister = async () => {
     if (!isValidForm) return;
 
     setIsLoading(true);
+    setTxId(null);
+    setTxStatus('pending');
+    setTxError(null);
+    
+    // Convert fee from STX to microSTX (1 STX = 1,000,000 microSTX)
+    const feeInMicroSTX = registrationFee ? registrationFee * 1_000_000 : 0;
+    
     try {
       await registerStablecoin(
         name,
         symbol.toUpperCase(),
-        (txId) => {
-          console.log("Stablecoin registered:", txId);
-          setTxSuccess(true);
-          setIsLoading(false);
-          // Refetch stablecoins after a delay to allow transaction to be mined
-          setTimeout(() => refetchCoins(), 5000);
+        (newTxId) => {
+          console.log("Transaction submitted:", newTxId);
+          setTxId(newTxId);
+          // Keep loading - we'll poll for actual status
         },
         (error) => {
           console.error("Registration failed:", error);
+          setTxStatus('failed');
+          setTxError(error?.message || 'Transaction was rejected');
           setIsLoading(false);
-        }
+        },
+        address || undefined, // Sender address for post condition
+        feeInMicroSTX // Fee amount in microSTX
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      setTxStatus('failed');
+      setTxError(error?.message || 'Failed to submit transaction');
       setIsLoading(false);
     }
+  };
+
+  const resetForm = () => {
+    setTxId(null);
+    setTxStatus(null);
+    setTxError(null);
+    setName("");
+    setSymbol("");
   };
 
   if (!isConnected) {
@@ -71,7 +130,76 @@ export default function FactoryPage() {
     );
   }
 
-  if (txSuccess) {
+  // Transaction pending screen
+  if (txStatus === 'pending' && txId) {
+    return (
+      <div className="container flex flex-col items-center justify-center px-4 py-24">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <Clock className="mx-auto h-16 w-16 text-yellow-500 animate-pulse" />
+            <CardTitle className="mt-4">Transaction Pending</CardTitle>
+            <CardDescription>
+              Your transaction has been submitted and is waiting to be confirmed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm text-muted-foreground">Waiting for confirmation...</span>
+            </div>
+            <a
+              href={`https://explorer.hiro.so/txid/${txId}?chain=testnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              View on Explorer <ExternalLink className="h-3 w-3" />
+            </a>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Transaction failed screen
+  if (txStatus === 'failed') {
+    return (
+      <div className="container flex flex-col items-center justify-center px-4 py-24">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <XCircle className="mx-auto h-16 w-16 text-red-500" />
+            <CardTitle className="mt-4">Transaction Failed</CardTitle>
+            <CardDescription>
+              Your stablecoin registration failed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {txError && (
+              <div className="rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-300">
+                {txError}
+              </div>
+            )}
+            {txId && (
+              <a
+                href={`https://explorer.hiro.so/txid/${txId}?chain=testnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                View on Explorer <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            <Button className="w-full" onClick={resetForm}>
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Transaction success screen
+  if (txStatus === 'success') {
     return (
       <div className="container flex flex-col items-center justify-center px-4 py-24">
         <Card className="w-full max-w-md text-center">
@@ -86,12 +214,18 @@ export default function FactoryPage() {
             <p className="text-sm text-muted-foreground">
               You can now link a token contract to your stablecoin and start minting.
             </p>
+            {txId && (
+              <a
+                href={`https://explorer.hiro.so/txid/${txId}?chain=testnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                View on Explorer <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
             <div className="flex gap-4">
-              <Button variant="outline" className="flex-1" onClick={() => {
-                setTxSuccess(false);
-                setName("");
-                setSymbol("");
-              }}>
+              <Button variant="outline" className="flex-1" onClick={resetForm}>
                 Create Another
               </Button>
               <Button className="flex-1" asChild>
