@@ -142,7 +142,7 @@
         symbol: symbol,
         creator: tx-sender,
         token-contract: none,
-        registered-at: block-height,
+        registered-at: stacks-block-height,
         fee-paid: fee
       }
     )
