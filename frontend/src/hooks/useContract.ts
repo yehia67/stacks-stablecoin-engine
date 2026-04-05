@@ -373,6 +373,8 @@ export function useContract() {
   // Stability Pool functions
   const depositToPool = useCallback(
     (
+      stablecoinId: number,
+      stablecoinTokenPrincipal: string,
       amount: number,
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
@@ -380,16 +382,22 @@ export function useContract() {
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,
         functionName: "deposit",
-        functionArgs: [uintCV(amount)],
+        functionArgs: [
+          uintCV(stablecoinId),
+          parseContractPrincipal(stablecoinTokenPrincipal),
+          uintCV(amount),
+        ],
         onSuccess,
         onError,
       });
     },
-    [callContract]
+    [callContract, parseContractPrincipal]
   );
 
   const withdrawFromPool = useCallback(
     (
+      stablecoinId: number,
+      stablecoinTokenPrincipal: string,
       amount: number,
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
@@ -397,12 +405,16 @@ export function useContract() {
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,
         functionName: "withdraw",
-        functionArgs: [uintCV(amount)],
+        functionArgs: [
+          uintCV(stablecoinId),
+          parseContractPrincipal(stablecoinTokenPrincipal),
+          uintCV(amount),
+        ],
         onSuccess,
         onError,
       });
     },
-    [callContract]
+    [callContract, parseContractPrincipal]
   );
 
   // Liquidation functions

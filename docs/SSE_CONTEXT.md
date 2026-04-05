@@ -31,7 +31,8 @@ It is intended as infrastructure-as-a-service, not a single fixed stablecoin pro
 ## Prototype Caveats
 
 The repo still contains placeholders/TODOs for:
-- custody transfers for collateral and pool assets
+- ~~custody transfers for collateral~~ — **DONE**: `multi-asset-vault-engine-v3` now performs real SIP-010 token transfers on deposit/withdraw
+- ~~custody transfers for pool assets~~ — **DONE**: `stability-pool-v3` now performs real SIP-010 token transfers with stablecoin-scoped balances; liquidation reward accounting still TODO
 - advanced liquidation settlement logic
 - production-grade oracle validation
 
