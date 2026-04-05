@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Info, AlertTriangle, Coins } from "lucide-react";
+import { ArrowLeft, Info, AlertTriangle, Coins, Loader2, CheckCircle, XCircle, ExternalLink } from "lucide-react";
 import { cvToHex, principalCV, uintCV } from "@stacks/transactions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,23 @@ import { useContract } from "@/hooks/useContract";
 import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList } from "@/hooks/useContractRead";
 import { CONTRACTS } from "@/lib/constants";
 import { calculateHealthFactor, formatNumber } from "@/lib/utils";
+
+type StepStatus = 'pending' | 'active' | 'done' | 'skipped' | 'error';
+
+function FlowStepRow({ label, status }: { label: string; status: StepStatus }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      {status === 'active' && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+      {status === 'done' && <CheckCircle className="h-4 w-4 text-green-500" />}
+      {status === 'skipped' && <CheckCircle className="h-4 w-4 text-muted-foreground" />}
+      {status === 'pending' && <div className="h-4 w-4 rounded-full border-2 border-muted" />}
+      {status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
+      <span className={status === 'pending' ? 'text-muted-foreground' : status === 'skipped' ? 'text-muted-foreground line-through' : ''}>
+        {label}
+      </span>
+    </div>
+  );
+}
 
 export default function NewVaultPage() {
   const router = useRouter();
@@ -53,6 +70,13 @@ export default function NewVaultPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
 
+  // Vault flow execution state
+  type FlowStep = 'idle' | 'checking' | 'opening' | 'depositing' | 'minting' | 'done' | 'error';
+  const [flowStep, setFlowStep] = useState<FlowStep>('idle');
+  const [flowTxId, setFlowTxId] = useState<string | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const [vaultExists, setVaultExists] = useState<boolean | null>(null);
+
   useEffect(() => {
     if (!selectedCollateralAsset && effectiveCollateralTypes.length > 0) {
       setSelectedCollateralAsset(effectiveCollateralTypes[0].asset);
@@ -85,17 +109,21 @@ export default function NewVaultPage() {
   const collateralValue = parseFloat(collateralAmount || "0") * oraclePrice;
   const borrowValue = parseFloat(borrowAmount || "0");
   const minRatio = selectedCollateral?.minCollateralRatio || 150;
+  const debtFloor = selectedCollateral?.debtFloor ?? 0;
   const previewHealthFactor = calculateHealthFactor(collateralValue, borrowValue, minRatio);
   const maxBorrow = (collateralValue / minRatio) * 100;
 
   const collateralUnits = Math.floor(parseFloat(collateralAmount || "0"));
   const borrowUnits = Math.floor(parseFloat(borrowAmount || "0"));
 
+  const isBelowDebtFloor = borrowUnits > 0 && borrowUnits < debtFloor;
+
   const isValidPosition =
     !!selectedStablecoin &&
     !!selectedCollateral &&
     collateralUnits > 0 &&
     borrowUnits > 0 &&
+    !isBelowDebtFloor &&
     previewHealthFactor >= minRatio;
 
   const ownerPrincipal = address || CONTRACTS.DEPLOYER;
@@ -120,48 +148,125 @@ export default function NewVaultPage() {
         ? null // No debt position on-chain
         : onChainHealthFactorRaw;
 
+  // Poll a tx until it confirms or fails on-chain
+  const pollTx = useCallback(async (txId: string): Promise<'success' | 'failed'> => {
+    const maxAttempts = 120; // ~10 minutes at 5s intervals
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const resp = await fetch(
+          `https://api.testnet.hiro.so/extended/v1/tx/${txId}`,
+          { headers: { 'x-api-key': process.env.NEXT_PUBLIC_HIRO_API_KEY || '' } }
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.tx_status === 'success') return 'success';
+          if (data.tx_status === 'abort_by_response' || data.tx_status === 'abort_by_post_condition') {
+            throw new Error(data.tx_result?.repr || 'Transaction failed on-chain');
+          }
+        }
+      } catch (err: any) {
+        if (err.message && !err.message.includes('fetch')) throw err;
+      }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    throw new Error('Transaction polling timed out');
+  }, []);
+
+  // Check if vault already exists for the selected stablecoin
+  const checkVaultExists = useCallback(async (): Promise<boolean> => {
+    if (!address || selectedStablecoinId === null) return false;
+    try {
+      const resp = await fetch(
+        `https://api.testnet.hiro.so/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.MULTI_ASSET_VAULT_ENGINE}/get-vault-for-stablecoin`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_HIRO_API_KEY || '' },
+          body: JSON.stringify({
+            sender: address,
+            arguments: [cvToHex(principalCV(address)), cvToHex(uintCV(selectedStablecoinId))],
+          }),
+        }
+      );
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      // (some ...) means vault exists, 0x09 = none
+      return data.okay && data.result && !data.result.startsWith('0x09');
+    } catch {
+      return false;
+    }
+  }, [address, selectedStablecoinId]);
+
+  // Wrap a contract call in a promise that resolves with the txId
+  const callAsPromise = useCallback(
+    (fn: (...args: any[]) => any, ...args: any[]): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        fn(...args, (txId: string) => resolve(txId), (err: Error) => reject(err));
+      });
+    },
+    []
+  );
+
   const handleCreateVault = async () => {
     if (!selectedStablecoin || !selectedStablecoin.tokenContract || !selectedCollateral || !isValidPosition) return;
 
     setIsLoading(true);
-
-    const finishError = (error: Error) => {
-      console.error("Vault creation flow failed:", error);
-      setIsLoading(false);
-    };
-
-    const finishSuccess = async () => {
-      await refetchOnChainHealth();
-      setIsLoading(false);
-      router.push("/vaults");
-    };
+    setFlowError(null);
+    setFlowTxId(null);
 
     try {
-      await openVaultForStablecoin(
+      // Step 1: Check if vault already exists
+      setFlowStep('checking');
+      const exists = await checkVaultExists();
+      setVaultExists(exists);
+
+      // Step 2: Open vault (skip if already exists)
+      if (!exists) {
+        setFlowStep('opening');
+        const openTxId = await callAsPromise(openVaultForStablecoin, selectedStablecoin.id);
+        setFlowTxId(openTxId);
+        await pollTx(openTxId);
+      }
+
+      // Step 3: Deposit collateral
+      setFlowStep('depositing');
+      const depositTxId = await callAsPromise(
+        depositCollateralForStablecoin,
         selectedStablecoin.id,
-        async () => {
-          await depositCollateralForStablecoin(
-            selectedStablecoin.id,
-            selectedCollateral.asset,
-            collateralUnits,
-            async () => {
-              await mintAgainstAssetForStablecoin(
-                selectedStablecoin.id,
-                selectedCollateral.asset,
-                selectedStablecoin.tokenContract!,
-                borrowUnits,
-                finishSuccess,
-                finishError
-              );
-            },
-            finishError
-          );
-        },
-        finishError
+        selectedCollateral.asset,
+        collateralUnits
       );
-    } catch (error) {
-      finishError(error as Error);
+      setFlowTxId(depositTxId);
+      await pollTx(depositTxId);
+
+      // Step 4: Mint stablecoin
+      setFlowStep('minting');
+      const mintTxId = await callAsPromise(
+        mintAgainstAssetForStablecoin,
+        selectedStablecoin.id,
+        selectedCollateral.asset,
+        selectedStablecoin.tokenContract,
+        borrowUnits
+      );
+      setFlowTxId(mintTxId);
+      await pollTx(mintTxId);
+
+      // Done!
+      setFlowStep('done');
+      await refetchOnChainHealth();
+    } catch (error: any) {
+      console.error('[SSE] Vault flow failed:', error);
+      setFlowStep('error');
+      setFlowError(error?.message || 'Vault creation failed');
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const resetFlow = () => {
+    setFlowStep('idle');
+    setFlowTxId(null);
+    setFlowError(null);
+    setVaultExists(null);
   };
 
   if (!isConnected) {
@@ -314,7 +419,16 @@ export default function NewVaultPage() {
                   value={borrowAmount}
                   onChange={(e) => setBorrowAmount(e.target.value)}
                 />
-                <p className="mt-1 text-sm text-muted-foreground">Max estimated: {formatNumber(maxBorrow)} {stablecoinSymbol}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Max estimated: {formatNumber(maxBorrow)} {stablecoinSymbol}
+                  {debtFloor > 0 && ` · Min: ${formatNumber(debtFloor)} ${stablecoinSymbol}`}
+                </p>
+                {isBelowDebtFloor && (
+                  <div className="mt-1 flex items-center gap-1 text-sm text-destructive">
+                    <AlertTriangle className="h-3 w-3" />
+                    Minimum borrow is {formatNumber(debtFloor)} {stablecoinSymbol} (debt floor)
+                  </div>
+                )}
               </div>
 
               <div className="rounded-lg bg-muted p-4">
@@ -386,29 +500,124 @@ export default function NewVaultPage() {
                   <span className="text-muted-foreground">Borrow Amount</span>
                   <span className="font-medium">{borrowUnits} {stablecoinSymbol}</span>
                 </div>
+                {debtFloor > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Debt Floor (minimum)</span>
+                    <span>{formatNumber(debtFloor)} {stablecoinSymbol}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Preview Health Factor</span>
                   <span className="font-bold">{previewHealthFactor}%</span>
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 rounded-lg bg-muted p-4 text-sm">
-                <Info className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p className="text-muted-foreground">
-                  You will confirm multiple wallet prompts. The flow opens the stablecoin-scoped vault,
-                  deposits collateral, then mints the selected stablecoin token.
-                </p>
-              </div>
+              {flowStep === 'idle' && (
+                <div className="flex items-start gap-2 rounded-lg bg-muted p-4 text-sm">
+                  <Info className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">
+                    You will confirm wallet prompts for each step. The flow checks for an existing vault,
+                    deposits collateral, then mints the selected stablecoin token.
+                  </p>
+                </div>
+              )}
+
+              {/* Flow progress tracker */}
+              {flowStep !== 'idle' && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <p className="text-sm font-medium">Vault Flow Progress</p>
+                  {/* Step: Check vault */}
+                  <FlowStepRow
+                    label="Check existing vault"
+                    status={flowStep === 'checking' ? 'active' : 'done'}
+                  />
+                  {/* Step: Open vault */}
+                  <FlowStepRow
+                    label={vaultExists ? 'Open vault (skipped — already exists)' : 'Open vault'}
+                    status={
+                      flowStep === 'opening' ? 'active'
+                      : (['checking', 'idle'].includes(flowStep)) ? 'pending'
+                      : vaultExists ? 'skipped' : 'done'
+                    }
+                  />
+                  {/* Step: Deposit */}
+                  <FlowStepRow
+                    label="Deposit collateral"
+                    status={
+                      flowStep === 'depositing' ? 'active'
+                      : (['checking', 'opening'].includes(flowStep)) ? 'pending'
+                      : flowStep === 'error' ? 'error'
+                      : flowStep === 'done' || flowStep === 'minting' ? 'done'
+                      : 'pending'
+                    }
+                  />
+                  {/* Step: Mint */}
+                  <FlowStepRow
+                    label={`Mint ${stablecoinSymbol}`}
+                    status={
+                      flowStep === 'minting' ? 'active'
+                      : flowStep === 'done' ? 'done'
+                      : 'pending'
+                    }
+                  />
+
+                  {flowTxId && (
+                    <a
+                      href={`https://explorer.hiro.so/txid/${flowTxId}?chain=testnet`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      View latest tx on Explorer <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Success */}
+              {flowStep === 'done' && (
+                <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                  <CheckCircle className="h-4 w-4" />
+                  Vault created, collateral deposited, and {stablecoinSymbol} minted successfully!
+                </div>
+              )}
+
+              {/* Error */}
+              {flowStep === 'error' && flowError && (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+                    <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <span>{flowError}</span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           <div className="flex gap-4">
-            <Button variant="outline" onClick={() => setStep(2)}>
-              Back
-            </Button>
-            <Button className="flex-1" onClick={handleCreateVault} loading={isLoading}>
-              Execute Vault Flow
-            </Button>
+            {flowStep === 'idle' && (
+              <Button variant="outline" onClick={() => setStep(2)}>
+                Back
+              </Button>
+            )}
+            {flowStep === 'done' ? (
+              <Button className="flex-1" onClick={() => router.push('/vaults')}>
+                Go to Vaults
+              </Button>
+            ) : flowStep === 'error' ? (
+              <>
+                <Button variant="outline" onClick={() => { resetFlow(); setStep(2); }}>
+                  Back
+                </Button>
+                <Button className="flex-1" onClick={() => { resetFlow(); handleCreateVault(); }}>
+                  Retry
+                </Button>
+              </>
+            ) : (
+              <Button className="flex-1" onClick={handleCreateVault} loading={isLoading} disabled={isLoading}>
+                {isLoading ? 'Executing...' : 'Execute Vault Flow'}
+              </Button>
+            )}
           </div>
         </div>
       )}

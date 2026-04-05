@@ -640,3 +640,175 @@ function decodeClarityTuple(hex: string): Record<string, any> | null {
     return null;
   }
 }
+
+// ========================================
+// User Vault Data
+// ========================================
+
+export interface CollateralPosition {
+  asset: string;
+  amount: number;
+  debtShare: number;
+  healthFactor: number;
+}
+
+export interface UserVault {
+  stablecoinId: number;
+  stablecoinName: string;
+  stablecoinSymbol: string;
+  tokenContract: string | null;
+  totalDebt: number;
+  createdAt: number;
+  positions: CollateralPosition[];
+}
+
+// Helper for read-only contract calls
+async function readContract(
+  contractName: string,
+  functionName: string,
+  args: string[],
+  sender: string
+): Promise<any> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_KEY) headers["x-api-key"] = API_KEY;
+
+  const resp = await fetch(
+    `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${contractName}/${functionName}`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ sender, arguments: args }),
+    }
+  );
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (!data.okay) return null;
+  return data.result;
+}
+
+export function useUserVaults(userAddress: string | null) {
+  const [vaults, setVaults] = useState<UserVault[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const { stablecoins } = useRegisteredStablecoins();
+
+  const fetchVaults = useCallback(async () => {
+    if (!userAddress || stablecoins.length === 0) {
+      setVaults([]);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const userVaults: UserVault[] = [];
+
+      for (const coin of stablecoins) {
+        // Check if user has a vault for this stablecoin
+        const vaultHex = await readContract(
+          CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+          "get-vault-for-stablecoin",
+          [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id))],
+          userAddress
+        );
+
+        if (!vaultHex || vaultHex.startsWith("0x09")) continue; // 0x09 = none
+
+        const vaultData = decodeClarityTuple(vaultHex);
+        if (!vaultData) {
+          console.error(`[SSE] Failed to decode vault for stablecoin ${coin.id}, hex:`, vaultHex);
+          continue;
+        }
+
+        // Get asset count for this vault
+        const countHex = await readContract(
+          CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+          "get-vault-asset-count-for-stablecoin",
+          [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id))],
+          userAddress
+        );
+
+        const assetCount = countHex ? Number(parseClarityValue(countHex) ?? 0) : 0;
+
+        const positions: CollateralPosition[] = [];
+
+        for (let i = 0; i < assetCount; i++) {
+          // Get asset at index
+          const assetHex = await readContract(
+            CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+            "get-vault-asset-at-index-for-stablecoin",
+            [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(uintCV(i))],
+            userAddress
+          );
+
+          if (!assetHex || assetHex.startsWith("0x09")) continue;
+          const assetData = decodeClarityTuple(assetHex);
+          const asset = assetData?.asset;
+          if (typeof asset !== "string") {
+            console.error(`[SSE] Invalid asset at index ${i} for vault stablecoin=${coin.id}:`, assetData);
+            continue;
+          }
+
+          // Get collateral position
+          const posHex = await readContract(
+            CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+            "get-collateral-position-for-stablecoin",
+            [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
+            userAddress
+          );
+
+          if (!posHex || posHex.startsWith("0x09")) continue;
+          const posData = decodeClarityTuple(posHex);
+          if (!posData) continue;
+
+          if (posData.amount == null || posData["debt-share"] == null) {
+            console.error(`[SSE] Missing required fields in position for asset=${asset}, stablecoin=${coin.id}:`, posData);
+            continue;
+          }
+
+          // Get health factor
+          const hfHex = await readContract(
+            CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+            "get-position-health-factor-for-stablecoin",
+            [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
+            userAddress
+          );
+
+          const healthFactor = hfHex ? Number(parseClarityValue(hfHex) ?? 0) : 0;
+
+          positions.push({
+            asset,
+            amount: Number(posData.amount),
+            debtShare: Number(posData["debt-share"]),
+            healthFactor,
+          });
+        }
+
+        userVaults.push({
+          stablecoinId: coin.id,
+          stablecoinName: coin.name,
+          stablecoinSymbol: coin.symbol,
+          tokenContract: coin.tokenContract,
+          totalDebt: Number(vaultData["total-debt"] ?? 0),
+          createdAt: Number(vaultData["created-at"] ?? 0),
+          positions,
+        });
+      }
+
+      setVaults(userVaults);
+    } catch (err) {
+      console.error("[SSE] Error fetching user vaults:", err);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userAddress, stablecoins]);
+
+  useEffect(() => {
+    fetchVaults();
+  }, [fetchVaults]);
+
+  return { vaults, isLoading, error, refetch: fetchVaults };
+}
