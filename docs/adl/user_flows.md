@@ -231,7 +231,7 @@ sequenceDiagram
         App->>App: Validate against health factor
         App->>User: Show warning if near liquidation
         User->>App: Click "Mint"
-        App->>Wallet: Request signature
+        App->>Wallet: Request signature§
         User->>Wallet: Confirm
         Wallet->>VE: mint(amount)
         VE->>ST: mint tokens to user
@@ -262,7 +262,7 @@ sequenceDiagram
         App->>Wallet: Request signature
         User->>Wallet: Confirm
         Wallet->>VE: burn(amount)
-        VE->>ST: burn tokens
+        VE->>ST: burn tokens§
         ST-->>App: Success
     end
     

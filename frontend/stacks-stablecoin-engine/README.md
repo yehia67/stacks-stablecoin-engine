@@ -27,6 +27,13 @@ NEXT_PUBLIC_NETWORK=testnet
 # Testnet: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
 # Mainnet: Update with your mainnet deployer address
 NEXT_PUBLIC_DEPLOYER_ADDRESS=ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+
+# Optional contract-name overrides (for hotfix releases)
+NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT=stablecoin-factory-v3
+NEXT_PUBLIC_VAULT_ENGINE_CONTRACT=vault-engine-v3
+NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT=multi-asset-vault-engine-v3
+NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT=collateral-registry-v3
+NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT=liquidation-engine-v3
 ```
 
 ## Getting Started
@@ -58,20 +65,31 @@ The SSE contracts are already deployed on testnet at:
 
 **Deployer:** `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
 
-**Deployed Contracts:**
-- `stablecoin-factory-v2` - Stablecoin registration with 10 STX fee
-- `vault-engine` - CDP vault management
-- `stablecoin-token` - SIP-010 stablecoin token
-- `collateral-registry` - Collateral configuration
-- `liquidation-engine` - Liquidation logic
-- `stability-pool` - Stability pool deposits
-- `price-oracle-mock` - Mock price oracle
+**Deployed Contracts (all v3):**
+- `stablecoin-factory-v3` - Stablecoin registration with configurable fee
+- `vault-engine-v3` - Single-collateral CDP vault management
+- `multi-asset-vault-engine-v3` - Stablecoin-scoped multi-asset vault engine
+- `stablecoin-token-v3` - SIP-010 stablecoin token
+- `stablecoin-engine-token-trait` - Token mint/burn trait used by vault engines
+- `collateral-registry-v3` - Collateral configuration with per-asset oracles
+- `liquidation-engine-v3` - Liquidation logic
+- `stability-pool-v3` - Stability pool deposits
+- `price-oracle-sbtc-v3` - sBTC price oracle
+- `price-oracle-stx-v3` - STX price oracle
+- `bridge-adapter-trait` - Bridge adapter interface trait
+- `bridge-registry-v3` - Bridge adapter/token registry
+- `xreserve-adapter-v3` - xReserve-style bridge adapter
+- `sbtc-token-v3` - Faucet sBTC token (testnet only)
+- `stx-token-v3` - Faucet STX token (testnet only)
 
 To deploy your own contracts, from the project root:
 
 ```bash
-# Deploy to testnet
-clarinet deployments apply -p deployments/default.testnet-plan.yaml
+# Step 1: Deploy core v3 contracts to testnet
+npm run deploy:v3
+
+# Step 2: Bootstrap (deploys faucet tokens + configures everything)
+npm run bootstrap:v3
 
 # Or run locally with devnet
 clarinet devnet start

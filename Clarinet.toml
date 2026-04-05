@@ -11,6 +11,10 @@ epoch = "3.1"
 path = "contracts/sip-010-trait.clar"
 epoch = "3.1"
 
+[contracts.stablecoin-engine-token-trait]
+path = "contracts/stablecoin-engine-token-trait.clar"
+epoch = "3.1"
+
 [contracts.oracle-trait]
 path = "contracts/oracle-trait.clar"
 epoch = "3.1"
@@ -20,24 +24,25 @@ path = "contracts/price-oracle-mock.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait"]
 
-[contracts.collateral-registry]
+[contracts.collateral-registry-v2]
 path = "contracts/collateral-registry.clar"
 epoch = "3.1"
+depends_on = ["stablecoin-factory-v2"]
 
-[contracts.stablecoin-token]
+[contracts.stablecoin-token-v2]
 path = "contracts/stablecoin-token.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait"]
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
 
-[contracts.vault-engine]
+[contracts.vault-engine-v2]
 path = "contracts/vault-engine.clar"
 epoch = "3.1"
-depends_on = ["stablecoin-token", "price-oracle-mock"]
+depends_on = ["stablecoin-token-v2", "price-oracle-mock"]
 
-[contracts.liquidation-engine]
+[contracts.liquidation-engine-v2]
 path = "contracts/liquidation-engine.clar"
 epoch = "3.1"
-depends_on = ["vault-engine"]
+depends_on = ["vault-engine-v2"]
 
 [contracts.stability-pool]
 path = "contracts/stability-pool.clar"
@@ -51,19 +56,81 @@ epoch = "3.1"
 path = "contracts/bridge-registry.clar"
 epoch = "3.1"
 
-[contracts.xreserve-adapter]
+[contracts.xreserve-adapter-v2]
 path = "contracts/xreserve-adapter.clar"
 epoch = "3.1"
-depends_on = ["bridge-adapter-trait", "stablecoin-token"]
+depends_on = ["bridge-adapter-trait", "stablecoin-token-v2"]
 
-[contracts.multi-asset-vault-engine]
+[contracts.multi-asset-vault-engine-v2]
 path = "contracts/multi-asset-vault-engine.clar"
 epoch = "3.1"
-depends_on = ["stablecoin-token", "price-oracle-mock", "collateral-registry"]
+depends_on = ["stablecoin-token-v2", "price-oracle-mock", "collateral-registry-v2", "stablecoin-factory-v2", "stablecoin-engine-token-trait"]
 
-[contracts.stablecoin-factory]
+[contracts.stablecoin-factory-v2]
 path = "contracts/stablecoin-factory.clar"
 epoch = "3.1"
+
+[contracts.price-oracle-sbtc-v3]
+path = "contracts/price-oracle-sbtc-v3.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait"]
+
+[contracts.price-oracle-stx-v3]
+path = "contracts/price-oracle-stx-v3.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait"]
+
+[contracts.sbtc-token-v3]
+path = "contracts/sbtc-token-v3.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait"]
+
+[contracts.stx-token-v3]
+path = "contracts/stx-token-v3.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait"]
+
+[contracts.stablecoin-factory-v3]
+path = "contracts/stablecoin-factory-v3.clar"
+epoch = "3.1"
+
+[contracts.collateral-registry-v3]
+path = "contracts/collateral-registry-v3.clar"
+epoch = "3.1"
+depends_on = ["stablecoin-factory-v3"]
+
+[contracts.stablecoin-token-v3]
+path = "contracts/stablecoin-token-v3.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
+
+[contracts.stability-pool-v3]
+path = "contracts/stability-pool-v3.clar"
+epoch = "3.1"
+
+[contracts.bridge-registry-v3]
+path = "contracts/bridge-registry-v3.clar"
+epoch = "3.1"
+
+[contracts.vault-engine-v3]
+path = "contracts/vault-engine-v3.clar"
+epoch = "3.1"
+depends_on = ["stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3"]
+
+[contracts.liquidation-engine-v3]
+path = "contracts/liquidation-engine-v3.clar"
+epoch = "3.1"
+depends_on = ["vault-engine-v3"]
+
+[contracts.multi-asset-vault-engine-v3]
+path = "contracts/multi-asset-vault-engine-v3.clar"
+epoch = "3.1"
+depends_on = ["stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3", "collateral-registry-v3", "stablecoin-factory-v3", "stablecoin-engine-token-trait"]
+
+[contracts.xreserve-adapter-v3]
+path = "contracts/xreserve-adapter-v3.clar"
+epoch = "3.1"
+depends_on = ["bridge-adapter-trait", "stablecoin-token-v3"]
 
 [repl.analysis]
 passes = ["check_checker"]

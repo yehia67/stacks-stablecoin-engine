@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { CONTRACTS, IS_MAINNET, DEFAULTS } from "@/lib/constants";
+import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
 
 const API_BASE = IS_MAINNET 
   ? "https://api.mainnet.hiro.so" 
@@ -27,26 +28,18 @@ interface UseContractReadResult<T> {
 // Parse Clarity value from hex response
 function parseClarityValue(hex: string): bigint | string | boolean | null {
   if (!hex || hex === "0x") return null;
-  
-  // Remove 0x prefix
-  const bytes = hex.slice(2);
-  
-  // First byte is the type
-  const type = parseInt(bytes.slice(0, 2), 16);
-  
-  // Type 0x01 = int128, Type 0x00 = int128 (negative)
-  // For uint, the value follows the type byte
-  if (type === 0x01 || type === 0x00) {
-    // uint128 - next 16 bytes (32 hex chars)
-    const valueHex = bytes.slice(2, 34);
-    return BigInt("0x" + valueHex);
+  try {
+    const cv = hexToCV(hex);
+    const parsed = cvToValue(cv) as any;
+
+    if (typeof parsed === "bigint" || typeof parsed === "string" || typeof parsed === "boolean") {
+      return parsed;
+    }
+
+    return JSON.stringify(parsed);
+  } catch {
+    return hex;
   }
-  
-  // Type 0x03 = true, Type 0x04 = false
-  if (type === 0x03) return true;
-  if (type === 0x04) return false;
-  
-  return hex;
 }
 
 export function useContractRead<T = any>(
@@ -56,6 +49,7 @@ export function useContractRead<T = any>(
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Memoize args to prevent infinite re-renders
   const argsKey = useMemo(() => JSON.stringify(functionArgs), [functionArgs]);
@@ -122,11 +116,10 @@ export function useContractRead<T = any>(
     return () => {
       cancelled = true;
     };
-  }, [contractName, functionName, argsKey]);
+  }, [contractName, functionName, argsKey, refreshKey]);
 
   const refetch = useCallback(async () => {
-    // Trigger re-fetch by updating state
-    setIsLoading(true);
+    setRefreshKey((prev) => prev + 1);
   }, []);
 
   return { data, isLoading, error, refetch };
@@ -164,13 +157,6 @@ export interface Stablecoin {
   tokenContract: string | null;
   registeredAt: number;
   feePaid: number;
-}
-
-// Parse a stablecoin tuple from hex response
-function parseStablecoinTuple(hex: string): Stablecoin | null {
-  // This is a simplified parser - in production you'd use @stacks/transactions cvToValue
-  // For now, we'll use the raw API response which returns decoded values
-  return null;
 }
 
 // Hook to fetch all registered stablecoins
@@ -223,17 +209,26 @@ export function useRegisteredStablecoins() {
             // Parse the tuple response - it's returned as a Clarity value
             // For simplicity, we'll decode it manually or use the repr
             const decoded = decodeClarityTuple(result.result);
-            if (decoded) {
-              coins.push({
-                id: i,
-                name: decoded.name || `Stablecoin ${i}`,
-                symbol: decoded.symbol || `SC${i}`,
-                creator: decoded.creator || "",
-                tokenContract: decoded["token-contract"] || null,
-                registeredAt: decoded["registered-at"] || 0,
-                feePaid: decoded["fee-paid"] || 0,
-              });
+            if (!decoded) {
+              console.error(`[SSE] Failed to decode stablecoin id=${i}: decodeClarityTuple returned null for hex`, result.result);
+              continue;
             }
+
+            const { name, symbol, creator } = decoded;
+            if (typeof name !== "string" || typeof symbol !== "string" || typeof creator !== "string") {
+              console.error(`[SSE] Stablecoin id=${i} has missing or invalid required fields:`, decoded);
+              continue;
+            }
+
+            coins.push({
+              id: i,
+              name,
+              symbol,
+              creator,
+              tokenContract: decoded["token-contract"] ?? null,
+              registeredAt: decoded["registered-at"] ?? 0,
+              feePaid: decoded["fee-paid"] ?? 0,
+            });
           }
         }
       }
@@ -253,93 +248,395 @@ export function useRegisteredStablecoins() {
   return { stablecoins, isLoading, error, refetch: fetchStablecoins };
 }
 
+export interface CollateralType {
+  asset: string;
+  minCollateralRatio: number;
+  liquidationRatio: number;
+  debtFloor: number;
+  enabled: boolean;
+  oraclePrice: number | null;
+}
+
+export function useCollateralTypes() {
+  const [collateralTypes, setCollateralTypes] = useState<CollateralType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const { data: countData } = useContractRead<bigint>({
+    contractName: CONTRACTS.COLLATERAL_REGISTRY,
+    functionName: "get-collateral-count",
+  });
+
+  const count = countData !== null ? Number(countData) : 0;
+
+  const fetchCollateralTypes = useCallback(async () => {
+    if (count === 0) {
+      setCollateralTypes([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (API_KEY) {
+        headers["x-api-key"] = API_KEY;
+      }
+
+      const assets: string[] = [];
+      for (let i = 0; i < count; i++) {
+        const indexArg = cvToHex(uintCV(i));
+        const indexResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-collateral-at-index`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [indexArg],
+            }),
+          }
+        );
+
+        if (!indexResp.ok) continue;
+        const indexResult = await indexResp.json();
+        if (!indexResult.okay || !indexResult.result) continue;
+
+        const decoded = decodeClarityTuple(indexResult.result);
+        const asset = decoded?.asset;
+        if (typeof asset === "string") assets.push(asset);
+      }
+
+      const configs: CollateralType[] = [];
+      for (const asset of assets) {
+        const assetArg = cvToHex(principalCV(asset));
+        const configResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-collateral-config`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [assetArg],
+            }),
+          }
+        );
+
+        if (!configResp.ok) continue;
+        const configResult = await configResp.json();
+        if (!configResult.okay || !configResult.result) continue;
+
+        const decoded = decodeClarityTuple(configResult.result);
+        if (!decoded) continue;
+
+        // Fetch oracle price for this asset
+        let oraclePrice: number | null = null;
+        const oracleAddr = decoded.oracle as string | undefined;
+        if (oracleAddr) {
+          const [oracleContractAddr, oracleContractName] = oracleAddr.split(".");
+          if (oracleContractAddr && oracleContractName) {
+            const priceResp = await fetch(
+              `${API_BASE}/v2/contracts/call-read/${oracleContractAddr}/${oracleContractName}/get-price`,
+              {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+              }
+            );
+            if (priceResp.ok) {
+              const priceResult = await priceResp.json();
+              if (priceResult.okay && priceResult.result) {
+                const priceVal = parseClarityValue(priceResult.result);
+                if (priceVal !== null) {
+                  // Price is scaled by 1e8 (PRICE-SCALE)
+                  oraclePrice = Number(priceVal) / 1e8;
+                }
+              }
+            }
+          }
+        }
+
+        if (decoded["min-collateral-ratio"] == null || decoded["liquidation-ratio"] == null) {
+          console.error(`[SSE] Collateral config for ${asset} has missing required fields:`, decoded);
+          continue;
+        }
+
+        configs.push({
+          asset,
+          minCollateralRatio: Number(decoded["min-collateral-ratio"]),
+          liquidationRatio: Number(decoded["liquidation-ratio"]),
+          debtFloor: Number(decoded["debt-floor"] ?? 0),
+          enabled: Boolean(decoded.enabled),
+          oraclePrice,
+        });
+      }
+
+      setCollateralTypes(configs.filter((c) => c.enabled));
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [count]);
+
+  useEffect(() => {
+    fetchCollateralTypes();
+  }, [fetchCollateralTypes]);
+
+  return { collateralTypes, isLoading, error, refetch: fetchCollateralTypes };
+}
+
+// Per-stablecoin collateral configuration
+export interface StablecoinCollateralConfig {
+  asset: string;
+  minCollateralRatio: number;
+  liquidationRatio: number;
+  liquidationPenalty: number;
+  stabilityFee: number;
+  debtCeiling: number;
+  debtFloor: number;
+  enabled: boolean;
+}
+
+// Hook to fetch collaterals configured for a specific stablecoin
+export function useStablecoinCollateralList(stablecoinId: number | null) {
+  const [collaterals, setCollaterals] = useState<StablecoinCollateralConfig[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchCollaterals = useCallback(async () => {
+    if (stablecoinId === null || stablecoinId < 0) {
+      setCollaterals([]);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      // First get the count
+      const countResp = await fetch(
+        `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-count-ro`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            sender: CONTRACTS.DEPLOYER,
+            arguments: [cvToHex(uintCV(stablecoinId))],
+          }),
+        }
+      );
+
+      if (!countResp.ok) { setCollaterals([]); return; }
+      const countResult = await countResp.json();
+      if (!countResult.okay) { setCollaterals([]); return; }
+      const count = Number(parseClarityValue(countResult.result) || 0);
+
+      if (count === 0) { setCollaterals([]); setIsLoading(false); return; }
+
+      const configs: StablecoinCollateralConfig[] = [];
+
+      for (let i = 0; i < count; i++) {
+        // Get asset at index
+        const indexResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-at-index`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [cvToHex(uintCV(stablecoinId)), cvToHex(uintCV(i))],
+            }),
+          }
+        );
+
+        if (!indexResp.ok) continue;
+        const indexResult = await indexResp.json();
+        if (!indexResult.okay) continue;
+        const decoded = decodeClarityTuple(indexResult.result);
+        const asset = decoded?.asset;
+        if (typeof asset !== "string") continue;
+
+        // Get config for this stablecoin+asset
+        const configResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-config`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [cvToHex(uintCV(stablecoinId)), cvToHex(principalCV(asset))],
+            }),
+          }
+        );
+
+        if (!configResp.ok) continue;
+        const configResult = await configResp.json();
+        if (!configResult.okay) continue;
+        const configDecoded = decodeClarityTuple(configResult.result);
+        if (!configDecoded) continue;
+
+        configs.push({
+          asset,
+          minCollateralRatio: Number(configDecoded["min-collateral-ratio"] ?? 150),
+          liquidationRatio: Number(configDecoded["liquidation-ratio"] ?? 120),
+          liquidationPenalty: Number(configDecoded["liquidation-penalty"] ?? 10),
+          stabilityFee: Number(configDecoded["stability-fee"] ?? 200),
+          debtCeiling: Number(configDecoded["debt-ceiling"] ?? 0),
+          debtFloor: Number(configDecoded["debt-floor"] ?? 0),
+          enabled: Boolean(configDecoded.enabled),
+        });
+      }
+
+      setCollaterals(configs);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [stablecoinId]);
+
+  useEffect(() => {
+    fetchCollaterals();
+  }, [fetchCollaterals]);
+
+  return { collaterals, isLoading, error, refetch: fetchCollaterals };
+}
+
+// Debounced hook to check if a stablecoin name is already taken
+export function useIsNameTaken(name: string) {
+  const [isTaken, setIsTaken] = useState<boolean | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    if (!name || name.length < 3) {
+      setIsTaken(null);
+      setIsChecking(false);
+      return;
+    }
+
+    setIsChecking(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (API_KEY) headers["x-api-key"] = API_KEY;
+
+        const url = `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.STABLECOIN_FACTORY}/is-name-taken`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            sender: CONTRACTS.DEPLOYER,
+            arguments: [cvToHex(stringAsciiCV(name))],
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.okay && result.result) {
+            const val = parseClarityValue(result.result);
+            setIsTaken(val === true);
+          }
+        }
+      } catch {
+        setIsTaken(null);
+      } finally {
+        setIsChecking(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [name]);
+
+  return { isTaken, isChecking };
+}
+
+// Debounced hook to check if a stablecoin symbol is already taken
+export function useIsSymbolTaken(symbol: string) {
+  const [isTaken, setIsTaken] = useState<boolean | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    if (!symbol || symbol.length < 2) {
+      setIsTaken(null);
+      setIsChecking(false);
+      return;
+    }
+
+    setIsChecking(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (API_KEY) headers["x-api-key"] = API_KEY;
+
+        const url = `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.STABLECOIN_FACTORY}/is-symbol-taken`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            sender: CONTRACTS.DEPLOYER,
+            arguments: [cvToHex(stringAsciiCV(symbol))],
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.okay && result.result) {
+            const val = parseClarityValue(result.result);
+            setIsTaken(val === true);
+          }
+        }
+      } catch {
+        setIsTaken(null);
+      } finally {
+        setIsChecking(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [symbol]);
+
+  return { isTaken, isChecking };
+}
+
+// Helper to unwrap a single Clarity typed-value object.
+// cvToValue (v6) returns { type: string, value: ... } wrappers.
+// This recursively extracts the plain JS value.
+function unwrapClarityValue(raw: any): any {
+  if (raw === null || raw === undefined) return raw;
+  // Detect { type, value } wrapper produced by cvToValue v6
+  if (typeof raw === "object" && "type" in raw && "value" in raw && typeof raw.type === "string") {
+    return unwrapClarityValue(raw.value);
+  }
+  if (typeof raw === "bigint") return Number(raw);
+  // If it's a plain object (could be a tuple's inner fields), unwrap each value
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return Object.fromEntries(
+      Object.entries(raw).map(([key, val]) => [key, unwrapClarityValue(val)])
+    );
+  }
+  return raw;
+}
+
 // Helper to decode Clarity tuple from hex
 function decodeClarityTuple(hex: string): Record<string, any> | null {
   try {
-    if (!hex || hex === "0x09") return null; // 0x09 = none
-    
-    // Remove 0x prefix
-    const bytes = hex.slice(2);
-    
-    // First byte is type - 0x0a = some, 0x0c = tuple
-    const type = parseInt(bytes.slice(0, 2), 16);
-    
-    // If it's an optional (some), skip the wrapper
-    let tupleStart = 0;
-    if (type === 0x0a) {
-      // some - next byte is the inner type
-      tupleStart = 2;
-    }
-    
-    const innerType = parseInt(bytes.slice(tupleStart, tupleStart + 2), 16);
-    if (innerType !== 0x0c) {
-      // Not a tuple
-      return null;
-    }
-    
-    // Parse tuple - format: 0x0c + 4 bytes length + entries
-    let pos = tupleStart + 2;
-    const numEntries = parseInt(bytes.slice(pos, pos + 8), 16);
-    pos += 8;
-    
-    const result: Record<string, any> = {};
-    
-    for (let i = 0; i < numEntries; i++) {
-      // Key: 1 byte length + string
-      const keyLen = parseInt(bytes.slice(pos, pos + 2), 16);
-      pos += 2;
-      const keyHex = bytes.slice(pos, pos + keyLen * 2);
-      const key = hexToString(keyHex);
-      pos += keyLen * 2;
-      
-      // Value: parse based on type
-      const valueType = parseInt(bytes.slice(pos, pos + 2), 16);
-      pos += 2;
-      
-      if (valueType === 0x01) {
-        // uint128
-        const valueHex = bytes.slice(pos, pos + 32);
-        result[key] = parseInt(valueHex, 16);
-        pos += 32;
-      } else if (valueType === 0x0d) {
-        // string-ascii
-        const strLen = parseInt(bytes.slice(pos, pos + 8), 16);
-        pos += 8;
-        const strHex = bytes.slice(pos, pos + strLen * 2);
-        result[key] = hexToString(strHex);
-        pos += strLen * 2;
-      } else if (valueType === 0x05) {
-        // principal
-        const version = parseInt(bytes.slice(pos, pos + 2), 16);
-        pos += 2;
-        const hash = bytes.slice(pos, pos + 40);
-        pos += 40;
-        // Simplified - just store the hash for now
-        result[key] = `${version === 0x1a ? 'ST' : 'SP'}${hash.slice(0, 20)}...`;
-      } else if (valueType === 0x09) {
-        // none
-        result[key] = null;
-      } else if (valueType === 0x0a) {
-        // some - skip for now
-        result[key] = "some";
-        // Would need to recursively parse the inner value
-      } else {
-        // Unknown type, skip
-        result[key] = null;
-      }
-    }
-    
-    return result;
+    if (!hex) return null;
+    const raw = cvToValue(hexToCV(hex)) as any;
+    if (!raw || typeof raw !== "object") return null;
+
+    const unwrapped = unwrapClarityValue(raw);
+    if (!unwrapped || typeof unwrapped !== "object") return null;
+    return unwrapped;
   } catch (e) {
-    console.error("Error decoding tuple:", e);
+    console.error("[SSE] Error decoding Clarity tuple:", e, "hex:", hex);
     return null;
   }
-}
-
-function hexToString(hex: string): string {
-  let str = '';
-  for (let i = 0; i < hex.length; i += 2) {
-    str += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
-  }
-  return str;
 }

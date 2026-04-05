@@ -212,7 +212,7 @@
 ;; ============================================
 
 (define-private (is-stablecoin-creator (stablecoin-id uint))
-  (match (contract-call? .stablecoin-factory-v2 get-stablecoin-creator stablecoin-id)
+  (match (contract-call? .stablecoin-factory-v3 get-stablecoin-creator stablecoin-id)
     creator (is-eq tx-sender creator)
     false
   )
@@ -374,8 +374,8 @@
 (define-map authorized-vault-engines principal bool)
 
 ;; Pre-authorize the known vault engines at deploy time
-(map-set authorized-vault-engines .vault-engine-v2 true)
-(map-set authorized-vault-engines .multi-asset-vault-engine-v2 true)
+(map-set authorized-vault-engines .vault-engine-v3 true)
+(map-set authorized-vault-engines .multi-asset-vault-engine-v3 true)
 
 (define-private (is-authorized-caller)
   (default-to false (map-get? authorized-vault-engines contract-caller))
@@ -548,41 +548,36 @@
   (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
 )
 
-;; Returns effective config: per-stablecoin if configured, global fallback for stablecoin-id u0.
-;; For safety-critical fields, enforces max(per-stablecoin, global).
+;; Returns effective config for a stablecoin+asset pair.
+;; Requires explicit per-stablecoin configuration and enforces
+;; max(per-stablecoin, global) for safety-critical ratio fields.
 (define-read-only (get-effective-collateral-config (stablecoin-id uint) (asset principal))
-  (if (is-eq stablecoin-id u0)
-    ;; Legacy path: use global config directly
-    (map-get? collateral-configs {asset: asset})
-    ;; Per-stablecoin path: must have explicit config
-    (match (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
-      sc-config
-        (if (get enabled sc-config)
-          ;; Enforce safety: return max of per-stablecoin and global for critical ratios
-          (match (map-get? collateral-configs {asset: asset})
-            global-config
-              (some {
-                min-collateral-ratio: (if (> (get min-collateral-ratio sc-config) (get min-collateral-ratio global-config))
-                                        (get min-collateral-ratio sc-config)
-                                        (get min-collateral-ratio global-config)),
-                liquidation-ratio: (if (> (get liquidation-ratio sc-config) (get liquidation-ratio global-config))
-                                      (get liquidation-ratio sc-config)
-                                      (get liquidation-ratio global-config)),
-                liquidation-penalty: (if (> (get liquidation-penalty sc-config) (get liquidation-penalty global-config))
-                                        (get liquidation-penalty sc-config)
-                                        (get liquidation-penalty global-config)),
-                stability-fee: (get stability-fee sc-config),
-                debt-ceiling: (get debt-ceiling sc-config),
-                debt-floor: (get debt-floor sc-config),
-                enabled: true,
-                oracle: (get oracle global-config)
-              })
-            none
-          )
+  (match (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
+    sc-config
+      (if (get enabled sc-config)
+        (match (map-get? collateral-configs {asset: asset})
+          global-config
+            (some {
+              min-collateral-ratio: (if (> (get min-collateral-ratio sc-config) (get min-collateral-ratio global-config))
+                                      (get min-collateral-ratio sc-config)
+                                      (get min-collateral-ratio global-config)),
+              liquidation-ratio: (if (> (get liquidation-ratio sc-config) (get liquidation-ratio global-config))
+                                    (get liquidation-ratio sc-config)
+                                    (get liquidation-ratio global-config)),
+              liquidation-penalty: (if (> (get liquidation-penalty sc-config) (get liquidation-penalty global-config))
+                                      (get liquidation-penalty sc-config)
+                                      (get liquidation-penalty global-config)),
+              stability-fee: (get stability-fee sc-config),
+              debt-ceiling: (get debt-ceiling sc-config),
+              debt-floor: (get debt-floor sc-config),
+              enabled: true,
+              oracle: (get oracle global-config)
+            })
           none
         )
-      none
-    )
+        none
+      )
+    none
   )
 )
 
@@ -601,12 +596,9 @@
 )
 
 (define-read-only (is-collateral-enabled-for-stablecoin (stablecoin-id uint) (asset principal))
-  (if (is-eq stablecoin-id u0)
-    (is-collateral-enabled asset)
-    (match (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
-      config (get enabled config)
-      false
-    )
+  (match (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
+    config (get enabled config)
+    false
   )
 )
 

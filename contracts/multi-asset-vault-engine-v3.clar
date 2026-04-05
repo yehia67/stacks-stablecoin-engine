@@ -20,13 +20,19 @@
 (define-constant ERR_TOKEN_NOT_LINKED u211)
 (define-constant ERR_TOKEN_MISMATCH u212)
 (define-constant ERR_ASSET_NOT_WHITELISTED u213)
+(define-constant ERR_UNKNOWN_ORACLE u214)
 
 ;; ============================================
 ;; Constants
 ;; ============================================
+(define-constant CONTRACT-OWNER tx-sender)
 (define-constant PRICE-SCALE u100000000)  ;; 1e8 for price precision
 (define-constant RATIO-SCALE u100)        ;; Ratios are in percentage (150 = 150%)
 (define-constant ZERO-DEBT-HEALTH-FACTOR u1000000)
+
+;; Known oracle IDs
+(define-constant ORACLE-SBTC u1)
+(define-constant ORACLE-STX u2)
 
 ;; ============================================
 ;; Data Maps
@@ -62,6 +68,21 @@
 )
 
 ;; ============================================
+;; Per-Asset Oracle Registry
+;; ============================================
+
+(define-map asset-oracle-id {asset: principal} {oracle-id: uint})
+
+(define-public (register-asset-oracle (asset principal) (oracle-id uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (or (is-eq oracle-id ORACLE-SBTC) (is-eq oracle-id ORACLE-STX)) (err ERR_UNKNOWN_ORACLE))
+    (map-set asset-oracle-id {asset: asset} {oracle-id: oracle-id})
+    (ok true)
+  )
+)
+
+;; ============================================
 ;; Private Helper Functions
 ;; ============================================
 
@@ -72,33 +93,45 @@
   )
 )
 
+(define-private (get-oracle-price-by-id (oracle-id uint))
+  (if (is-eq oracle-id ORACLE-SBTC)
+    (unwrap-panic (contract-call? .price-oracle-sbtc-v3 get-price))
+    (if (is-eq oracle-id ORACLE-STX)
+      (unwrap-panic (contract-call? .price-oracle-stx-v3 get-price))
+      u0
+    )
+  )
+)
+
 (define-private (get-asset-price (asset principal))
-  ;; TODO: use the asset-specific oracle configured in collateral-registry.
-  (unwrap-panic (contract-call? .price-oracle-mock get-price))
+  (match (map-get? asset-oracle-id {asset: asset})
+    entry (get-oracle-price-by-id (get oracle-id entry))
+    u0
+  )
 )
 
 (define-private (get-asset-config (asset principal))
-  (contract-call? .collateral-registry-v2 get-collateral-config asset)
+  (contract-call? .collateral-registry-v3 get-collateral-config asset)
 )
 
 (define-private (get-asset-config-for-stablecoin (stablecoin-id uint) (asset principal))
-  (contract-call? .collateral-registry-v2 get-effective-collateral-config stablecoin-id asset)
+  (contract-call? .collateral-registry-v3 get-effective-collateral-config stablecoin-id asset)
 )
 
 (define-private (get-min-ratio-for-asset (asset principal))
-  (default-to u150 (contract-call? .collateral-registry-v2 get-min-collateral-ratio asset))
+  (default-to u150 (contract-call? .collateral-registry-v3 get-min-collateral-ratio asset))
 )
 
 (define-private (get-min-ratio-for-stablecoin-asset (stablecoin-id uint) (asset principal))
-  (default-to u150 (contract-call? .collateral-registry-v2 get-effective-min-collateral-ratio stablecoin-id asset))
+  (default-to u150 (contract-call? .collateral-registry-v3 get-effective-min-collateral-ratio stablecoin-id asset))
 )
 
 (define-private (get-liquidation-ratio-for-asset (asset principal))
-  (default-to u120 (contract-call? .collateral-registry-v2 get-liquidation-ratio asset))
+  (default-to u120 (contract-call? .collateral-registry-v3 get-liquidation-ratio asset))
 )
 
 (define-private (get-liquidation-ratio-for-stablecoin-asset (stablecoin-id uint) (asset principal))
-  (default-to u120 (contract-call? .collateral-registry-v2 get-effective-liquidation-ratio stablecoin-id asset))
+  (default-to u120 (contract-call? .collateral-registry-v3 get-effective-liquidation-ratio stablecoin-id asset))
 )
 
 (define-private (calculate-collateral-value (asset principal) (amount uint))
@@ -115,7 +148,7 @@
 )
 
 (define-private (get-linked-token-contract (stablecoin-id uint))
-  (match (contract-call? .stablecoin-factory-v2 get-stablecoin stablecoin-id)
+  (match (contract-call? .stablecoin-factory-v3 get-stablecoin stablecoin-id)
     stablecoin-entry
       (match (get token-contract stablecoin-entry)
         token-contract (ok token-contract)
@@ -293,11 +326,7 @@
                     (asserts! (>= health-factor RATIO-SCALE) (err ERR_UNSAFE_HEALTH_FACTOR))
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
-                    ;; Track debt: per-stablecoin for non-zero, global for u0
-                    (if (is-eq stablecoin-id u0)
-                      (try! (contract-call? .collateral-registry-v2 increase-debt asset amount))
-                      (try! (contract-call? .collateral-registry-v2 increase-stablecoin-debt stablecoin-id asset amount))
-                    )
+                    (try! (contract-call? .collateral-registry-v3 increase-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -315,7 +344,7 @@
                       }
                     )
 
-                    (try! (contract-call? .stablecoin-token-v2 mint amount tx-sender))
+                    (try! (contract-call? .stablecoin-token-v3 mint amount tx-sender))
 
                     (print {
                       event: "debt-minted",
@@ -368,11 +397,7 @@
                     (asserts! (>= health-factor RATIO-SCALE) (err ERR_UNSAFE_HEALTH_FACTOR))
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
-                    ;; Track debt: per-stablecoin for non-zero, global for u0
-                    (if (is-eq stablecoin-id u0)
-                      (try! (contract-call? .collateral-registry-v2 increase-debt asset amount))
-                      (try! (contract-call? .collateral-registry-v2 increase-stablecoin-debt stablecoin-id asset amount))
-                    )
+                    (try! (contract-call? .collateral-registry-v3 increase-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -430,12 +455,8 @@
                     )
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
-                    (try! (contract-call? .stablecoin-token-v2 burn amount tx-sender))
-                    ;; Track debt: per-stablecoin for non-zero, global for u0
-                    (if (is-eq stablecoin-id u0)
-                      (try! (contract-call? .collateral-registry-v2 decrease-debt asset amount))
-                      (try! (contract-call? .collateral-registry-v2 decrease-stablecoin-debt stablecoin-id asset amount))
-                    )
+                    (try! (contract-call? .stablecoin-token-v3 burn amount tx-sender))
+                    (try! (contract-call? .collateral-registry-v3 decrease-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -498,11 +519,7 @@
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
                     (try! (contract-call? token burn amount tx-sender))
-                    ;; Track debt: per-stablecoin for non-zero, global for u0
-                    (if (is-eq stablecoin-id u0)
-                      (try! (contract-call? .collateral-registry-v2 decrease-debt asset amount))
-                      (try! (contract-call? .collateral-registry-v2 decrease-stablecoin-debt stablecoin-id asset amount))
-                    )
+                    (try! (contract-call? .collateral-registry-v3 decrease-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}

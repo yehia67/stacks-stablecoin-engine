@@ -1,21 +1,44 @@
+(define-constant CONTRACT-OWNER tx-sender)
+
 (define-constant ERR_VAULT_EXISTS u200)
 (define-constant ERR_NO_VAULT u201)
 (define-constant ERR_INSUFFICIENT_COLLATERAL u202)
 (define-constant ERR_INSUFFICIENT_DEBT u203)
 (define-constant ERR_UNSAFE_HEALTH_FACTOR u204)
+(define-constant ERR_UNAUTHORIZED u205)
+(define-constant ERR_UNKNOWN_ORACLE u206)
+
+(define-constant ORACLE-SBTC u1)
+(define-constant ORACLE-STX u2)
 
 (define-constant MIN-HEALTH-FACTOR u150)
 (define-constant ZERO-DEBT-HEALTH-FACTOR u1000000)
 (define-constant PRICE-SCALE u100000000)
+
+;; Which oracle this single-collateral engine uses (default: sBTC)
+(define-data-var active-oracle-id uint ORACLE-SBTC)
 
 (define-map vaults
   {owner: principal}
   {collateral: uint, debt: uint}
 )
 
+(define-public (set-oracle (oracle-id uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (or (is-eq oracle-id ORACLE-SBTC) (is-eq oracle-id ORACLE-STX)) (err ERR_UNKNOWN_ORACLE))
+    (var-set active-oracle-id oracle-id)
+    (ok true)
+  )
+)
+
 (define-private (get-oracle-price)
-  ;; TODO(oracle): add stale-price checks, decimals normalization, and feed reliability rules.
-  (unwrap-panic (contract-call? .price-oracle-mock get-price))
+  (let ((oid (var-get active-oracle-id)))
+    (if (is-eq oid ORACLE-SBTC)
+      (unwrap-panic (contract-call? .price-oracle-sbtc-v3 get-price))
+      (unwrap-panic (contract-call? .price-oracle-stx-v3 get-price))
+    )
+  )
 )
 
 (define-private (calculate-health-factor (collateral uint) (debt uint))
@@ -59,7 +82,7 @@
         ;; Placeholder health check uses mock-oracle price and fixed scale assumptions.
         ;; TODO: use oracle + collateral registry + asset-specific risk parameters for production checks.
         (asserts! (>= health-factor MIN-HEALTH-FACTOR) (err ERR_UNSAFE_HEALTH_FACTOR))
-        (try! (contract-call? .stablecoin-token-v2 mint amount tx-sender))
+        (try! (contract-call? .stablecoin-token-v3 mint amount tx-sender))
         (map-set vaults
           {owner: tx-sender}
           {collateral: collateral, debt: new-debt}
@@ -75,7 +98,7 @@
     vault
       (begin
         (asserts! (>= (get debt vault) amount) (err ERR_INSUFFICIENT_DEBT))
-        (try! (contract-call? .stablecoin-token-v2 burn amount tx-sender))
+        (try! (contract-call? .stablecoin-token-v3 burn amount tx-sender))
         (map-set vaults
           {owner: tx-sender}
           {collateral: (get collateral vault), debt: (- (get debt vault) amount)}

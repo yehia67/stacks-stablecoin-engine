@@ -174,7 +174,7 @@
     ;; Call mint on the bridged token
     ;; The token contract must authorize this adapter to mint
     (match (var-get bridged-token)
-      token (contract-call? .stablecoin-token-v2 mint-from-bridge amount recipient)
+      token (contract-call? .stablecoin-token-v3 mint-from-bridge amount recipient)
       (err ERR_UNAUTHORIZED)
     )
   )
@@ -198,6 +198,6 @@
     
     ;; Call burn-to-remote on the token contract
     ;; This will burn the tokens and emit an event for the attestation service
-    (contract-call? .stablecoin-token-v2 burn-to-remote amount tx-sender remote-recipient remote-chain-id)
+    (contract-call? .stablecoin-token-v3 burn-to-remote amount tx-sender remote-recipient remote-chain-id)
   )
 )

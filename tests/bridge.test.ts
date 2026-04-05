@@ -109,8 +109,8 @@ describe("bridge-registry", () => {
   describe("token registration", () => {
     it("allows owner to register tokens for bridging", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
 
       const result = simnet.callPublicFn(
         "bridge-registry",
@@ -131,8 +131,8 @@ describe("bridge-registry", () => {
 
     it("rejects duplicate token registration", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
 
       // First registration
       let result = simnet.callPublicFn(
@@ -155,8 +155,8 @@ describe("bridge-registry", () => {
 
     it("allows owner to update token adapter", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
       const newAdapterPrincipal = `${deployer}.stability-pool`; // Using another contract as mock
 
       // Register token
@@ -189,8 +189,8 @@ describe("bridge-registry", () => {
 
     it("allows owner to enable/disable tokens", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
 
       // Register token
       let result = simnet.callPublicFn(
@@ -233,8 +233,8 @@ describe("bridge-registry", () => {
   describe("token chain configuration", () => {
     it("allows configuring token for specific chains", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
       const remoteAddress = createTestBuffer32(1);
 
       // Add chain first
@@ -282,7 +282,7 @@ describe("bridge-registry", () => {
 
     it("rejects chain config for unregistered tokens", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
       const remoteAddress = createTestBuffer32(1);
 
       // Add chain
@@ -316,13 +316,13 @@ describe("bridge-registry", () => {
 // xReserve Adapter Tests
 // ============================================
 
-describe("xreserve-adapter", () => {
+describe("xreserve-adapter-v2", () => {
   describe("admin functions", () => {
     it("allows owner to set attestation service", () => {
       const { deployer, wallet1 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "set-attestation-service",
         [Cl.principal(wallet1)],
         deployer
@@ -330,7 +330,7 @@ describe("xreserve-adapter", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       const service = simnet.callReadOnlyFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "get-attestation-service",
         [],
         deployer
@@ -342,7 +342,7 @@ describe("xreserve-adapter", () => {
       const { wallet1, wallet2 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "set-attestation-service",
         [Cl.principal(wallet2)],
         wallet1
@@ -352,10 +352,10 @@ describe("xreserve-adapter", () => {
 
     it("allows owner to set bridged token", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v2`;
 
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "set-bridged-token",
         [Cl.principal(tokenPrincipal)],
         deployer
@@ -363,7 +363,7 @@ describe("xreserve-adapter", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       const token = simnet.callReadOnlyFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "get-bridged-token",
         [],
         deployer
@@ -376,7 +376,7 @@ describe("xreserve-adapter", () => {
 
       // Pause
       let result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "set-paused",
         [Cl.bool(true)],
         deployer
@@ -384,7 +384,7 @@ describe("xreserve-adapter", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       let paused = simnet.callReadOnlyFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "get-paused",
         [],
         deployer
@@ -393,7 +393,7 @@ describe("xreserve-adapter", () => {
 
       // Unpause
       result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "set-paused",
         [Cl.bool(false)],
         deployer
@@ -401,7 +401,7 @@ describe("xreserve-adapter", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       paused = simnet.callReadOnlyFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "get-paused",
         [],
         deployer
@@ -413,7 +413,7 @@ describe("xreserve-adapter", () => {
       const { deployer } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "add-supported-chain",
         [Cl.uint(1), Cl.stringAscii("Ethereum Mainnet")],
         deployer
@@ -421,7 +421,7 @@ describe("xreserve-adapter", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       const isSupported = simnet.callReadOnlyFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "is-chain-supported",
         [Cl.uint(1)],
         deployer
@@ -437,7 +437,7 @@ describe("xreserve-adapter", () => {
 
       // Setup: add chain
       simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "add-supported-chain",
         [Cl.uint(1), Cl.stringAscii("Ethereum")],
         deployer
@@ -445,7 +445,7 @@ describe("xreserve-adapter", () => {
 
       // Pause the adapter
       simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "set-paused",
         [Cl.bool(true)],
         deployer
@@ -453,7 +453,7 @@ describe("xreserve-adapter", () => {
 
       // Try to burn
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "burn-to-remote",
         [Cl.uint(1000000), Cl.buffer(remoteRecipient), Cl.uint(1)],
         wallet1
@@ -467,7 +467,7 @@ describe("xreserve-adapter", () => {
 
       // Try to burn to unsupported chain (chain 999 not added)
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "burn-to-remote",
         [Cl.uint(1000000), Cl.buffer(remoteRecipient), Cl.uint(999)],
         wallet1
@@ -481,7 +481,7 @@ describe("xreserve-adapter", () => {
 
       // Setup: add chain
       simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "add-supported-chain",
         [Cl.uint(1), Cl.stringAscii("Ethereum")],
         deployer
@@ -489,7 +489,7 @@ describe("xreserve-adapter", () => {
 
       // Try to burn zero amount
       const result = simnet.callPublicFn(
-        "xreserve-adapter",
+        "xreserve-adapter-v2",
         "burn-to-remote",
         [Cl.uint(0), Cl.buffer(remoteRecipient), Cl.uint(1)],
         wallet1
@@ -503,14 +503,14 @@ describe("xreserve-adapter", () => {
 // Stablecoin Token Bridge Functions Tests
 // ============================================
 
-describe("stablecoin-token bridge functions", () => {
+describe("stablecoin-token-v2 bridge functions", () => {
   describe("bridge adapter authorization", () => {
     it("allows owner to set bridge adapter", () => {
       const { deployer } = getTestAccounts();
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
 
       const result = simnet.callPublicFn(
-        "stablecoin-token",
+        "stablecoin-token-v2",
         "set-bridge-adapter",
         [Cl.principal(adapterPrincipal)],
         deployer
@@ -518,7 +518,7 @@ describe("stablecoin-token bridge functions", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       const adapter = simnet.callReadOnlyFn(
-        "stablecoin-token",
+        "stablecoin-token-v2",
         "get-bridge-adapter",
         [],
         deployer
@@ -528,10 +528,10 @@ describe("stablecoin-token bridge functions", () => {
 
     it("rejects non-owner bridge adapter changes", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const adapterPrincipal = `${deployer}.xreserve-adapter`;
+      const adapterPrincipal = `${deployer}.xreserve-adapter-v2`;
 
       const result = simnet.callPublicFn(
-        "stablecoin-token",
+        "stablecoin-token-v2",
         "set-bridge-adapter",
         [Cl.principal(adapterPrincipal)],
         wallet1
@@ -546,7 +546,7 @@ describe("stablecoin-token bridge functions", () => {
 
       // Try to mint without being the adapter
       const result = simnet.callPublicFn(
-        "stablecoin-token",
+        "stablecoin-token-v2",
         "mint-from-bridge",
         [Cl.uint(1000000), Cl.principal(wallet1)],
         wallet1
@@ -562,7 +562,7 @@ describe("stablecoin-token bridge functions", () => {
 
       // Try to burn without being the adapter
       const result = simnet.callPublicFn(
-        "stablecoin-token",
+        "stablecoin-token-v2",
         "burn-to-remote",
         [
           Cl.uint(1000000),

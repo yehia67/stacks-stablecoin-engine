@@ -1,0 +1,25 @@
+---
+id: 1
+name: Testnet deployment (v3 faucet collaterals)
+network: testnet
+stacks-node: "https://api.testnet.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: sbtc-token-v3
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 50000
+            path: contracts/sbtc-token-v3.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: stx-token-v3
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 50000
+            path: contracts/stx-token-v3.clar
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.1"

@@ -58,7 +58,6 @@ genesis:
     - pox-4
     - signers
     - signers-voting
-    - costs-4
 plan:
   batches:
     - id: 0
@@ -74,9 +73,29 @@ plan:
             path: contracts/bridge-registry.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: collateral-registry
+            contract-name: bridge-registry-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/bridge-registry-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: stablecoin-factory-v2
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/stablecoin-factory.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: collateral-registry-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/collateral-registry.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: stablecoin-factory-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/stablecoin-factory-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: collateral-registry-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/collateral-registry-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: oracle-trait
@@ -94,24 +113,64 @@ plan:
             path: contracts/sip-010-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: stablecoin-token
+            contract-name: stablecoin-engine-token-trait
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/stablecoin-engine-token-trait.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: stablecoin-token-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stablecoin-token.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: vault-engine
+            contract-name: vault-engine-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/vault-engine.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: liquidation-engine
+            contract-name: liquidation-engine-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidation-engine.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: multi-asset-vault-engine
+            contract-name: price-oracle-sbtc-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-sbtc-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-stx-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-stx-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: stablecoin-token-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/stablecoin-token-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: vault-engine-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/vault-engine-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: liquidation-engine-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/liquidation-engine-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: multi-asset-vault-engine-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/multi-asset-vault-engine.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: multi-asset-vault-engine-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/multi-asset-vault-engine-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: sbtc-token-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sbtc-token-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: stability-pool
@@ -119,13 +178,26 @@ plan:
             path: contracts/stability-pool.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: stablecoin-factory
+            contract-name: stability-pool-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stablecoin-factory.clar
+            path: contracts/stability-pool-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: xreserve-adapter
+            contract-name: stx-token-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/stx-token-v3.clar
+            clarity-version: 3
+      epoch: "3.1"
+    - id: 1
+      transactions:
+        - emulated-contract-publish:
+            contract-name: xreserve-adapter-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/xreserve-adapter.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: xreserve-adapter-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/xreserve-adapter-v3.clar
             clarity-version: 3
       epoch: "3.1"

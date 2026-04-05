@@ -1,6 +1,6 @@
 ---
 id: 0
-name: Testnet deployment
+name: Testnet deployment (v3 clean)
 network: testnet
 stacks-node: "https://api.testnet.hiro.so"
 bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
@@ -9,66 +9,80 @@ plan:
     - id: 0
       transactions:
         - contract-publish:
-            contract-name: collateral-registry
+            contract-name: stablecoin-factory-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 9540
-            path: contracts/collateral-registry.clar
+            cost: 50000
+            path: contracts/stablecoin-factory-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: oracle-trait
+            contract-name: collateral-registry-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 770
-            path: contracts/oracle-trait.clar
+            cost: 120000
+            path: contracts/collateral-registry-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: price-oracle-mock
+            contract-name: stablecoin-token-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 6170
-            path: contracts/price-oracle-mock.clar
+            cost: 60000
+            path: contracts/stablecoin-token-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: sip-010-trait
+            contract-name: vault-engine-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 4160
-            path: contracts/sip-010-trait.clar
+            cost: 45000
+            path: contracts/vault-engine-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: stablecoin-token
+            contract-name: liquidation-engine-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 25430
-            path: contracts/stablecoin-token.clar
+            cost: 10000
+            path: contracts/liquidation-engine-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: vault-engine
+            contract-name: multi-asset-vault-engine-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 39490
-            path: contracts/vault-engine.clar
+            cost: 180000
+            path: contracts/multi-asset-vault-engine-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: liquidation-engine
+            contract-name: xreserve-adapter-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 5420
-            path: contracts/liquidation-engine.clar
+            cost: 80000
+            path: contracts/xreserve-adapter-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: stability-pool
+            contract-name: price-oracle-sbtc-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 9110
-            path: contracts/stability-pool.clar
+            cost: 12000
+            path: contracts/price-oracle-sbtc-v3.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: stablecoin-factory
+            contract-name: price-oracle-stx-v3
             expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
-            cost: 15000
-            path: contracts/stablecoin-factory.clar
+            cost: 12000
+            path: contracts/price-oracle-stx-v3.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: stability-pool-v3
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 10000
+            path: contracts/stability-pool-v3.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: bridge-registry-v3
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 30000
+            path: contracts/bridge-registry-v3.clar
             anchor-block-only: true
             clarity-version: 3
       epoch: "3.1"

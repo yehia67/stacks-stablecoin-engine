@@ -209,7 +209,7 @@ export default function LiquidationsPage() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Debt</p>
-                      <p className="font-medium">{formatSTX(vault.debtAmount)} sUSD</p>
+                      <p className="font-medium">{formatSTX(vault.debtAmount)} stablecoins</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Bonus</p>
@@ -250,7 +250,7 @@ export default function LiquidationsPage() {
             <div>
               <h3 className="font-semibold">2. Execute Liquidation</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Repay the vault's debt using sUSD from the stability pool or 
+                Repay the vault's debt using stablecoins from the stability pool or 
                 your own balance to claim the collateral.
               </p>
             </div>

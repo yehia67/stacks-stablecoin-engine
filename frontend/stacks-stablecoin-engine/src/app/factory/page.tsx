@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
-import { ArrowLeft, Info, Coins, CheckCircle, Loader2, ExternalLink, XCircle, Clock } from "lucide-react";
+import { Info, Coins, CheckCircle, Loader2, ExternalLink, XCircle, Clock, ChevronDown, ChevronUp, Settings, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,26 +9,141 @@ import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { formatNumber } from "@/lib/utils";
-import { useRegistrationFee, useRegisteredStablecoins, useStablecoinCount } from "@/hooks/useContractRead";
+import { CONTRACTS, DEFAULTS } from "@/lib/constants";
+import { useRegistrationFee, useRegisteredStablecoins, useStablecoinCount, useIsNameTaken, useIsSymbolTaken, useCollateralTypes, useStablecoinCollateralList } from "@/hooks/useContractRead";
+
+// Per-collateral config state for the factory form
+interface CollateralConfigEntry {
+  asset: string;
+  enabled: boolean;
+  minCollateralRatio: number;
+  liquidationRatio: number;
+  liquidationPenalty: number;
+  stabilityFee: number;
+  debtCeiling: number;
+  debtFloor: number;
+  // Global defaults for reference
+  globalMinCollateralRatio: number;
+  globalLiquidationRatio: number;
+}
 
 export default function FactoryPage() {
   const { isConnected, address } = useWallet();
-  const { registerStablecoin } = useContract();
+  const { registerStablecoin, deployTokenContract, setTokenContract, configureCollateralForStablecoin } = useContract();
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+
+  // Live duplicate checks against on-chain state
+  const { isTaken: isNameTaken, isChecking: isCheckingName } = useIsNameTaken(name);
+  const { isTaken: isSymbolTaken, isChecking: isCheckingSymbol } = useIsSymbolTaken(symbol.toUpperCase());
   const [isLoading, setIsLoading] = useState(false);
+
+  // Deploy & Link token contract state
+  const [deployingCoinId, setDeployingCoinId] = useState<number | null>(null);
+  const [deployTxId, setDeployTxId] = useState<string | null>(null);
+  const [deployedContractName, setDeployedContractName] = useState<string | null>(null);
+  const [deployStatus, setDeployStatus] = useState<'deploying' | 'linking' | 'done' | 'error' | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
   const [txId, setTxId] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'failed' | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
 
+  // Collateral configuration state
+  const { collateralTypes, isLoading: collateralTypesLoading } = useCollateralTypes();
+  const [configuringCoinId, setConfiguringCoinId] = useState<number | null>(null);
+  const [collateralConfigs, setCollateralConfigs] = useState<CollateralConfigEntry[]>([]);
+  const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
+  const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [configProgress, setConfigProgress] = useState(0);
+  const { collaterals: existingCollaterals, refetch: refetchExistingCollaterals } = useStablecoinCollateralList(configuringCoinId);
+
+  // Initialize collateral configs when collateral types load or when configuring a new coin
+  useEffect(() => {
+    if (collateralTypes.length > 0 && configuringCoinId !== null && collateralConfigs.length === 0) {
+      setCollateralConfigs(
+        collateralTypes.map((ct) => ({
+          asset: ct.asset,
+          enabled: false,
+          minCollateralRatio: ct.minCollateralRatio,
+          liquidationRatio: ct.liquidationRatio,
+          liquidationPenalty: 10,
+          stabilityFee: 200,
+          debtCeiling: 1000000,
+          debtFloor: 100,
+          globalMinCollateralRatio: ct.minCollateralRatio,
+          globalLiquidationRatio: ct.liquidationRatio,
+        }))
+      );
+    }
+  }, [collateralTypes, configuringCoinId, collateralConfigs.length]);
+
   // Fetch registered stablecoins from contract
   const { stablecoins: registeredStablecoins, isLoading: coinsLoading, refetch: refetchCoins } = useRegisteredStablecoins();
   const { count: stablecoinCount } = useStablecoinCount();
-  
+
   // Fetch registration fee from blockchain
   const { fee: registrationFee, isLoading: feeLoading, error: feeError } = useRegistrationFee();
-  const isValidForm = name.length >= 3 && symbol.length >= 2 && symbol.length <= 5;
+  const isValidForm = name.length >= 3 && symbol.length >= 2 && symbol.length <= 5 && !isNameTaken && !isSymbolTaken;
+
+  const enabledCollateralConfigs = collateralConfigs.filter((c) => c.enabled);
+
+  const updateCollateralConfig = (asset: string, updates: Partial<CollateralConfigEntry>) => {
+    setCollateralConfigs((prev) =>
+      prev.map((c) => (c.asset === asset ? { ...c, ...updates } : c))
+    );
+  };
+
+  const handleSaveCollateralConfigs = async () => {
+    if (configuringCoinId === null || enabledCollateralConfigs.length === 0) return;
+    setConfigStatus('saving');
+    setConfigError(null);
+    setConfigProgress(0);
+
+    let completed = 0;
+    for (const config of enabledCollateralConfigs) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          configureCollateralForStablecoin(
+            configuringCoinId,
+            config.asset,
+            {
+              minCollateralRatio: config.minCollateralRatio,
+              liquidationRatio: config.liquidationRatio,
+              liquidationPenalty: config.liquidationPenalty,
+              stabilityFee: config.stabilityFee,
+              debtCeiling: config.debtCeiling,
+              debtFloor: config.debtFloor,
+            },
+            () => { completed++; setConfigProgress(completed); resolve(); },
+            (err) => reject(err)
+          );
+        });
+      } catch (err: any) {
+        setConfigStatus('error');
+        setConfigError(`Failed to configure ${config.asset}: ${err.message}`);
+        return;
+      }
+    }
+
+    setConfigStatus('done');
+    refetchExistingCollaterals();
+  };
+
+  const resetCollateralConfig = () => {
+    setConfiguringCoinId(null);
+    setCollateralConfigs([]);
+    setExpandedAsset(null);
+    setConfigStatus('idle');
+    setConfigError(null);
+    setConfigProgress(0);
+  };
+
+  const formatAssetName = (asset: string) => {
+    const [, contractName] = asset.split(".");
+    return contractName || asset;
+  };
 
   // Poll transaction status
   const checkTxStatus = useCallback(async (txHash: string) => {
@@ -106,6 +220,83 @@ export default function FactoryPage() {
     }
   };
 
+  // Poll deploy tx, then auto-link when confirmed
+  useEffect(() => {
+    if (!deployTxId || !deployedContractName || !address || deployingCoinId === null) return;
+    if (deployStatus !== 'deploying') return;
+
+    const poll = setInterval(async () => {
+      const txData = await checkTxStatus(deployTxId);
+      if (!txData) return;
+
+      if (txData.tx_status === 'success') {
+        clearInterval(poll);
+        // Token deployed — now link it to the stablecoin registration
+        const tokenPrincipal = `${address}.${deployedContractName}`;
+        setDeployStatus('linking');
+        try {
+          await setTokenContract(
+            deployingCoinId,
+            tokenPrincipal,
+            () => {
+              setDeployStatus('done');
+              refetchCoins();
+            },
+            (err) => {
+              console.error('[SSE] Link after deploy failed:', err);
+              setDeployStatus('error');
+              setDeployError(`Token deployed at ${tokenPrincipal} but linking failed: ${err.message}. You can link it manually.`);
+            }
+          );
+        } catch (err: any) {
+          setDeployStatus('error');
+          setDeployError(`Token deployed at ${tokenPrincipal} but linking failed. You can link it manually.`);
+        }
+      } else if (txData.tx_status === 'abort_by_response' || txData.tx_status === 'abort_by_post_condition') {
+        clearInterval(poll);
+        setDeployStatus('error');
+        setDeployError(txData.tx_result?.repr || 'Token deployment failed on-chain');
+      }
+    }, 5000);
+
+    return () => clearInterval(poll);
+  }, [deployTxId, deployedContractName, deployStatus, deployingCoinId, address, checkTxStatus, setTokenContract, refetchCoins]);
+
+  const handleDeployAndLink = async (coin: { id: number; name: string; symbol: string }) => {
+    setDeployingCoinId(coin.id);
+    setDeployTxId(null);
+    setDeployedContractName(null);
+    setDeployStatus('deploying');
+    setDeployError(null);
+
+    try {
+      await deployTokenContract(
+        coin.name,
+        coin.symbol,
+        (txId, contractName) => {
+          setDeployTxId(txId);
+          setDeployedContractName(contractName);
+        },
+        (error) => {
+          console.error('[SSE] Deploy failed:', error);
+          setDeployStatus('error');
+          setDeployError(error.message);
+        }
+      );
+    } catch (err: any) {
+      setDeployStatus('error');
+      setDeployError(err.message);
+    }
+  };
+
+  const resetDeployState = () => {
+    setDeployingCoinId(null);
+    setDeployTxId(null);
+    setDeployedContractName(null);
+    setDeployStatus(null);
+    setDeployError(null);
+  };
+
   const resetForm = () => {
     setTxId(null);
     setTxStatus(null);
@@ -176,7 +367,7 @@ export default function FactoryPage() {
           <CardContent className="space-y-4">
             {txError && (
               <div className="rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-300">
-                {txError}
+                {txError.includes('u702') ? 'A stablecoin with this name or symbol is already registered. Please choose a different name and symbol.' : txError}
               </div>
             )}
             {txId && (
@@ -207,12 +398,12 @@ export default function FactoryPage() {
             <CheckCircle className="mx-auto h-16 w-16 text-green-500" />
             <CardTitle className="mt-4">Stablecoin Registered!</CardTitle>
             <CardDescription>
-              Your stablecoin "{name}" ({symbol.toUpperCase()}) has been successfully registered.
+              Your stablecoin &quot;{name}&quot; ({symbol.toUpperCase()}) has been successfully registered.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              You can now link a token contract to your stablecoin and start minting.
+              Next step: configure which collateral types your stablecoin accepts, then deploy a token contract.
             </p>
             {txId && (
               <a
@@ -228,8 +419,8 @@ export default function FactoryPage() {
               <Button variant="outline" className="flex-1" onClick={resetForm}>
                 Create Another
               </Button>
-              <Button className="flex-1" asChild>
-                <Link href="/dashboard">Go to Dashboard</Link>
+              <Button className="flex-1" onClick={() => { resetForm(); }}>
+                <Settings className="mr-1 h-4 w-4" /> Configure Collaterals
               </Button>
             </div>
           </CardContent>
@@ -267,9 +458,20 @@ export default function FactoryPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Minimum 3 characters
-              </p>
+              {isCheckingName && name.length >= 3 && (
+                <p className="mt-1 text-xs text-muted-foreground">Checking availability...</p>
+              )}
+              {isNameTaken === true && (
+                <p className="mt-1 text-xs text-red-500">This name is already taken</p>
+              )}
+              {isNameTaken === false && name.length >= 3 && !isCheckingName && (
+                <p className="mt-1 text-xs text-green-500">Name is available</p>
+              )}
+              {!isCheckingName && isNameTaken === null && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Minimum 3 characters
+                </p>
+              )}
             </div>
 
             <div>
@@ -282,9 +484,20 @@ export default function FactoryPage() {
                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                 maxLength={5}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                2-5 uppercase characters
-              </p>
+              {isCheckingSymbol && symbol.length >= 2 && (
+                <p className="mt-1 text-xs text-muted-foreground">Checking availability...</p>
+              )}
+              {isSymbolTaken === true && (
+                <p className="mt-1 text-xs text-red-500">This symbol is already taken</p>
+              )}
+              {isSymbolTaken === false && symbol.length >= 2 && !isCheckingSymbol && (
+                <p className="mt-1 text-xs text-green-500">Symbol is available</p>
+              )}
+              {!isCheckingSymbol && isSymbolTaken === null && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  2-5 uppercase characters
+                </p>
+              )}
             </div>
 
             <div className="rounded-lg bg-muted p-4">
@@ -304,15 +517,15 @@ export default function FactoryPage() {
               <div className="text-blue-700 dark:text-blue-300">
                 <p className="font-medium">What happens next?</p>
                 <p className="mt-1">
-                  After registration, you'll need to deploy a SIP-010 compliant token 
-                  contract and link it to your stablecoin entry.
+                  After registration, configure which collateral types your stablecoin accepts
+                  and set risk parameters (ratios, fees, debt ceilings). Then deploy & link a token contract.
                 </p>
               </div>
             </div>
 
             <Button
               className="w-full"
-              disabled={!isValidForm || feeLoading || registrationFee === null}
+              disabled={!isValidForm || feeLoading || registrationFee === null || isCheckingName || isCheckingSymbol}
               onClick={handleRegister}
               loading={isLoading}
             >
@@ -352,8 +565,9 @@ export default function FactoryPage() {
                 {registeredStablecoins.map((coin) => (
                   <div
                     key={coin.id}
-                    className="flex items-center justify-between rounded-lg border p-4 hover:bg-muted/50 transition-colors"
+                    className="flex flex-col rounded-lg border p-4 hover:bg-muted/50 transition-colors"
                   >
+                    <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
                         {coin.symbol.charAt(0)}
@@ -370,10 +584,273 @@ export default function FactoryPage() {
                       <p className="mt-1 text-xs text-muted-foreground">
                         ID: {coin.id}
                       </p>
+                      {coin.tokenContract ? (
+                        <Badge variant="default" className="mt-1">Linked</Badge>
+                      ) : coin.creator === address ? (
+                        <Badge variant="destructive" className="mt-1">Not linked</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="mt-1">No token</Badge>
+                      )}
                       {coin.creator === address && (
-                        <Badge variant="secondary" className="mt-1">Your coin</Badge>
+                        <Badge variant="secondary" className="mt-1 ml-1">Your coin</Badge>
                       )}
                     </div>
+                    </div>
+                    {/* Configure Collaterals + Deploy & Link Token flow */}
+                    {coin.creator === address && (
+                      <div className="mt-3 w-full border-t pt-3 space-y-2">
+                        {/* Configure Collaterals button & panel */}
+                        {configuringCoinId === coin.id ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-semibold">Configure Accepted Collaterals</h4>
+                              <Button size="sm" variant="ghost" onClick={resetCollateralConfig}>
+                                <XCircle className="h-3 w-3" />
+                              </Button>
+                            </div>
+
+                            {collateralTypesLoading ? (
+                              <p className="text-xs text-muted-foreground">Loading collateral types...</p>
+                            ) : collateralConfigs.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No global collateral types found in registry.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {collateralConfigs.map((config) => (
+                                  <div key={config.asset} className="rounded-lg border p-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.enabled}
+                                          onChange={(e) => updateCollateralConfig(config.asset, { enabled: e.target.checked })}
+                                          className="h-4 w-4 rounded"
+                                        />
+                                        <span className="text-sm font-medium">{formatAssetName(config.asset)}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          (Global: {config.globalMinCollateralRatio}% / {config.globalLiquidationRatio}%)
+                                        </span>
+                                      </div>
+                                      {config.enabled && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => setExpandedAsset(expandedAsset === config.asset ? null : config.asset)}
+                                        >
+                                          {expandedAsset === config.asset ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                        </Button>
+                                      )}
+                                    </div>
+
+                                    {config.enabled && expandedAsset === config.asset && (
+                                      <div className="mt-3 grid grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="mb-1 block text-xs font-medium">Min Collateral Ratio (%)</label>
+                                          <Input
+                                            type="number"
+                                            value={config.minCollateralRatio}
+                                            min={config.globalMinCollateralRatio}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { minCollateralRatio: parseInt(e.target.value) || config.globalMinCollateralRatio })}
+                                            className="h-8 text-sm"
+                                          />
+                                          <p className="mt-0.5 text-xs text-muted-foreground">Min: {config.globalMinCollateralRatio}%</p>
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-xs font-medium">Liquidation Ratio (%)</label>
+                                          <Input
+                                            type="number"
+                                            value={config.liquidationRatio}
+                                            min={config.globalLiquidationRatio}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { liquidationRatio: parseInt(e.target.value) || config.globalLiquidationRatio })}
+                                            className="h-8 text-sm"
+                                          />
+                                          <p className="mt-0.5 text-xs text-muted-foreground">Min: {config.globalLiquidationRatio}%</p>
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-xs font-medium">Liquidation Penalty (%)</label>
+                                          <Input
+                                            type="number"
+                                            value={config.liquidationPenalty}
+                                            min={0}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { liquidationPenalty: parseInt(e.target.value) || 0 })}
+                                            className="h-8 text-sm"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-xs font-medium">Stability Fee (bps)</label>
+                                          <Input
+                                            type="number"
+                                            value={config.stabilityFee}
+                                            min={0}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { stabilityFee: parseInt(e.target.value) || 0 })}
+                                            className="h-8 text-sm"
+                                          />
+                                          <p className="mt-0.5 text-xs text-muted-foreground">{(config.stabilityFee / 100).toFixed(2)}% annual</p>
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-xs font-medium">Debt Ceiling</label>
+                                          <Input
+                                            type="number"
+                                            value={config.debtCeiling}
+                                            min={0}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { debtCeiling: parseInt(e.target.value) || 0 })}
+                                            className="h-8 text-sm"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-xs font-medium">Debt Floor</label>
+                                          <Input
+                                            type="number"
+                                            value={config.debtFloor}
+                                            min={0}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { debtFloor: parseInt(e.target.value) || 0 })}
+                                            className="h-8 text-sm"
+                                          />
+                                        </div>
+                                        <div className="col-span-2">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="text-xs"
+                                            onClick={() => updateCollateralConfig(config.asset, {
+                                              minCollateralRatio: config.globalMinCollateralRatio,
+                                              liquidationRatio: config.globalLiquidationRatio,
+                                              liquidationPenalty: 10,
+                                              stabilityFee: 200,
+                                              debtCeiling: 1000000,
+                                              debtFloor: 100,
+                                            })}
+                                          >
+                                            <RotateCcw className="mr-1 h-3 w-3" /> Reset to Defaults
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {configStatus === 'saving' && (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Configuring collateral {configProgress + 1} of {enabledCollateralConfigs.length}...
+                              </div>
+                            )}
+                            {configStatus === 'done' && (
+                              <div className="flex items-center gap-2 text-sm text-green-600">
+                                <CheckCircle className="h-4 w-4" />
+                                All collaterals configured! You can now deploy the token.
+                              </div>
+                            )}
+                            {configStatus === 'error' && (
+                              <p className="text-xs text-red-500">{configError}</p>
+                            )}
+
+                            {configStatus !== 'saving' && configStatus !== 'done' && (
+                              <Button
+                                size="sm"
+                                className="w-full"
+                                disabled={enabledCollateralConfigs.length === 0}
+                                onClick={handleSaveCollateralConfigs}
+                              >
+                                <Settings className="mr-1 h-3 w-3" />
+                                Save Collateral Config ({enabledCollateralConfigs.length} selected)
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => { setConfiguringCoinId(coin.id); setCollateralConfigs([]); }}
+                          >
+                            <Settings className="mr-1 h-3 w-3" /> Configure Collaterals
+                          </Button>
+                        )}
+
+                        {/* Existing collateral config summary */}
+                        {existingCollaterals.length > 0 && configuringCoinId === coin.id && configStatus === 'done' && (
+                          <div className="rounded-lg bg-muted/50 p-2">
+                            <p className="text-xs font-medium mb-1">Configured collaterals:</p>
+                            {existingCollaterals.map((ec) => (
+                              <p key={ec.asset} className="text-xs text-muted-foreground">
+                                {formatAssetName(ec.asset)} — {ec.minCollateralRatio}% ratio, {ec.liquidationRatio}% liq
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Deploy & Link Token - only for unlinked coins */}
+                        {!coin.tokenContract && (
+                          <>
+                            {deployingCoinId === coin.id && deployStatus === 'deploying' && !deployTxId && (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Waiting for wallet approval...
+                              </div>
+                            )}
+                            {deployingCoinId === coin.id && deployStatus === 'deploying' && deployTxId && (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Deploying token contract...
+                                </div>
+                                <a
+                                  href={`https://explorer.hiro.so/txid/${deployTxId}?chain=testnet`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                >
+                                  View deploy tx <ExternalLink className="h-3 w-3" />
+                                </a>
+                              </div>
+                            )}
+                            {deployingCoinId === coin.id && deployStatus === 'linking' && (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Token deployed! Linking to stablecoin...
+                              </div>
+                            )}
+                            {deployingCoinId === coin.id && deployStatus === 'done' && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-sm text-green-600">
+                                  <CheckCircle className="h-4 w-4" />
+                                  Token deployed and linked!
+                                </div>
+                                <Button size="sm" variant="outline" onClick={resetDeployState}>
+                                  Dismiss
+                                </Button>
+                              </div>
+                            )}
+                            {deployingCoinId === coin.id && deployStatus === 'error' && (
+                              <div className="space-y-2">
+                                <p className="text-xs text-red-500">{deployError}</p>
+                                <Button size="sm" variant="outline" onClick={resetDeployState}>
+                                  Dismiss
+                                </Button>
+                              </div>
+                            )}
+                            {(deployingCoinId !== coin.id || deployStatus === null) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                disabled={deployStatus === 'deploying' || deployStatus === 'linking'}
+                                onClick={() => handleDeployAndLink(coin)}
+                              >
+                                <Coins className="mr-1 h-3 w-3" /> Deploy & Link Token
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {coin.tokenContract && (
+                      <p className="mt-2 w-full truncate text-xs text-muted-foreground" title={coin.tokenContract}>
+                        Token: {coin.tokenContract}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -388,7 +865,7 @@ export default function FactoryPage() {
           <CardTitle>How It Works</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-4">
             <div className="text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
                 1
@@ -402,18 +879,27 @@ export default function FactoryPage() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
                 2
               </div>
-              <h3 className="mt-4 font-semibold">Deploy Token</h3>
+              <h3 className="mt-4 font-semibold">Configure Collaterals</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Deploy a SIP-010 compliant token contract for your stablecoin
+                Select which collateral types your stablecoin accepts and set risk parameters
               </p>
             </div>
             <div className="text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
                 3
               </div>
-              <h3 className="mt-4 font-semibold">Link & Mint</h3>
+              <h3 className="mt-4 font-semibold">Deploy & Link Token</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Link your token contract and start minting through vaults
+                Click &quot;Deploy & Link Token&quot; to auto-deploy a SIP-010 contract and link it
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
+                4
+              </div>
+              <h3 className="mt-4 font-semibold">Create Vaults</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Your stablecoin is ready — create vaults and start minting
               </p>
             </div>
           </div>

@@ -181,7 +181,7 @@ function VaultList({ vaults }: { vaults: Vault[] }) {
               </div>
               <div>
                 <p className="text-muted-foreground">Debt</p>
-                <p className="font-medium">{formatSTX(vault.debtAmount)} sUSD</p>
+                <p className="font-medium">{formatSTX(vault.debtAmount)} stablecoins</p>
               </div>
             </div>
             <div className="flex gap-2">

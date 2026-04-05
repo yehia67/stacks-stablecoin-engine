@@ -95,7 +95,7 @@ export default function PoolPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Stability Pool</h1>
         <p className="text-muted-foreground">
-          Deposit sUSD to earn liquidation rewards and help stabilize the protocol
+          Deposit stablecoins to earn liquidation rewards and help stabilize the protocol
         </p>
       </div>
 
@@ -111,7 +111,7 @@ export default function PoolPage() {
             <div className="text-2xl font-bold">
               {poolStats ? `$${formatNumber(poolStats.totalDeposits)}` : "—"}
             </div>
-            <p className="text-xs text-muted-foreground">sUSD</p>
+            <p className="text-xs text-muted-foreground">stablecoins</p>
           </CardContent>
         </Card>
 
@@ -191,7 +191,7 @@ export default function PoolPage() {
                       className="pr-16"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      sUSD
+                      stablecoins
                     </span>
                   </div>
                   <div className="mt-2 flex gap-2">
@@ -214,7 +214,7 @@ export default function PoolPage() {
                   loading={isLoading}
                 >
                   <TrendingUp className="mr-2 h-4 w-4" />
-                  Deposit sUSD
+                  Deposit stablecoins
                 </Button>
               </TabsContent>
 
@@ -232,11 +232,11 @@ export default function PoolPage() {
                       className="pr-16"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      sUSD
+                      stablecoins
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Available: {poolStats ? formatNumber(poolStats.userDeposit) : "—"} sUSD
+                    Available: {poolStats ? formatNumber(poolStats.userDeposit) : "—"} stablecoins
                   </p>
                   <div className="mt-2 flex gap-2">
                     {[25, 50, 75, 100].map((pct) => (
@@ -259,7 +259,7 @@ export default function PoolPage() {
                   loading={isLoading}
                 >
                   <TrendingDown className="mr-2 h-4 w-4" />
-                  Withdraw sUSD
+                  Withdraw stablecoins
                 </Button>
               </TabsContent>
             </Tabs>

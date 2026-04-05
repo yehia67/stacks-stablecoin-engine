@@ -15,9 +15,9 @@ function getTestAccounts() {
 }
 
 function authorizeVaultEngine(deployer: string) {
-  const vaultEnginePrincipal = `${deployer}.vault-engine`;
+  const vaultEnginePrincipal = `${deployer}.vault-engine-v2`;
   const result = simnet.callPublicFn(
-    "stablecoin-token",
+    "stablecoin-token-v2",
     "set-vault-engine",
     [Cl.principal(vaultEnginePrincipal)],
     deployer
@@ -25,29 +25,29 @@ function authorizeVaultEngine(deployer: string) {
   expect(result.result).toBeOk(Cl.bool(true));
 }
 
-describe("stablecoin-token hardening", () => {
+describe("stablecoin-token-v2 hardening", () => {
   it("returns expected SIP-010 metadata responses", () => {
     const { deployer } = getTestAccounts();
 
-    const name = simnet.callReadOnlyFn("stablecoin-token", "get-name", [], deployer);
+    const name = simnet.callReadOnlyFn("stablecoin-token-v2", "get-name", [], deployer);
     expect(name.result).toBeOk(Cl.stringAscii("SSE Stablecoin"));
 
-    const symbol = simnet.callReadOnlyFn("stablecoin-token", "get-symbol", [], deployer);
+    const symbol = simnet.callReadOnlyFn("stablecoin-token-v2", "get-symbol", [], deployer);
     expect(symbol.result).toBeOk(Cl.stringAscii("SSEUSD"));
 
-    const decimals = simnet.callReadOnlyFn("stablecoin-token", "get-decimals", [], deployer);
+    const decimals = simnet.callReadOnlyFn("stablecoin-token-v2", "get-decimals", [], deployer);
     expect(decimals.result).toBeOk(Cl.uint(6));
 
-    const tokenUri = simnet.callReadOnlyFn("stablecoin-token", "get-token-uri", [], deployer);
+    const tokenUri = simnet.callReadOnlyFn("stablecoin-token-v2", "get-token-uri", [], deployer);
     expect(tokenUri.result).toBeOk(Cl.none());
   });
 
-  it("only allows contract owner to set vault-engine", () => {
+  it("only allows contract owner to set vault-engine-v2", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const vaultEnginePrincipal = `${deployer}.vault-engine`;
+    const vaultEnginePrincipal = `${deployer}.vault-engine-v2`;
 
     const unauthorized = simnet.callPublicFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "set-vault-engine",
       [Cl.principal(vaultEnginePrincipal)],
       wallet1
@@ -55,7 +55,7 @@ describe("stablecoin-token hardening", () => {
     expect(unauthorized.result).toBeErr(Cl.uint(401));
 
     const authorized = simnet.callPublicFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "set-vault-engine",
       [Cl.principal(vaultEnginePrincipal)],
       deployer
@@ -68,29 +68,29 @@ describe("stablecoin-token hardening", () => {
     authorizeVaultEngine(deployer);
 
     const directMint = simnet.callPublicFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "mint",
       [Cl.uint(100), Cl.principal(wallet1)],
       deployer
     );
     expect(directMint.result).toBeErr(Cl.uint(401));
 
-    let result = simnet.callPublicFn("vault-engine", "open-vault", [], wallet1);
+    let result = simnet.callPublicFn("vault-engine-v2", "open-vault", [], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     result = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "deposit-collateral",
       [Cl.uint(1200)],
       wallet1
     );
     expect(result.result).toBeOk(Cl.uint(1200));
 
-    result = simnet.callPublicFn("vault-engine", "mint", [Cl.uint(600)], wallet1);
+    result = simnet.callPublicFn("vault-engine-v2", "mint", [Cl.uint(600)], wallet1);
     expect(result.result).toBeOk(Cl.uint(600));
 
     const totalSupplyAfterMint = simnet.callReadOnlyFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "get-total-supply",
       [],
       wallet1
@@ -98,18 +98,18 @@ describe("stablecoin-token hardening", () => {
     expect(totalSupplyAfterMint.result).toBeOk(Cl.uint(600));
 
     const directBurn = simnet.callPublicFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "burn",
       [Cl.uint(50), Cl.principal(wallet1)],
       deployer
     );
     expect(directBurn.result).toBeErr(Cl.uint(401));
 
-    result = simnet.callPublicFn("vault-engine", "burn", [Cl.uint(200)], wallet1);
+    result = simnet.callPublicFn("vault-engine-v2", "burn", [Cl.uint(200)], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     result = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "withdraw-collateral",
       [Cl.uint(300)],
       wallet1
@@ -117,7 +117,7 @@ describe("stablecoin-token hardening", () => {
     expect(result.result).toBeOk(Cl.uint(900));
 
     const balance = simnet.callReadOnlyFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "get-balance",
       [Cl.principal(wallet1)],
       wallet1
@@ -125,7 +125,7 @@ describe("stablecoin-token hardening", () => {
     expect(balance.result).toBeOk(Cl.uint(400));
 
     const totalSupplyAfterBurn = simnet.callReadOnlyFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "get-total-supply",
       [],
       wallet1
@@ -133,7 +133,7 @@ describe("stablecoin-token hardening", () => {
     expect(totalSupplyAfterBurn.result).toBeOk(Cl.uint(400));
 
     const health = simnet.callReadOnlyFn(
-      "vault-engine",
+      "vault-engine-v2",
       "get-health-factor",
       [Cl.principal(wallet1)],
       wallet1
@@ -145,22 +145,22 @@ describe("stablecoin-token hardening", () => {
     const { deployer, wallet1 } = getTestAccounts();
     authorizeVaultEngine(deployer);
 
-    let result = simnet.callPublicFn("vault-engine", "open-vault", [], wallet1);
+    let result = simnet.callPublicFn("vault-engine-v2", "open-vault", [], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     result = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "deposit-collateral",
       [Cl.uint(1000)],
       wallet1
     );
     expect(result.result).toBeOk(Cl.uint(1000));
 
-    result = simnet.callPublicFn("vault-engine", "mint", [Cl.uint(700)], wallet1);
+    result = simnet.callPublicFn("vault-engine-v2", "mint", [Cl.uint(700)], wallet1);
     expect(result.result).toBeErr(Cl.uint(204));
 
     const balance = simnet.callReadOnlyFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "get-balance",
       [Cl.principal(wallet1)],
       wallet1
@@ -168,7 +168,7 @@ describe("stablecoin-token hardening", () => {
     expect(balance.result).toBeOk(Cl.uint(0));
 
     const totalSupply = simnet.callReadOnlyFn(
-      "stablecoin-token",
+      "stablecoin-token-v2",
       "get-total-supply",
       [],
       wallet1
@@ -205,22 +205,22 @@ describe("oracle integration", () => {
     const { deployer, wallet1 } = getTestAccounts();
     authorizeVaultEngine(deployer);
 
-    let result = simnet.callPublicFn("vault-engine", "open-vault", [], wallet1);
+    let result = simnet.callPublicFn("vault-engine-v2", "open-vault", [], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     result = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "deposit-collateral",
       [Cl.uint(1200)],
       wallet1
     );
     expect(result.result).toBeOk(Cl.uint(1200));
 
-    result = simnet.callPublicFn("vault-engine", "mint", [Cl.uint(600)], wallet1);
+    result = simnet.callPublicFn("vault-engine-v2", "mint", [Cl.uint(600)], wallet1);
     expect(result.result).toBeOk(Cl.uint(600));
 
     const healthBefore = simnet.callReadOnlyFn(
-      "vault-engine",
+      "vault-engine-v2",
       "get-health-factor",
       [Cl.principal(wallet1)],
       wallet1
@@ -236,18 +236,18 @@ describe("oracle integration", () => {
     expect(result.result).toBeOk(Cl.bool(true));
 
     const healthAfter = simnet.callReadOnlyFn(
-      "vault-engine",
+      "vault-engine-v2",
       "get-health-factor",
       [Cl.principal(wallet1)],
       wallet1
     );
     expect(healthAfter.result).toBeUint(100);
 
-    const unsafeMint = simnet.callPublicFn("vault-engine", "mint", [Cl.uint(1)], wallet1);
+    const unsafeMint = simnet.callPublicFn("vault-engine-v2", "mint", [Cl.uint(1)], wallet1);
     expect(unsafeMint.result).toBeErr(Cl.uint(204));
 
     const unsafeWithdraw = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "withdraw-collateral",
       [Cl.uint(1)],
       wallet1
@@ -287,27 +287,27 @@ describe("stability-pool ledger", () => {
   });
 });
 
-describe("liquidation-engine stub", () => {
+describe("liquidation-engine-v2 stub", () => {
   it("returns explicit error for healthy vaults", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
     authorizeVaultEngine(deployer);
 
-    let result = simnet.callPublicFn("vault-engine", "open-vault", [], wallet1);
+    let result = simnet.callPublicFn("vault-engine-v2", "open-vault", [], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     result = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "deposit-collateral",
       [Cl.uint(1200)],
       wallet1
     );
     expect(result.result).toBeOk(Cl.uint(1200));
 
-    result = simnet.callPublicFn("vault-engine", "mint", [Cl.uint(600)], wallet1);
+    result = simnet.callPublicFn("vault-engine-v2", "mint", [Cl.uint(600)], wallet1);
     expect(result.result).toBeOk(Cl.uint(600));
 
     const liquidation = simnet.callPublicFn(
-      "liquidation-engine",
+      "liquidation-engine-v2",
       "liquidate",
       [Cl.principal(wallet1)],
       wallet2
@@ -319,18 +319,18 @@ describe("liquidation-engine stub", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
     authorizeVaultEngine(deployer);
 
-    let result = simnet.callPublicFn("vault-engine", "open-vault", [], wallet1);
+    let result = simnet.callPublicFn("vault-engine-v2", "open-vault", [], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     result = simnet.callPublicFn(
-      "vault-engine",
+      "vault-engine-v2",
       "deposit-collateral",
       [Cl.uint(1200)],
       wallet1
     );
     expect(result.result).toBeOk(Cl.uint(1200));
 
-    result = simnet.callPublicFn("vault-engine", "mint", [Cl.uint(600)], wallet1);
+    result = simnet.callPublicFn("vault-engine-v2", "mint", [Cl.uint(600)], wallet1);
     expect(result.result).toBeOk(Cl.uint(600));
 
     result = simnet.callPublicFn(
@@ -342,7 +342,7 @@ describe("liquidation-engine stub", () => {
     expect(result.result).toBeOk(Cl.bool(true));
 
     const liquidation = simnet.callPublicFn(
-      "liquidation-engine",
+      "liquidation-engine-v2",
       "liquidate",
       [Cl.principal(wallet1)],
       wallet2
@@ -351,14 +351,14 @@ describe("liquidation-engine stub", () => {
   });
 });
 
-describe("collateral-registry config flow", () => {
+describe("collateral-registry-v2 config flow", () => {
   it("supports owner add/get and rejects non-owner writes", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const assetPrincipal = `${deployer}.stablecoin-token`;
+    const assetPrincipal = `${deployer}.stablecoin-token-v2`;
     const oraclePrincipal = `${deployer}.price-oracle-mock`;
 
     const unauthorized = simnet.callPublicFn(
-      "collateral-registry",
+      "collateral-registry-v2",
       "add-collateral-type",
       [
         Cl.principal(assetPrincipal),
@@ -375,7 +375,7 @@ describe("collateral-registry config flow", () => {
     expect(unauthorized.result).toBeErr(Cl.uint(100));
 
     const authorized = simnet.callPublicFn(
-      "collateral-registry",
+      "collateral-registry-v2",
       "add-collateral-type",
       [
         Cl.principal(assetPrincipal),
@@ -392,7 +392,7 @@ describe("collateral-registry config flow", () => {
     expect(authorized.result).toBeOk(Cl.bool(true));
 
     const config = simnet.callReadOnlyFn(
-      "collateral-registry",
+      "collateral-registry-v2",
       "get-collateral-config",
       [Cl.principal(assetPrincipal)],
       deployer
