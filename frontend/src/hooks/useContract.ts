@@ -76,88 +76,7 @@ export function useContract() {
     [doContractCall]
   );
 
-  // Vault Engine functions
-  const openVault = useCallback(
-    (onSuccess?: (txId: string) => void, onError?: (error: Error) => void) => {
-      return callContract({
-        contractName: CONTRACTS.VAULT_ENGINE,
-        functionName: "open-vault",
-        functionArgs: [],
-        onSuccess,
-        onError,
-      });
-    },
-    [callContract]
-  );
-
-  const depositCollateral = useCallback(
-    (
-      amount: number,
-      onSuccess?: (txId: string) => void,
-      onError?: (error: Error) => void
-    ) => {
-      return callContract({
-        contractName: CONTRACTS.VAULT_ENGINE,
-        functionName: "deposit-collateral",
-        functionArgs: [uintCV(amount)],
-        onSuccess,
-        onError,
-      });
-    },
-    [callContract]
-  );
-
-  const withdrawCollateral = useCallback(
-    (
-      amount: number,
-      onSuccess?: (txId: string) => void,
-      onError?: (error: Error) => void
-    ) => {
-      return callContract({
-        contractName: CONTRACTS.VAULT_ENGINE,
-        functionName: "withdraw-collateral",
-        functionArgs: [uintCV(amount)],
-        onSuccess,
-        onError,
-      });
-    },
-    [callContract]
-  );
-
-  const mint = useCallback(
-    (
-      amount: number,
-      onSuccess?: (txId: string) => void,
-      onError?: (error: Error) => void
-    ) => {
-      return callContract({
-        contractName: CONTRACTS.VAULT_ENGINE,
-        functionName: "mint",
-        functionArgs: [uintCV(amount)],
-        onSuccess,
-        onError,
-      });
-    },
-    [callContract]
-  );
-
-  const burn = useCallback(
-    (
-      amount: number,
-      onSuccess?: (txId: string) => void,
-      onError?: (error: Error) => void
-    ) => {
-      return callContract({
-        contractName: CONTRACTS.VAULT_ENGINE,
-        functionName: "burn",
-        functionArgs: [uintCV(amount)],
-        onSuccess,
-        onError,
-      });
-    },
-    [callContract]
-  );
-
+  // Multi-Asset Vault Engine functions
   const openVaultForStablecoin = useCallback(
     (
       stablecoinId: number,
@@ -186,7 +105,12 @@ export function useContract() {
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "deposit-collateral-for-stablecoin",
-        functionArgs: [uintCV(stablecoinId), parseContractPrincipal(collateralAsset), uintCV(amount)],
+        functionArgs: [
+          uintCV(stablecoinId),
+          parseContractPrincipal(collateralAsset),
+          parseContractPrincipal(collateralAsset),
+          uintCV(amount),
+        ],
         onSuccess,
         onError,
       });
@@ -255,7 +179,12 @@ export function useContract() {
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "withdraw-collateral-for-stablecoin",
-        functionArgs: [uintCV(stablecoinId), parseContractPrincipal(collateralAsset), uintCV(amount)],
+        functionArgs: [
+          uintCV(stablecoinId),
+          parseContractPrincipal(collateralAsset),
+          parseContractPrincipal(collateralAsset),
+          uintCV(amount),
+        ],
         onSuccess,
         onError,
       });
@@ -480,28 +409,29 @@ export function useContract() {
   const liquidate = useCallback(
     (
       owner: string,
+      stablecoinId: number,
+      collateralAsset: string,
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
       return callContract({
         contractName: CONTRACTS.LIQUIDATION_ENGINE,
         functionName: "liquidate",
-        functionArgs: [principalCV(owner)],
+        functionArgs: [
+          principalCV(owner),
+          uintCV(stablecoinId),
+          parseContractPrincipal(collateralAsset),
+        ],
         onSuccess,
         onError,
       });
     },
-    [callContract]
+    [callContract, parseContractPrincipal]
   );
 
   return {
     callContract,
     // Vault operations
-    openVault,
-    depositCollateral,
-    withdrawCollateral,
-    mint,
-    burn,
     openVaultForStablecoin,
     depositCollateralForStablecoin,
     mintAgainstAssetForStablecoin,

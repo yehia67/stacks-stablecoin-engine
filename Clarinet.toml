@@ -112,20 +112,15 @@ epoch = "3.1"
 path = "contracts/bridge-registry-v3.clar"
 epoch = "3.1"
 
-[contracts.vault-engine-v3]
-path = "contracts/vault-engine-v3.clar"
-epoch = "3.1"
-depends_on = ["stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3"]
-
 [contracts.liquidation-engine-v3]
 path = "contracts/liquidation-engine-v3.clar"
 epoch = "3.1"
-depends_on = ["vault-engine-v3"]
+depends_on = ["multi-asset-vault-engine-v3"]
 
 [contracts.multi-asset-vault-engine-v3]
 path = "contracts/multi-asset-vault-engine-v3.clar"
 epoch = "3.1"
-depends_on = ["stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3", "collateral-registry-v3", "stablecoin-factory-v3", "stablecoin-engine-token-trait"]
+depends_on = ["sip-010-trait", "stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3", "collateral-registry-v3", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v3", "stx-token-v3"]
 
 [contracts.xreserve-adapter-v3]
 path = "contracts/xreserve-adapter-v3.clar"

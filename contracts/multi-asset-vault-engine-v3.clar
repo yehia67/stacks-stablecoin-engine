@@ -2,6 +2,7 @@
 ;; Supports multiple collateral types and per-stablecoin vault namespaces.
 
 (use-trait token-trait .stablecoin-engine-token-trait.stablecoin-engine-token-trait)
+(use-trait sip-010-trait .sip-010-trait.sip-010-trait)
 
 ;; ============================================
 ;; Error Constants
@@ -21,6 +22,7 @@
 (define-constant ERR_TOKEN_MISMATCH u212)
 (define-constant ERR_ASSET_NOT_WHITELISTED u213)
 (define-constant ERR_UNKNOWN_ORACLE u214)
+(define-constant ERR_ASSET_MISMATCH u215)
 
 ;; ============================================
 ;; Constants
@@ -193,8 +195,9 @@
   )
 )
 
-(define-private (deposit-collateral-internal (stablecoin-id uint) (asset principal) (amount uint))
+(define-private (deposit-collateral-internal (stablecoin-id uint) (asset principal) (collateral-token <sip-010-trait>) (amount uint))
   (begin
+    (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
     (asserts!
       (is-some (map-get? vaults {owner: tx-sender, stablecoin-id: stablecoin-id}))
       (err ERR_NO_VAULT)
@@ -236,7 +239,7 @@
               true
             )
 
-            ;; TODO(sBTC/SIP-010): transfer collateral from user to protocol custody.
+            (try! (contract-call? collateral-token transfer amount tx-sender (as-contract tx-sender)))
             (print {
               event: "collateral-deposited",
               owner: tx-sender,
@@ -254,8 +257,9 @@
   )
 )
 
-(define-private (withdraw-collateral-internal (stablecoin-id uint) (asset principal) (amount uint))
+(define-private (withdraw-collateral-internal (stablecoin-id uint) (asset principal) (collateral-token <sip-010-trait>) (amount uint))
   (begin
+    (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
     (match (map-get? vaults {owner: tx-sender, stablecoin-id: stablecoin-id})
       vault
         (match (map-get? vault-collateral {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset})
@@ -268,6 +272,7 @@
                   (debt-share (get debt-share position))
                   (min-ratio (get-min-ratio-for-stablecoin-asset stablecoin-id asset))
                   (new-collateral-value (calculate-collateral-value asset new-amount))
+                  (user tx-sender)
                 )
                 (if (> debt-share u0)
                   (let ((health-factor (calculate-position-health-factor new-collateral-value debt-share min-ratio)))
@@ -284,7 +289,7 @@
                   }
                 )
 
-                ;; TODO(sBTC/SIP-010): transfer collateral back to user.
+                (try! (as-contract (contract-call? collateral-token transfer amount tx-sender user)))
                 (print {
                   event: "collateral-withdrawn",
                   owner: tx-sender,
@@ -574,21 +579,21 @@
 )
 
 ;; Backward-compatible default namespace for legacy integrations.
-(define-public (deposit-collateral (asset principal) (amount uint))
-  (deposit-collateral-internal u0 asset amount)
+(define-public (deposit-collateral (asset principal) (collateral-token <sip-010-trait>) (amount uint))
+  (deposit-collateral-internal u0 asset collateral-token amount)
 )
 
-(define-public (deposit-collateral-for-stablecoin (stablecoin-id uint) (asset principal) (amount uint))
-  (deposit-collateral-internal stablecoin-id asset amount)
+(define-public (deposit-collateral-for-stablecoin (stablecoin-id uint) (asset principal) (collateral-token <sip-010-trait>) (amount uint))
+  (deposit-collateral-internal stablecoin-id asset collateral-token amount)
 )
 
 ;; Backward-compatible default namespace for legacy integrations.
-(define-public (withdraw-collateral (asset principal) (amount uint))
-  (withdraw-collateral-internal u0 asset amount)
+(define-public (withdraw-collateral (asset principal) (collateral-token <sip-010-trait>) (amount uint))
+  (withdraw-collateral-internal u0 asset collateral-token amount)
 )
 
-(define-public (withdraw-collateral-for-stablecoin (stablecoin-id uint) (asset principal) (amount uint))
-  (withdraw-collateral-internal stablecoin-id asset amount)
+(define-public (withdraw-collateral-for-stablecoin (stablecoin-id uint) (asset principal) (collateral-token <sip-010-trait>) (amount uint))
+  (withdraw-collateral-internal stablecoin-id asset collateral-token amount)
 )
 
 ;; Backward-compatible default token minting path.
