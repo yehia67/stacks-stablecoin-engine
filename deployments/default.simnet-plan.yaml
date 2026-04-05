@@ -58,6 +58,7 @@ genesis:
     - pox-4
     - signers
     - signers-voting
+    - costs-4
 plan:
   batches:
     - id: 0
@@ -148,9 +149,9 @@ plan:
             path: contracts/stablecoin-token-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: vault-engine-v3
+            contract-name: multi-asset-vault-engine-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/vault-engine-v3.clar
+            path: contracts/multi-asset-vault-engine-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: liquidation-engine-v3
@@ -161,11 +162,6 @@ plan:
             contract-name: multi-asset-vault-engine-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/multi-asset-vault-engine.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: multi-asset-vault-engine-v3
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/multi-asset-vault-engine-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: sbtc-token-v3
@@ -187,14 +183,14 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stx-token-v3.clar
             clarity-version: 3
-      epoch: "3.1"
-    - id: 1
-      transactions:
         - emulated-contract-publish:
             contract-name: xreserve-adapter-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/xreserve-adapter.clar
             clarity-version: 3
+      epoch: "3.1"
+    - id: 1
+      transactions:
         - emulated-contract-publish:
             contract-name: xreserve-adapter-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM

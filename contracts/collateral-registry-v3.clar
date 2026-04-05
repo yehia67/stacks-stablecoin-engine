@@ -374,7 +374,6 @@
 (define-map authorized-vault-engines principal bool)
 
 ;; Pre-authorize the known vault engines at deploy time
-(map-set authorized-vault-engines .vault-engine-v3 true)
 (map-set authorized-vault-engines .multi-asset-vault-engine-v3 true)
 
 (define-private (is-authorized-caller)

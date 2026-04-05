@@ -1,8 +1,8 @@
 (define-constant ERR_HEALTHY u300)
 (define-constant MIN_HEALTH u150)
 
-(define-public (liquidate (owner principal))
-  (let ((health-factor (contract-call? .vault-engine-v3 get-health-factor owner)))
+(define-public (liquidate (owner principal) (stablecoin-id uint) (asset principal))
+  (let ((health-factor (contract-call? .multi-asset-vault-engine-v3 get-position-health-factor-for-stablecoin owner stablecoin-id asset)))
     (if (>= health-factor MIN_HEALTH)
       (err ERR_HEALTHY)
       (begin
