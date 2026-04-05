@@ -59,7 +59,7 @@
         ;; Placeholder health check uses mock-oracle price and fixed scale assumptions.
         ;; TODO: use oracle + collateral registry + asset-specific risk parameters for production checks.
         (asserts! (>= health-factor MIN-HEALTH-FACTOR) (err ERR_UNSAFE_HEALTH_FACTOR))
-        (try! (contract-call? .stablecoin-token mint amount tx-sender))
+        (try! (contract-call? .stablecoin-token-v2 mint amount tx-sender))
         (map-set vaults
           {owner: tx-sender}
           {collateral: collateral, debt: new-debt}
@@ -75,7 +75,7 @@
     vault
       (begin
         (asserts! (>= (get debt vault) amount) (err ERR_INSUFFICIENT_DEBT))
-        (try! (contract-call? .stablecoin-token burn amount tx-sender))
+        (try! (contract-call? .stablecoin-token-v2 burn amount tx-sender))
         (map-set vaults
           {owner: tx-sender}
           {collateral: (get collateral vault), debt: (- (get debt vault) amount)}

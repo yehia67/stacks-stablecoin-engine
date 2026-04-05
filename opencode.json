@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "README.md",
+    "frontend/stacks-stablecoin-engine/README.md",
+    "docs/SSE_CONTEXT.md"
+  ]
+}

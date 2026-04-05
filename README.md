@@ -190,34 +190,58 @@ This project uses Clarinet deployment plans.
    clarinet deployments apply --testnet
    ```
 
-## Testnet Deployment (March 9, 2026)
+## Testnet Deployment (v3 clean flow)
 Deployer principal:
 - `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
 
-Published contract identifiers:
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.oracle-trait`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-mock`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sip-010-trait`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine`
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool`
+v3 contract names in this repository:
+- `stablecoin-factory-v3`
+- `collateral-registry-v3`
+- `stablecoin-token-v3`
+- `vault-engine-v3`
+- `liquidation-engine-v3`
+- `multi-asset-vault-engine-v3`
+- `xreserve-adapter-v3`
+- `price-oracle-sbtc-v3`
+- `price-oracle-stx-v3`
+- `stability-pool-v3`
+- `bridge-registry-v3`
+- `sbtc-token-v3` (faucet token)
+- `stx-token-v3` (faucet token)
 
-Deployment summary:
-- Total cost: `0.100090 STX`
-- Confirmation time: `1 block`
+### Clean v3 Deployment (recommended)
+
+**Step 1** — Deploy core contracts via Clarinet:
+```bash
+npm run deploy:v3
+```
+
+**Step 2** — Bootstrap (deploys faucet tokens + configures everything):
+```bash
+npm run bootstrap:v3
+```
+
+The bootstrap script handles:
+- Deploying `sbtc-token-v3` and `stx-token-v3` faucet tokens
+- Authorizing vault engines in `stablecoin-token-v3`
+- Authorizing vault engines in `collateral-registry-v3`
+- Registering per-asset oracle mappings in `multi-asset-vault-engine-v3`
+- Setting oracle prices
+- Minting faucet tokens to deployer
+- Adding collateral types (sBTC + STX) with risk parameters
+
+> **Note:** Do NOT run `deploy:collaterals:v3` if using `bootstrap:v3` — the bootstrap script already deploys the faucet tokens.
 
 ## Post-Deployment Initialization (Required)
-Before minting through `vault-engine`, the deployer must authorize it inside `stablecoin-token`:
+Before minting through `vault-engine-v3`, the deployer must authorize it inside `stablecoin-token-v3`:
 
 ```clarity
-(contract-call? .stablecoin-token set-vault-engine
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine
+(contract-call? .stablecoin-token-v3 set-vault-engine
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine-v3
 )
 ```
 
-If this is skipped, `vault-engine` mint/burn calls will fail with `err u401`.
+If this is skipped, `vault-engine-v3` mint/burn calls will fail with `err u401`.
 
 ## How to Test on Testnet
 
@@ -238,8 +262,8 @@ Then verify:
 ### 2) Oracle sensitivity check
 As deployer:
 1. Call `price-oracle-mock::set-price u50000000` (drops price from 1.0 to 0.5 in 1e8 scale).
-2. Re-check `vault-engine::get-health-factor '<YOUR_TESTNET_PRINCIPAL>`.
-3. If health factor is below `u150`, call `liquidation-engine::liquidate '<YOUR_TESTNET_PRINCIPAL>`.
+2. Re-check `vault-engine-v3::get-health-factor '<YOUR_TESTNET_PRINCIPAL>`.
+3. If health factor is below `u150`, call `liquidation-engine-v3::liquidate '<YOUR_TESTNET_PRINCIPAL>`.
 
 Expected behavior:
 - Healthy vault: `liquidate` returns `(err u300)`
@@ -249,15 +273,19 @@ Expected behavior:
 As deployer:
 
 ```clarity
-(contract-call? .collateral-registry add-collateral-type
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token
+(contract-call? .collateral-registry-v3 add-collateral-type
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
   u150
+  u120
   u10
+  u200
   u1000000
+  u100
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-sbtc-v3
 )
 
-(contract-call? .collateral-registry get-collateral-config
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token
+(contract-call? .collateral-registry-v3 get-collateral-config
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
 )
 ```
 

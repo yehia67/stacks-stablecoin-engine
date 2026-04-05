@@ -2,7 +2,7 @@
 (define-constant MIN_HEALTH u150)
 
 (define-public (liquidate (owner principal))
-  (let ((health-factor (contract-call? .vault-engine get-health-factor owner)))
+  (let ((health-factor (contract-call? .vault-engine-v2 get-health-factor owner)))
     (if (>= health-factor MIN_HEALTH)
       (err ERR_HEALTHY)
       (begin
