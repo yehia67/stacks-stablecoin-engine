@@ -107,6 +107,7 @@ depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
 [contracts.stability-pool-v3]
 path = "contracts/stability-pool-v3.clar"
 epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-factory-v3", "stablecoin-token-v3"]
 
 [contracts.bridge-registry-v3]
 path = "contracts/bridge-registry-v3.clar"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { TrendingUp, TrendingDown, Wallet, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,17 +9,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
+import { useRegisteredStablecoins } from "@/hooks/useContractRead";
 import { formatNumber } from "@/lib/utils";
 
 export default function PoolPage() {
   const { isConnected } = useWallet();
   const { depositToPool, withdrawFromPool } = useContract();
+  const { stablecoins, isLoading: stablecoinsLoading } = useRegisteredStablecoins();
 
+  const [selectedStablecoinId, setSelectedStablecoinId] = useState<number | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // TODO: Fetch from contracts
+  // Only show stablecoins that have a linked token contract
+  const linkedStablecoins = useMemo(
+    () => stablecoins.filter((coin) => coin.tokenContract !== null),
+    [stablecoins]
+  );
+
+  const selectedStablecoin = linkedStablecoins.find((coin) => coin.id === selectedStablecoinId) ?? null;
+
+  // TODO: Fetch from contracts using balance-of-for-stablecoin / get-total-deposits
   const [poolStats, setPoolStats] = useState<{
     totalDeposits: number;
     userDeposit: number;
@@ -30,10 +41,12 @@ export default function PoolPage() {
   } | null>(null);
 
   const handleDeposit = async () => {
-    if (!depositAmount) return;
+    if (!depositAmount || !selectedStablecoin || !selectedStablecoin.tokenContract) return;
     setIsLoading(true);
     try {
       await depositToPool(
+        selectedStablecoin.id,
+        selectedStablecoin.tokenContract,
         parseFloat(depositAmount) * 1000000,
         (txId) => {
           console.log("Deposit successful:", txId);
@@ -52,10 +65,12 @@ export default function PoolPage() {
   };
 
   const handleWithdraw = async () => {
-    if (!withdrawAmount) return;
+    if (!withdrawAmount || !selectedStablecoin || !selectedStablecoin.tokenContract) return;
     setIsLoading(true);
     try {
       await withdrawFromPool(
+        selectedStablecoin.id,
+        selectedStablecoin.tokenContract,
         parseFloat(withdrawAmount) * 1000000,
         (txId) => {
           console.log("Withdrawal successful:", txId);
@@ -97,6 +112,32 @@ export default function PoolPage() {
         <p className="text-muted-foreground">
           Deposit stablecoins to earn liquidation rewards and help stabilize the protocol
         </p>
+      </div>
+
+      {/* Stablecoin Selection */}
+      <div className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold">Select Stablecoin Pool</h2>
+        {stablecoinsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading stablecoins...</p>
+        ) : linkedStablecoins.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No stablecoins with linked token contracts found. Register and link a token in the Factory first.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {linkedStablecoins.map((coin) => (
+              <button
+                key={coin.id}
+                onClick={() => setSelectedStablecoinId(coin.id)}
+                className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted ${
+                  selectedStablecoinId === coin.id ? "border-primary bg-primary/5" : ""
+                }`}
+              >
+                {coin.name} ({coin.symbol})
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Pool Stats */}
@@ -210,7 +251,7 @@ export default function PoolPage() {
                 <Button
                   className="w-full"
                   onClick={handleDeposit}
-                  disabled={!depositAmount || parseFloat(depositAmount) <= 0}
+                  disabled={!selectedStablecoin || !depositAmount || parseFloat(depositAmount) <= 0}
                   loading={isLoading}
                 >
                   <TrendingUp className="mr-2 h-4 w-4" />
@@ -255,7 +296,7 @@ export default function PoolPage() {
                   className="w-full"
                   variant="outline"
                   onClick={handleWithdraw}
-                  disabled={!withdrawAmount || parseFloat(withdrawAmount) <= 0}
+                  disabled={!selectedStablecoin || !withdrawAmount || parseFloat(withdrawAmount) <= 0}
                   loading={isLoading}
                 >
                   <TrendingDown className="mr-2 h-4 w-4" />
