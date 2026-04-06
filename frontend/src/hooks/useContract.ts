@@ -436,7 +436,7 @@ export function useContract() {
         onError,
       });
     },
-    [callContract]
+    [callContract, parseContractPrincipal]
   );
 
   // Claim collateral rewards from stability pool
