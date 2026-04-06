@@ -23,6 +23,7 @@
 (define-constant ERR_ASSET_NOT_WHITELISTED u213)
 (define-constant ERR_UNKNOWN_ORACLE u214)
 (define-constant ERR_ASSET_MISMATCH u215)
+(define-constant ERR_NOT_LIQUIDATION_ENGINE u216)
 
 ;; ============================================
 ;; Constants
@@ -793,5 +794,71 @@
   (match (map-get? vaults {owner: owner, stablecoin-id: stablecoin-id})
     vault (get total-debt vault)
     u0
+  )
+)
+
+;; ============================================
+;; Liquidation Support (called by liquidation engine)
+;; ============================================
+
+;; Seize collateral from a vault and burn stablecoins from the stability pool.
+;; Only callable by the liquidation engine.
+(define-public (liquidate-position
+    (owner principal)
+    (stablecoin-id uint)
+    (asset principal)
+    (collateral-token <sip-010-trait>)
+    (stablecoin-token <token-trait>)
+    (debt-to-offset uint)
+    (collateral-to-seize uint))
+  (begin
+    (asserts! (is-eq contract-caller .liquidation-engine-v3) (err ERR_NOT_LIQUIDATION_ENGINE))
+    (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
+    (try! (assert-token-contract-match stablecoin-id stablecoin-token))
+
+    (match (map-get? vaults {owner: owner, stablecoin-id: stablecoin-id})
+      vault
+        (match (map-get? vault-collateral {owner: owner, stablecoin-id: stablecoin-id, asset: asset})
+          position
+            (begin
+              (asserts! (>= (get amount position) collateral-to-seize) (err ERR_INSUFFICIENT_COLLATERAL))
+              (asserts! (>= (get debt-share position) debt-to-offset) (err ERR_INSUFFICIENT_DEBT))
+
+              ;; Reduce vault collateral and debt
+              (map-set vault-collateral
+                {owner: owner, stablecoin-id: stablecoin-id, asset: asset}
+                {
+                  amount: (- (get amount position) collateral-to-seize),
+                  debt-share: (- (get debt-share position) debt-to-offset)
+                }
+              )
+              (map-set vaults
+                {owner: owner, stablecoin-id: stablecoin-id}
+                {
+                  total-debt: (- (get total-debt vault) debt-to-offset),
+                  created-at: (get created-at vault)
+                }
+              )
+              ;; Reduce debt in registry
+              (try! (contract-call? .collateral-registry-v3 decrease-stablecoin-debt stablecoin-id asset debt-to-offset))
+              ;; Transfer seized collateral to stability pool
+              (try! (as-contract (contract-call? collateral-token transfer collateral-to-seize tx-sender .stability-pool-v3)))
+              ;; Burn stablecoins from stability pool's balance
+              (try! (contract-call? stablecoin-token burn debt-to-offset .stability-pool-v3))
+
+              (print {
+                event: "position-liquidated",
+                owner: owner,
+                stablecoin-id: stablecoin-id,
+                asset: asset,
+                debt-offset: debt-to-offset,
+                collateral-seized: collateral-to-seize
+              })
+              (ok true)
+            )
+          (err ERR_NO_COLLATERAL_POSITION)
+        )
+      (err ERR_NO_VAULT)
+    )
   )
 )

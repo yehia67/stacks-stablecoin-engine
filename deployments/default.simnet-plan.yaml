@@ -154,6 +154,11 @@ plan:
             path: contracts/multi-asset-vault-engine-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: stability-pool-v3
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/stability-pool-v3.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: liquidation-engine-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidation-engine-v3.clar
@@ -172,11 +177,6 @@ plan:
             contract-name: stability-pool
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stability-pool.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: stability-pool-v3
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stability-pool-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: stx-token-v3
