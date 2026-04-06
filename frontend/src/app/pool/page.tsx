@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { TrendingUp, TrendingDown, Wallet, Info } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, Info, Gift, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,12 +14,13 @@ import { formatNumber } from "@/lib/utils";
 
 export default function PoolPage() {
   const { isConnected } = useWallet();
-  const { depositToPool, withdrawFromPool } = useContract();
+  const { depositToPool, withdrawFromPool, setLiquidationRewardPct, claimCollateralReward } = useContract();
   const { stablecoins, isLoading: stablecoinsLoading } = useRegisteredStablecoins();
 
   const [selectedStablecoinId, setSelectedStablecoinId] = useState<number | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [rewardPct, setRewardPct] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   // Only show stablecoins that have a linked token contract
@@ -79,6 +80,52 @@ export default function PoolPage() {
         },
         (error) => {
           console.error("Withdrawal failed:", error);
+          setIsLoading(false);
+        }
+      );
+    } catch (error) {
+      console.error(error);
+      setIsLoading(false);
+    }
+  };
+
+  const handleSetRewardPct = async () => {
+    if (!rewardPct || !selectedStablecoin) return;
+    setIsLoading(true);
+    try {
+      const basisPoints = Math.round(parseFloat(rewardPct) * 100);
+      await setLiquidationRewardPct(
+        selectedStablecoin.id,
+        basisPoints,
+        (txId) => {
+          console.log("Reward pct set:", txId);
+          setRewardPct("");
+          setIsLoading(false);
+        },
+        (error) => {
+          console.error("Set reward pct failed:", error);
+          setIsLoading(false);
+        }
+      );
+    } catch (error) {
+      console.error(error);
+      setIsLoading(false);
+    }
+  };
+
+  const handleClaimReward = async (assetPrincipal: string) => {
+    if (!selectedStablecoin) return;
+    setIsLoading(true);
+    try {
+      await claimCollateralReward(
+        selectedStablecoin.id,
+        assetPrincipal,
+        (txId) => {
+          console.log("Reward claimed:", txId);
+          setIsLoading(false);
+        },
+        (error) => {
+          console.error("Claim failed:", error);
           setIsLoading(false);
         }
       );
@@ -307,22 +354,85 @@ export default function PoolPage() {
           </CardContent>
         </Card>
 
-        {/* Pool Info Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Pool Information</CardTitle>
-            <CardDescription>How the stability pool works</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span>Pool Utilization</span>
-                <span className="font-medium">{poolStats ? `${poolStats.utilizationRate}%` : "—"}</span>
-              </div>
-              <Progress value={poolStats?.utilizationRate ?? 0} className="h-2" />
-            </div>
+        {/* Rewards & Settings Card */}
+        <div className="space-y-6">
+          {/* Claim Rewards */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gift className="h-5 w-5" />
+                Collateral Rewards
+              </CardTitle>
+              <CardDescription>Claim collateral earned from liquidations</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                When vaults are liquidated, your pool deposit absorbs bad debt and you receive
+                the seized collateral (including the liquidation reward bonus) proportionally.
+              </p>
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={() => handleClaimReward(`${process.env.NEXT_PUBLIC_DEPLOYER_ADDRESS}.sbtc-token-v3`)}
+                disabled={!selectedStablecoin || isLoading}
+              >
+                <Gift className="mr-2 h-4 w-4" />
+                Claim sBTC Rewards
+              </Button>
+            </CardContent>
+          </Card>
 
-            <div className="space-y-4">
+          {/* Reward Config (Creator Only) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Reward Configuration
+              </CardTitle>
+              <CardDescription>Set liquidation reward percentage (stablecoin creator only)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="mb-2 block text-sm font-medium">
+                  Reward Percentage
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder="e.g. 10 for 10%"
+                    value={rewardPct}
+                    onChange={(e) => setRewardPct(e.target.value)}
+                    className="pr-8"
+                    min="0"
+                    max="50"
+                    step="0.01"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Max 50%. This is the bonus collateral depositors receive on liquidations.
+                </p>
+              </div>
+              <Button
+                className="w-full"
+                onClick={handleSetRewardPct}
+                disabled={!selectedStablecoin || !rewardPct || parseFloat(rewardPct) < 0 || parseFloat(rewardPct) > 50}
+                loading={isLoading}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Set Reward %
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Info Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>How It Works</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="flex items-start gap-3 rounded-lg bg-muted p-4">
                 <Info className="mt-0.5 h-5 w-5 text-primary" />
                 <div>
@@ -333,31 +443,18 @@ export default function PoolPage() {
                   </p>
                 </div>
               </div>
-
               <div className="flex items-start gap-3 rounded-lg bg-muted p-4">
                 <Info className="mt-0.5 h-5 w-5 text-primary" />
                 <div>
                   <p className="font-medium">No Lock-up Period</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Withdraw your funds at any time. There are no minimum 
-                    deposit requirements or lock-up periods.
+                    Withdraw your funds at any time. No minimum deposit or lock-up.
                   </p>
                 </div>
               </div>
-
-              <div className="flex items-start gap-3 rounded-lg bg-muted p-4">
-                <Info className="mt-0.5 h-5 w-5 text-primary" />
-                <div>
-                  <p className="font-medium">Protocol Stability</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Your deposits help maintain protocol health by providing 
-                    liquidity for liquidations.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

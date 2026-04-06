@@ -116,7 +116,7 @@ epoch = "3.1"
 [contracts.liquidation-engine-v3]
 path = "contracts/liquidation-engine-v3.clar"
 epoch = "3.1"
-depends_on = ["multi-asset-vault-engine-v3"]
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v3", "stability-pool-v3"]
 
 [contracts.multi-asset-vault-engine-v3]
 path = "contracts/multi-asset-vault-engine-v3.clar"

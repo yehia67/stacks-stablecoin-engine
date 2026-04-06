@@ -417,12 +417,58 @@ export function useContract() {
     [callContract, parseContractPrincipal]
   );
 
+  // Pool reward config (creator only)
+  const setLiquidationRewardPct = useCallback(
+    (
+      stablecoinId: number,
+      pct: number,
+      onSuccess?: (txId: string) => void,
+      onError?: (error: Error) => void
+    ) => {
+      return callContract({
+        contractName: CONTRACTS.STABILITY_POOL,
+        functionName: "set-liquidation-reward-pct",
+        functionArgs: [
+          uintCV(stablecoinId),
+          uintCV(pct),
+        ],
+        onSuccess,
+        onError,
+      });
+    },
+    [callContract]
+  );
+
+  // Claim collateral rewards from stability pool
+  const claimCollateralReward = useCallback(
+    (
+      stablecoinId: number,
+      assetPrincipal: string,
+      onSuccess?: (txId: string) => void,
+      onError?: (error: Error) => void
+    ) => {
+      return callContract({
+        contractName: CONTRACTS.STABILITY_POOL,
+        functionName: "claim-collateral-reward",
+        functionArgs: [
+          uintCV(stablecoinId),
+          parseContractPrincipal(assetPrincipal),
+          parseContractPrincipal(assetPrincipal),
+        ],
+        onSuccess,
+        onError,
+      });
+    },
+    [callContract, parseContractPrincipal]
+  );
+
   // Liquidation functions
   const liquidate = useCallback(
     (
       owner: string,
       stablecoinId: number,
       collateralAsset: string,
+      stablecoinTokenPrincipal: string,
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
@@ -433,6 +479,8 @@ export function useContract() {
           principalCV(owner),
           uintCV(stablecoinId),
           parseContractPrincipal(collateralAsset),
+          parseContractPrincipal(collateralAsset),
+          parseContractPrincipal(stablecoinTokenPrincipal),
         ],
         onSuccess,
         onError,
@@ -460,6 +508,8 @@ export function useContract() {
     // Pool operations
     depositToPool,
     withdrawFromPool,
+    setLiquidationRewardPct,
+    claimCollateralReward,
     // Liquidation
     liquidate,
   };
