@@ -35,6 +35,6 @@ The repo still contains placeholders/TODOs for:
 - ~~custody transfers for pool assets~~ — **DONE**: `stability-pool-v3` now performs real SIP-010 token transfers with stablecoin-scoped balances
 - ~~liquidation reward accounting~~ — **DONE**: Creator-configurable reward percentage. Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution.
 - ~~liquidation settlement logic~~ — **DONE**: Full orchestration in `liquidation-engine-v3`: health check → vault engine `liquidate-position` (seizes collateral, burns stablecoins) → stability pool `distribute-liquidation-reward`
-- production-grade oracle validation
+- ~~production-grade oracle validation~~ — **DONE**: DIA push-based oracle integration with staleness guard. `price-oracle-dia-btc` / `price-oracle-dia-stx` wrap DIA's `get-value` with configurable max-age check. Mock oracles (IDs 1/2) retained for simnet; DIA oracles (IDs 3/4) for testnet/mainnet.
 
 These are known prototype boundaries and should be documented when touched.

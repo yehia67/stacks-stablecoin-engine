@@ -99,6 +99,11 @@ plan:
             path: contracts/collateral-registry-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: dia-oracle-adapter
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/dia-oracle-adapter.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: oracle-trait
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/oracle-trait.clar
@@ -132,6 +137,16 @@ plan:
             contract-name: liquidation-engine-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidation-engine.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-dia-btc
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-dia-btc.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-dia-stx
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-dia-stx.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: price-oracle-sbtc-v3
@@ -173,6 +188,9 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sbtc-token-v3.clar
             clarity-version: 3
+      epoch: "3.1"
+    - id: 1
+      transactions:
         - emulated-contract-publish:
             contract-name: stability-pool
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
@@ -188,9 +206,6 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/xreserve-adapter.clar
             clarity-version: 3
-      epoch: "3.1"
-    - id: 1
-      transactions:
         - emulated-contract-publish:
             contract-name: xreserve-adapter-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM

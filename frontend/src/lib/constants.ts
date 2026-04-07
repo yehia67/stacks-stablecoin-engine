@@ -28,6 +28,9 @@ export const CONTRACTS = {
   STABILITY_POOL: "stability-pool-v3",
   PRICE_ORACLE_SBTC: "price-oracle-sbtc-v3",
   PRICE_ORACLE_STX: "price-oracle-stx-v3",
+  PRICE_ORACLE_DIA_BTC: "price-oracle-dia-btc",
+  PRICE_ORACLE_DIA_STX: "price-oracle-dia-stx",
+  DIA_ORACLE_ADAPTER: "dia-oracle-adapter",
   STABLECOIN_ENGINE_TOKEN_TRAIT: "stablecoin-engine-token-trait",
   BRIDGE_ADAPTER_TRAIT: "bridge-adapter-trait",
   BRIDGE_REGISTRY: "bridge-registry-v3",
@@ -42,6 +45,21 @@ export const APP_CONFIG = {
   name: "Stacks Stablecoin Engine",
   icon: "/logo.png",
 };
+
+// Oracle IDs matching contract constants in multi-asset-vault-engine-v3
+// Mock oracles (simnet/devnet): SBTC=1, STX=2
+// DIA oracles (testnet/mainnet): BTC=3, STX=4
+export const ORACLE_IDS = {
+  MOCK_SBTC: 1,
+  MOCK_STX: 2,
+  DIA_BTC: 3,
+  DIA_STX: 4,
+};
+
+// Use DIA oracles on testnet/mainnet, mock oracles on devnet
+const USE_DIA = NETWORK === "testnet" || NETWORK === "mainnet";
+export const ACTIVE_ORACLE_ID_BTC = USE_DIA ? ORACLE_IDS.DIA_BTC : ORACLE_IDS.MOCK_SBTC;
+export const ACTIVE_ORACLE_ID_STX = USE_DIA ? ORACLE_IDS.DIA_STX : ORACLE_IDS.MOCK_STX;
 
 // Default values (used when contracts aren't deployed or data can't be fetched)
 export const DEFAULTS = {
