@@ -36,6 +36,8 @@
 ;; Known oracle IDs
 (define-constant ORACLE-SBTC u1)
 (define-constant ORACLE-STX u2)
+(define-constant ORACLE-DIA-BTC u3)
+(define-constant ORACLE-DIA-STX u4)
 
 ;; ============================================
 ;; Data Maps
@@ -79,7 +81,7 @@
 (define-public (register-asset-oracle (asset principal) (oracle-id uint))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
-    (asserts! (or (is-eq oracle-id ORACLE-SBTC) (is-eq oracle-id ORACLE-STX)) (err ERR_UNKNOWN_ORACLE))
+    (asserts! (or (is-eq oracle-id ORACLE-SBTC) (is-eq oracle-id ORACLE-STX) (is-eq oracle-id ORACLE-DIA-BTC) (is-eq oracle-id ORACLE-DIA-STX)) (err ERR_UNKNOWN_ORACLE))
     (map-set asset-oracle-id {asset: asset} {oracle-id: oracle-id})
     (ok true)
   )
@@ -101,7 +103,13 @@
     (unwrap-panic (contract-call? .price-oracle-sbtc-v3 get-price))
     (if (is-eq oracle-id ORACLE-STX)
       (unwrap-panic (contract-call? .price-oracle-stx-v3 get-price))
-      u0
+      (if (is-eq oracle-id ORACLE-DIA-BTC)
+        (unwrap-panic (contract-call? .price-oracle-dia-btc get-price))
+        (if (is-eq oracle-id ORACLE-DIA-STX)
+          (unwrap-panic (contract-call? .price-oracle-dia-stx get-price))
+          u0
+        )
+      )
     )
   )
 )

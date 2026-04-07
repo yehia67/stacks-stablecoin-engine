@@ -80,6 +80,20 @@ path = "contracts/price-oracle-stx-v3.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait"]
 
+[contracts.dia-oracle-adapter]
+path = "contracts/dia-oracle-adapter.clar"
+epoch = "3.1"
+
+[contracts.price-oracle-dia-btc]
+path = "contracts/price-oracle-dia-btc.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait", "dia-oracle-adapter"]
+
+[contracts.price-oracle-dia-stx]
+path = "contracts/price-oracle-dia-stx.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait", "dia-oracle-adapter"]
+
 [contracts.sbtc-token-v3]
 path = "contracts/sbtc-token-v3.clar"
 epoch = "3.1"
@@ -121,7 +135,7 @@ depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vau
 [contracts.multi-asset-vault-engine-v3]
 path = "contracts/multi-asset-vault-engine-v3.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3", "collateral-registry-v3", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v3", "stx-token-v3"]
+depends_on = ["sip-010-trait", "stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3", "price-oracle-dia-btc", "price-oracle-dia-stx", "collateral-registry-v3", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v3", "stx-token-v3"]
 
 [contracts.xreserve-adapter-v3]
 path = "contracts/xreserve-adapter-v3.clar"
