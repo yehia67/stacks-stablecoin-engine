@@ -114,14 +114,14 @@ describe("dia-oracle-adapter", () => {
 // DIA BTC Oracle Wrapper Tests
 // ============================================
 
-describe("price-oracle-dia-btc", () => {
+describe("price-oracle-dia-btc-v2", () => {
   it("returns BTC price from DIA adapter when fresh", () => {
     const { deployer } = getTestAccounts();
     // Seed a fresh price (set-value uses current block time)
     seedDiaPrice(deployer, "BTC/USD", 6700000000000);
 
     const result = simnet.callReadOnlyFn(
-      "price-oracle-dia-btc",
+      "price-oracle-dia-btc-v2",
       "get-price",
       [],
       deployer
@@ -135,7 +135,7 @@ describe("price-oracle-dia-btc", () => {
     seedDiaPriceWithTimestamp(deployer, "BTC/USD", 6700000000000, 0);
 
     const result = simnet.callReadOnlyFn(
-      "price-oracle-dia-btc",
+      "price-oracle-dia-btc-v2",
       "get-price",
       [],
       deployer
@@ -152,7 +152,7 @@ describe("price-oracle-dia-btc", () => {
     // Note: if a previous test seeded BTC/USD, this test's simnet
     // will be fresh (each describe/it gets a fresh simnet state)
     const result = simnet.callReadOnlyFn(
-      "price-oracle-dia-btc",
+      "price-oracle-dia-btc-v2",
       "get-price",
       [],
       deployer
@@ -165,7 +165,7 @@ describe("price-oracle-dia-btc", () => {
     const { deployer } = getTestAccounts();
 
     const setResult = simnet.callPublicFn(
-      "price-oracle-dia-btc",
+      "price-oracle-dia-btc-v2",
       "set-max-staleness",
       [Cl.uint(7200)],
       deployer
@@ -173,7 +173,7 @@ describe("price-oracle-dia-btc", () => {
     expect(setResult.result).toBeOk(Cl.bool(true));
 
     const getResult = simnet.callReadOnlyFn(
-      "price-oracle-dia-btc",
+      "price-oracle-dia-btc-v2",
       "get-max-staleness",
       [],
       deployer
@@ -185,7 +185,7 @@ describe("price-oracle-dia-btc", () => {
     const { wallet1 } = getTestAccounts();
 
     const result = simnet.callPublicFn(
-      "price-oracle-dia-btc",
+      "price-oracle-dia-btc-v2",
       "set-max-staleness",
       [Cl.uint(100)],
       wallet1
@@ -198,13 +198,13 @@ describe("price-oracle-dia-btc", () => {
 // DIA STX Oracle Wrapper Tests
 // ============================================
 
-describe("price-oracle-dia-stx", () => {
+describe("price-oracle-dia-stx-v2", () => {
   it("returns STX price from DIA adapter when fresh", () => {
     const { deployer } = getTestAccounts();
     seedDiaPrice(deployer, "STX/USD", 21200000);
 
     const result = simnet.callReadOnlyFn(
-      "price-oracle-dia-stx",
+      "price-oracle-dia-stx-v2",
       "get-price",
       [],
       deployer
@@ -217,7 +217,7 @@ describe("price-oracle-dia-stx", () => {
     seedDiaPriceWithTimestamp(deployer, "STX/USD", 21200000, 0);
 
     const result = simnet.callReadOnlyFn(
-      "price-oracle-dia-stx",
+      "price-oracle-dia-stx-v2",
       "get-price",
       [],
       deployer
@@ -236,7 +236,7 @@ describe("vault engine DIA oracle routing", () => {
     const sbtcAsset = `${deployer}.sbtc-token-v3`;
 
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "register-asset-oracle",
       [Cl.principal(sbtcAsset), Cl.uint(3)],
       deployer
@@ -249,7 +249,7 @@ describe("vault engine DIA oracle routing", () => {
     const stxAsset = `${deployer}.stx-token-v3`;
 
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "register-asset-oracle",
       [Cl.principal(stxAsset), Cl.uint(4)],
       deployer
@@ -262,7 +262,7 @@ describe("vault engine DIA oracle routing", () => {
     const sbtcAsset = `${deployer}.sbtc-token-v3`;
 
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "register-asset-oracle",
       [Cl.principal(sbtcAsset), Cl.uint(5)],
       deployer
@@ -273,7 +273,7 @@ describe("vault engine DIA oracle routing", () => {
   it("vault engine reads BTC price via DIA oracle ID", () => {
     const { deployer, wallet1 } = getTestAccounts();
     const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const oraclePrincipal = `${deployer}.price-oracle-sbtc-v3`;
+    const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
     const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
 
     // Seed DIA BTC price
@@ -281,7 +281,7 @@ describe("vault engine DIA oracle routing", () => {
 
     // Register sBTC with DIA-BTC oracle (ID 3)
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "register-asset-oracle",
       [Cl.principal(sbtcAsset), Cl.uint(3)],
       deployer
@@ -302,7 +302,7 @@ describe("vault engine DIA oracle routing", () => {
       wallet1
     );
     simnet.callPublicFn(
-      "collateral-registry-v3",
+      "collateral-registry-v4",
       "add-collateral-type",
       [
         Cl.principal(sbtcAsset),
@@ -313,7 +313,7 @@ describe("vault engine DIA oracle routing", () => {
       deployer
     );
     simnet.callPublicFn(
-      "collateral-registry-v3",
+      "collateral-registry-v4",
       "configure-collateral-for-stablecoin",
       [
         Cl.uint(0), Cl.principal(sbtcAsset),
@@ -325,15 +325,15 @@ describe("vault engine DIA oracle routing", () => {
     simnet.callPublicFn(
       "stablecoin-token-v3",
       "set-vault-engine",
-      [Cl.principal(`${deployer}.multi-asset-vault-engine-v3`)],
+      [Cl.principal(`${deployer}.multi-asset-vault-engine-v5`)],
       deployer
     );
 
     // Faucet sBTC + open vault + deposit
     simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(10000), Cl.principal(wallet1)], wallet1);
-    simnet.callPublicFn("multi-asset-vault-engine-v3", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(10000)],
       wallet1
@@ -341,7 +341,7 @@ describe("vault engine DIA oracle routing", () => {
 
     // Mint stablecoins — this triggers the vault engine to read the DIA oracle price
     const mintResult = simnet.callPublicFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(2000)],
       wallet1
@@ -350,7 +350,7 @@ describe("vault engine DIA oracle routing", () => {
 
     // Verify health factor is computed using DIA price
     const healthResult = simnet.callReadOnlyFn(
-      "multi-asset-vault-engine-v3",
+      "multi-asset-vault-engine-v5",
       "get-position-health-factor-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       deployer

@@ -10,9 +10,9 @@
     "test": "vitest run",
     "test:report": "vitest run -- --coverage --costs",
     "test:watch": "chokidar \"tests/**/*.ts\" \"contracts/**/*.clar\" -c \"npm run test:report\"",
-    "deploy:v3": "clarinet deployments apply -p deployments/default.testnet-plan.yaml --no-dashboard",
-    "deploy:collaterals:v3": "clarinet deployments apply -p deployments/collaterals-v3.testnet-plan.yaml --no-dashboard",
-    "bootstrap:v3": "node scripts/bootstrap-v3.cjs"
+    "deploy": "node scripts/deploy.cjs",
+    "deploy:testnet": "node scripts/deploy.cjs --network testnet",
+    "deploy:mainnet": "node scripts/deploy.cjs --network mainnet"
   },
   "author": "",
   "license": "ISC",

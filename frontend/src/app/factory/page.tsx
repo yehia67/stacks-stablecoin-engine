@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { formatNumber } from "@/lib/utils";
 import { CONTRACTS, DEFAULTS } from "@/lib/constants";
-import { useRegistrationFee, useRegisteredStablecoins, useStablecoinCount, useIsNameTaken, useIsSymbolTaken, useCollateralTypes, useStablecoinCollateralList } from "@/hooks/useContractRead";
+import { useRegistrationFee, useRegisteredStablecoins, useIsNameTaken, useIsSymbolTaken, useCollateralTypes, useStablecoinCollateralList } from "@/hooks/useContractRead";
 
 // Per-collateral config state for the factory form
 interface CollateralConfigEntry {
   asset: string;
+  existsOnChain: boolean;
+  enabledOnChain: boolean;
   enabled: boolean;
   minCollateralRatio: number;
   liquidationRatio: number;
@@ -25,18 +26,30 @@ interface CollateralConfigEntry {
   // Global defaults for reference
   globalMinCollateralRatio: number;
   globalLiquidationRatio: number;
+  globalLiquidationPenalty: number;
+  globalStabilityFee: number;
+  globalDebtCeiling: number;
+  globalDebtFloor: number;
 }
 
 export default function FactoryPage() {
   const { isConnected, address } = useWallet();
-  const { registerStablecoin, deployTokenContract, setTokenContract, configureCollateralForStablecoin } = useContract();
+  const {
+    registerStablecoin,
+    deployTokenContract,
+    setTokenContract,
+    configureCollateralForStablecoin,
+    updateCollateralForStablecoin,
+    disableCollateralForStablecoin,
+    enableCollateralForStablecoin,
+  } = useContract();
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
 
   // Live duplicate checks against on-chain state
   const { isTaken: isNameTaken, isChecking: isCheckingName } = useIsNameTaken(name);
-  const { isTaken: isSymbolTaken, isChecking: isCheckingSymbol } = useIsSymbolTaken(symbol.toUpperCase());
+  const { isTaken: isSymbolTaken, isChecking: isCheckingSymbol } = useIsSymbolTaken(symbol);
   const [isLoading, setIsLoading] = useState(false);
 
   // Deploy & Link token contract state
@@ -57,37 +70,57 @@ export default function FactoryPage() {
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
   const [configError, setConfigError] = useState<string | null>(null);
   const [configProgress, setConfigProgress] = useState(0);
-  const { collaterals: existingCollaterals, refetch: refetchExistingCollaterals } = useStablecoinCollateralList(configuringCoinId);
+  const {
+    collaterals: existingCollaterals,
+    isLoading: existingCollateralsLoading,
+    refetch: refetchExistingCollaterals,
+  } = useStablecoinCollateralList(configuringCoinId);
 
-  // Initialize collateral configs when collateral types load or when configuring a new coin
+  // Merge global collateral options with the stablecoin's on-chain configuration.
   useEffect(() => {
-    if (collateralTypes.length > 0 && configuringCoinId !== null && collateralConfigs.length === 0) {
-      setCollateralConfigs(
-        collateralTypes.map((ct) => ({
-          asset: ct.asset,
-          enabled: false,
-          minCollateralRatio: ct.minCollateralRatio,
-          liquidationRatio: ct.liquidationRatio,
-          liquidationPenalty: 10,
-          stabilityFee: 200,
-          debtCeiling: 1000000,
-          debtFloor: 100,
-          globalMinCollateralRatio: ct.minCollateralRatio,
-          globalLiquidationRatio: ct.liquidationRatio,
-        }))
-      );
+    if (configuringCoinId !== null && collateralTypes.length > 0 && !existingCollateralsLoading) {
+      const existingByAsset = new Map(existingCollaterals.map((collateral) => [collateral.asset, collateral]));
+      const merged = collateralTypes.map((ct) => ({
+        existsOnChain: existingByAsset.has(ct.asset),
+        enabledOnChain: existingByAsset.get(ct.asset)?.enabled ?? false,
+        asset: ct.asset,
+        enabled: existingByAsset.get(ct.asset)?.enabled ?? false,
+        minCollateralRatio: existingByAsset.get(ct.asset)?.minCollateralRatio ?? ct.minCollateralRatio,
+        liquidationRatio: existingByAsset.get(ct.asset)?.liquidationRatio ?? ct.liquidationRatio,
+        liquidationPenalty: existingByAsset.get(ct.asset)?.liquidationPenalty ?? ct.liquidationPenalty,
+        stabilityFee: existingByAsset.get(ct.asset)?.stabilityFee ?? ct.stabilityFee,
+        debtCeiling: existingByAsset.get(ct.asset)?.debtCeiling ?? ct.debtCeiling,
+        debtFloor: existingByAsset.get(ct.asset)?.debtFloor ?? ct.debtFloor,
+        globalMinCollateralRatio: ct.minCollateralRatio,
+        globalLiquidationRatio: ct.liquidationRatio,
+        globalLiquidationPenalty: ct.liquidationPenalty,
+        globalStabilityFee: ct.stabilityFee,
+        globalDebtCeiling: ct.debtCeiling,
+        globalDebtFloor: ct.debtFloor,
+      }));
+      setCollateralConfigs(merged);
     }
-  }, [collateralTypes, configuringCoinId, collateralConfigs.length]);
+  }, [collateralTypes, configuringCoinId, existingCollaterals, existingCollateralsLoading]);
 
-  // Fetch registered stablecoins from contract
-  const { stablecoins: registeredStablecoins, isLoading: coinsLoading, refetch: refetchCoins } = useRegisteredStablecoins();
-  const { count: stablecoinCount } = useStablecoinCount();
+  // Fetch registered stablecoins from contract — filter to show only the connected user's coins
+  const { stablecoins: allStablecoins, isLoading: coinsLoading, refetch: refetchCoins } = useRegisteredStablecoins();
+  const registeredStablecoins = allStablecoins.filter((coin) => coin.creator === address);
 
   // Fetch registration fee from blockchain
   const { fee: registrationFee, isLoading: feeLoading, error: feeError } = useRegistrationFee();
-  const isValidForm = name.length >= 3 && symbol.length >= 2 && symbol.length <= 5 && !isNameTaken && !isSymbolTaken;
+  const isValidForm = name.length >= 3 && symbol.length >= 2 && symbol.length <= 10 && !isNameTaken && !isSymbolTaken;
 
-  const enabledCollateralConfigs = collateralConfigs.filter((c) => c.enabled);
+  const pendingCollateralActions = collateralConfigs.filter((config) => {
+    // New collateral to configure
+    if (!config.existsOnChain && config.enabled) return true;
+    // Disable an enabled collateral
+    if (config.existsOnChain && config.enabledOnChain && !config.enabled) return true;
+    // Re-enable a disabled collateral
+    if (config.existsOnChain && !config.enabledOnChain && config.enabled) return true;
+    // Update an enabled collateral (check if params changed - for now always include)
+    if (config.existsOnChain && config.enabledOnChain && config.enabled) return true;
+    return false;
+  });
 
   const updateCollateralConfig = (asset: string, updates: Partial<CollateralConfigEntry>) => {
     setCollateralConfigs((prev) =>
@@ -96,38 +129,100 @@ export default function FactoryPage() {
   };
 
   const handleSaveCollateralConfigs = async () => {
-    if (configuringCoinId === null || enabledCollateralConfigs.length === 0) return;
+    if (configuringCoinId === null || pendingCollateralActions.length === 0) return;
     setConfigStatus('saving');
     setConfigError(null);
     setConfigProgress(0);
 
     let completed = 0;
-    for (const config of enabledCollateralConfigs) {
+    for (const config of pendingCollateralActions) {
       try {
-        await new Promise<void>((resolve, reject) => {
-          configureCollateralForStablecoin(
-            configuringCoinId,
-            config.asset,
-            {
-              minCollateralRatio: config.minCollateralRatio,
-              liquidationRatio: config.liquidationRatio,
-              liquidationPenalty: config.liquidationPenalty,
-              stabilityFee: config.stabilityFee,
-              debtCeiling: config.debtCeiling,
-              debtFloor: config.debtFloor,
-            },
-            () => { completed++; setConfigProgress(completed); resolve(); },
-            (err) => reject(err)
-          );
+        // Step 1: Submit transaction and get txId
+        const txId = await new Promise<string>((resolve, reject) => {
+          const params = {
+            minCollateralRatio: config.minCollateralRatio,
+            liquidationRatio: config.liquidationRatio,
+            liquidationPenalty: config.liquidationPenalty,
+            stabilityFee: config.stabilityFee,
+            debtCeiling: config.debtCeiling,
+            debtFloor: config.debtFloor,
+          };
+
+          const onSuccess = (txId: string) => resolve(txId);
+          const onError = (err: Error) => reject(err);
+
+          if (!config.existsOnChain && config.enabled) {
+            configureCollateralForStablecoin(
+              configuringCoinId,
+              config.asset,
+              params,
+              onSuccess,
+              onError
+            );
+            return;
+          }
+
+          if (config.existsOnChain && config.enabledOnChain && !config.enabled) {
+            // Disable an enabled collateral
+            disableCollateralForStablecoin(
+              configuringCoinId,
+              config.asset,
+              onSuccess,
+              onError
+            );
+            return;
+          }
+
+          if (config.existsOnChain && !config.enabledOnChain && config.enabled) {
+            // Re-enable a disabled collateral
+            enableCollateralForStablecoin(
+              configuringCoinId,
+              config.asset,
+              onSuccess,
+              onError
+            );
+            return;
+          }
+
+          if (config.existsOnChain && config.enabledOnChain && config.enabled) {
+            // Update an enabled collateral's parameters
+            updateCollateralForStablecoin(
+              configuringCoinId,
+              config.asset,
+              params,
+              onSuccess,
+              onError
+            );
+            return;
+          }
+
+          // No action needed for this config
+          resolve('');
         });
+
+        // Step 2: If we got a txId, wait for confirmation
+        if (txId) {
+          console.log(`[SSE] Waiting for tx ${txId} to confirm...`);
+          const result = await waitForTxConfirmation(txId);
+          if (!result.success) {
+            throw new Error(result.error || 'Transaction failed');
+          }
+          console.log(`[SSE] Tx ${txId} confirmed successfully`);
+        }
+
+        completed++;
+        setConfigProgress(completed);
       } catch (err: any) {
         setConfigStatus('error');
-        setConfigError(`Failed to configure ${config.asset}: ${err.message}`);
+        setConfigError(`Failed to save ${config.asset}: ${err.message}`);
+        // Refetch to show actual on-chain state
+        refetchExistingCollaterals();
         return;
       }
     }
 
     setConfigStatus('done');
+    // Refetch to get confirmed on-chain state
     refetchExistingCollaterals();
   };
 
@@ -159,6 +254,23 @@ export default function FactoryPage() {
       return null;
     }
   }, []);
+
+  // Helper to wait for transaction confirmation (polls until success/failure)
+  const waitForTxConfirmation = useCallback(async (txId: string, maxAttempts = 60): Promise<{ success: boolean; error?: string }> => {
+    for (let i = 0; i < maxAttempts; i++) {
+      const txData = await checkTxStatus(txId);
+      if (txData) {
+        if (txData.tx_status === 'success') {
+          return { success: true };
+        } else if (txData.tx_status === 'abort_by_response' || txData.tx_status === 'abort_by_post_condition') {
+          return { success: false, error: txData.tx_result?.repr || 'Transaction failed on-chain' };
+        }
+      }
+      // Wait 3 seconds before next poll
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    return { success: false, error: 'Transaction confirmation timeout' };
+  }, [checkTxStatus]);
 
   useEffect(() => {
     if (!txId || txStatus === 'success' || txStatus === 'failed') return;
@@ -197,7 +309,7 @@ export default function FactoryPage() {
     try {
       await registerStablecoin(
         name,
-        symbol.toUpperCase(),
+        symbol,
         (newTxId) => {
           console.log("Transaction submitted:", newTxId);
           setTxId(newTxId);
@@ -398,7 +510,7 @@ export default function FactoryPage() {
             <CheckCircle className="mx-auto h-16 w-16 text-green-500" />
             <CardTitle className="mt-4">Stablecoin Registered!</CardTitle>
             <CardDescription>
-              Your stablecoin &quot;{name}&quot; ({symbol.toUpperCase()}) has been successfully registered.
+              Your stablecoin &quot;{name}&quot; ({symbol}) has been successfully registered.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -479,10 +591,10 @@ export default function FactoryPage() {
                 Symbol
               </label>
               <Input
-                placeholder="e.g., MUSD"
+                placeholder="e.g., MUSD or myUSD"
                 value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                maxLength={5}
+                onChange={(e) => setSymbol(e.target.value)}
+                maxLength={10}
               />
               {isCheckingSymbol && symbol.length >= 2 && (
                 <p className="mt-1 text-xs text-muted-foreground">Checking availability...</p>
@@ -495,7 +607,7 @@ export default function FactoryPage() {
               )}
               {!isCheckingSymbol && isSymbolTaken === null && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  2-5 uppercase characters
+                  2-10 characters
                 </p>
               )}
             </div>
@@ -539,9 +651,9 @@ export default function FactoryPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Registered Stablecoins</CardTitle>
+                <CardTitle>Your Stablecoins</CardTitle>
                 <CardDescription>
-                  {stablecoinCount !== null ? `${stablecoinCount} stablecoin${stablecoinCount !== 1 ? 's' : ''} registered` : 'Loading...'}
+                  {coinsLoading ? 'Loading...' : `${registeredStablecoins.length} stablecoin${registeredStablecoins.length !== 1 ? 's' : ''}`}
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => refetchCoins()}>
@@ -603,14 +715,14 @@ export default function FactoryPage() {
                         {configuringCoinId === coin.id ? (
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-semibold">Configure Accepted Collaterals</h4>
+                              <h4 className="text-sm font-semibold">Manage Accepted Collaterals</h4>
                               <Button size="sm" variant="ghost" onClick={resetCollateralConfig}>
                                 <XCircle className="h-3 w-3" />
                               </Button>
                             </div>
 
-                            {collateralTypesLoading ? (
-                              <p className="text-xs text-muted-foreground">Loading collateral types...</p>
+                            {collateralTypesLoading || existingCollateralsLoading ? (
+                              <p className="text-xs text-muted-foreground">Loading collateral configuration...</p>
                             ) : collateralConfigs.length === 0 ? (
                               <p className="text-xs text-muted-foreground">No global collateral types found in registry.</p>
                             ) : (
@@ -622,15 +734,23 @@ export default function FactoryPage() {
                                         <input
                                           type="checkbox"
                                           checked={config.enabled}
+                                          disabled={config.existsOnChain && !config.enabledOnChain}
                                           onChange={(e) => updateCollateralConfig(config.asset, { enabled: e.target.checked })}
                                           className="h-4 w-4 rounded"
                                         />
                                         <span className="text-sm font-medium">{formatAssetName(config.asset)}</span>
+                                        {config.existsOnChain ? (
+                                          <Badge variant={config.enabledOnChain ? "default" : "secondary"}>
+                                            {config.enabledOnChain ? "Configured" : "Disabled"}
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="outline">Available</Badge>
+                                        )}
                                         <span className="text-xs text-muted-foreground">
                                           (Global: {config.globalMinCollateralRatio}% / {config.globalLiquidationRatio}%)
                                         </span>
                                       </div>
-                                      {config.enabled && (
+                                      {(config.enabled || config.existsOnChain) && (
                                         <Button
                                           size="sm"
                                           variant="ghost"
@@ -641,14 +761,26 @@ export default function FactoryPage() {
                                       )}
                                     </div>
 
-                                    {config.enabled && expandedAsset === config.asset && (
+                                    {expandedAsset === config.asset && (config.enabled || config.existsOnChain) && (
                                       <div className="mt-3 grid grid-cols-2 gap-3">
+                                        <div className="col-span-2 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                                          {config.existsOnChain && !config.enabledOnChain
+                                            ? "This collateral is already disabled on-chain. The current contract supports updates and disables, but not re-enabling."
+                                            : config.existsOnChain && !config.enabled
+                                              ? "This collateral will be disabled for the stablecoin when you save."
+                                              : config.existsOnChain
+                                                ? "This is the current on-chain config. Edit values here, then save to update it."
+                                                : config.enabled
+                                                  ? "This collateral will be added for the stablecoin when you save."
+                                                  : "Enable this collateral to configure and save it."}
+                                        </div>
                                         <div>
                                           <label className="mb-1 block text-xs font-medium">Min Collateral Ratio (%)</label>
                                           <Input
                                             type="number"
                                             value={config.minCollateralRatio}
                                             min={config.globalMinCollateralRatio}
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
                                             onChange={(e) => updateCollateralConfig(config.asset, { minCollateralRatio: parseInt(e.target.value) || config.globalMinCollateralRatio })}
                                             className="h-8 text-sm"
                                           />
@@ -660,6 +792,7 @@ export default function FactoryPage() {
                                             type="number"
                                             value={config.liquidationRatio}
                                             min={config.globalLiquidationRatio}
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
                                             onChange={(e) => updateCollateralConfig(config.asset, { liquidationRatio: parseInt(e.target.value) || config.globalLiquidationRatio })}
                                             className="h-8 text-sm"
                                           />
@@ -670,10 +803,12 @@ export default function FactoryPage() {
                                           <Input
                                             type="number"
                                             value={config.liquidationPenalty}
-                                            min={0}
-                                            onChange={(e) => updateCollateralConfig(config.asset, { liquidationPenalty: parseInt(e.target.value) || 0 })}
+                                            min={config.globalLiquidationPenalty}
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { liquidationPenalty: parseInt(e.target.value) || config.globalLiquidationPenalty })}
                                             className="h-8 text-sm"
                                           />
+                                          <p className="mt-0.5 text-xs text-muted-foreground">Min: {config.globalLiquidationPenalty}%</p>
                                         </div>
                                         <div>
                                           <label className="mb-1 block text-xs font-medium">Stability Fee (bps)</label>
@@ -681,6 +816,7 @@ export default function FactoryPage() {
                                             type="number"
                                             value={config.stabilityFee}
                                             min={0}
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
                                             onChange={(e) => updateCollateralConfig(config.asset, { stabilityFee: parseInt(e.target.value) || 0 })}
                                             className="h-8 text-sm"
                                           />
@@ -692,6 +828,7 @@ export default function FactoryPage() {
                                             type="number"
                                             value={config.debtCeiling}
                                             min={0}
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
                                             onChange={(e) => updateCollateralConfig(config.asset, { debtCeiling: parseInt(e.target.value) || 0 })}
                                             className="h-8 text-sm"
                                           />
@@ -702,6 +839,7 @@ export default function FactoryPage() {
                                             type="number"
                                             value={config.debtFloor}
                                             min={0}
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
                                             onChange={(e) => updateCollateralConfig(config.asset, { debtFloor: parseInt(e.target.value) || 0 })}
                                             className="h-8 text-sm"
                                           />
@@ -711,13 +849,14 @@ export default function FactoryPage() {
                                             size="sm"
                                             variant="ghost"
                                             className="text-xs"
+                                            disabled={config.existsOnChain && !config.enabledOnChain}
                                             onClick={() => updateCollateralConfig(config.asset, {
                                               minCollateralRatio: config.globalMinCollateralRatio,
                                               liquidationRatio: config.globalLiquidationRatio,
-                                              liquidationPenalty: 10,
-                                              stabilityFee: 200,
-                                              debtCeiling: 1000000,
-                                              debtFloor: 100,
+                                              liquidationPenalty: config.globalLiquidationPenalty,
+                                              stabilityFee: config.globalStabilityFee,
+                                              debtCeiling: config.globalDebtCeiling,
+                                              debtFloor: config.globalDebtFloor,
                                             })}
                                           >
                                             <RotateCcw className="mr-1 h-3 w-3" /> Reset to Defaults
@@ -733,13 +872,13 @@ export default function FactoryPage() {
                             {configStatus === 'saving' && (
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                Configuring collateral {configProgress + 1} of {enabledCollateralConfigs.length}...
+                                Saving collateral change {configProgress + 1} of {pendingCollateralActions.length}...
                               </div>
                             )}
                             {configStatus === 'done' && (
                               <div className="flex items-center gap-2 text-sm text-green-600">
                                 <CheckCircle className="h-4 w-4" />
-                                All collaterals configured! You can now deploy the token.
+                                Collateral configuration saved on-chain.
                               </div>
                             )}
                             {configStatus === 'error' && (
@@ -750,11 +889,11 @@ export default function FactoryPage() {
                               <Button
                                 size="sm"
                                 className="w-full"
-                                disabled={enabledCollateralConfigs.length === 0}
+                                disabled={pendingCollateralActions.length === 0}
                                 onClick={handleSaveCollateralConfigs}
                               >
                                 <Settings className="mr-1 h-3 w-3" />
-                                Save Collateral Config ({enabledCollateralConfigs.length} selected)
+                                Save Collateral Changes ({pendingCollateralActions.length})
                               </Button>
                             )}
                           </div>
@@ -765,7 +904,7 @@ export default function FactoryPage() {
                             className="w-full"
                             onClick={() => { setConfiguringCoinId(coin.id); setCollateralConfigs([]); }}
                           >
-                            <Settings className="mr-1 h-3 w-3" /> Configure Collaterals
+                            <Settings className="mr-1 h-3 w-3" /> Manage Collaterals
                           </Button>
                         )}
 
@@ -775,7 +914,7 @@ export default function FactoryPage() {
                             <p className="text-xs font-medium mb-1">Configured collaterals:</p>
                             {existingCollaterals.map((ec) => (
                               <p key={ec.asset} className="text-xs text-muted-foreground">
-                                {formatAssetName(ec.asset)} — {ec.minCollateralRatio}% ratio, {ec.liquidationRatio}% liq
+                                {formatAssetName(ec.asset)} — {ec.minCollateralRatio}% ratio, {ec.liquidationRatio}% liq, {ec.enabled ? "enabled" : "disabled"}
                               </p>
                             ))}
                           </div>

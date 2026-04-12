@@ -13,3 +13,6 @@ costs-reports.json
 node_modules
 .next/
 *.env*
+
+# Generated deployment plans
+deployments/generated-*.yaml

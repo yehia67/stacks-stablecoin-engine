@@ -12,12 +12,15 @@ import { formatNumber, formatSTX, formatAddress } from "@/lib/utils";
 
 interface LiquidatableVault {
   id: number;
+  stablecoinId: number;
   owner: string;
+  collateralAsset: string;
   collateralType: string;
   collateralAmount: number;
   debtAmount: number;
   healthFactor: number;
   liquidationBonus: number;
+  stablecoinTokenContract: string;
 }
 
 export default function LiquidationsPage() {
@@ -44,6 +47,9 @@ export default function LiquidationsPage() {
     try {
       await liquidate(
         vault.owner,
+        vault.stablecoinId,
+        vault.collateralAsset,
+        vault.stablecoinTokenContract,
         (txId) => {
           console.log("Liquidation successful:", txId);
           setIsLoading(null);

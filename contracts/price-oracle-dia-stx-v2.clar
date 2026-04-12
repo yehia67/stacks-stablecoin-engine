@@ -1,7 +1,8 @@
-;; DIA-backed BTC/USD Price Oracle
+;; DIA-backed STX/USD Price Oracle v2
 ;; ---
-;; Implements oracle-trait by reading BTC/USD from the DIA oracle adapter.
+;; Implements oracle-trait by reading STX/USD from the DIA oracle adapter.
 ;; Includes configurable staleness guard -- rejects prices older than MAX_STALENESS seconds.
+;; v2: Fixes DIA timestamp handling (DIA returns milliseconds, block time is seconds).
 
 (impl-trait .oracle-trait.oracle-trait)
 
@@ -9,7 +10,7 @@
 (define-constant ERR_UNAUTHORIZED u600)
 (define-constant ERR_STALE_PRICE u601)
 (define-constant ERR_NO_PRICE u602)
-(define-constant PAIR "BTC/USD")
+(define-constant PAIR "STX/USD")
 
 ;; Default max staleness: 3600 seconds (1 hour)
 (define-data-var max-staleness uint u3600)
@@ -32,7 +33,7 @@
   (let (
       (dia-data (unwrap! (contract-call? .dia-oracle-adapter get-value PAIR) (err ERR_NO_PRICE)))
       (price-value (get value dia-data))
-      (price-ts (get timestamp dia-data))
+      (price-ts (/ (get timestamp dia-data) u1000))
       (current-ts (unwrap! (get-stacks-block-info? time (- stacks-block-height u1)) (err ERR_NO_PRICE)))
       (age (- current-ts price-ts))
     )

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Info, AlertTriangle, Coins, Loader2, CheckCircle, XCircle, ExternalLink } from "lucide-react";
 import { cvToHex, principalCV, uintCV } from "@stacks/transactions";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList } from "@/hooks/useContractRead";
+import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices } from "@/hooks/useContractRead";
 import { CONTRACTS } from "@/lib/constants";
 import { calculateHealthFactor, formatNumber } from "@/lib/utils";
 
@@ -34,6 +34,7 @@ function FlowStepRow({ label, status }: { label: string; status: StepStatus }) {
 
 export default function NewVaultPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isConnected, address } = useWallet();
   const {
     openVaultForStablecoin,
@@ -47,6 +48,22 @@ export default function NewVaultPage() {
   const [selectedStablecoinId, setSelectedStablecoinId] = useState<number | null>(null);
 
   const { collaterals: stablecoinCollaterals } = useStablecoinCollateralList(selectedStablecoinId);
+  const { prices: diaOraclePrices } = useDiaOraclePrices();
+
+  // Helper to get oracle price for an asset - use DIA prices with fallback to registry oracle
+  const getOraclePrice = useCallback((asset: string): number | null => {
+    const assetName = asset.split(".").pop()?.toLowerCase() ?? "";
+    // Map asset names to DIA oracle prices
+    if (assetName.includes("sbtc") || assetName.includes("btc")) {
+      return diaOraclePrices.btcUsd;
+    }
+    if (assetName.includes("stx")) {
+      return diaOraclePrices.stxUsd;
+    }
+    // Fallback to global collateral type oracle price
+    const globalType = collateralTypes.find((ct) => ct.asset === asset);
+    return globalType?.oraclePrice ?? null;
+  }, [diaOraclePrices, collateralTypes]);
 
   // Use only collateral explicitly configured for the selected stablecoin.
   const effectiveCollateralTypes = useMemo(() => {
@@ -54,17 +71,16 @@ export default function NewVaultPage() {
     return stablecoinCollaterals
       .filter((sc) => sc.enabled)
       .map((sc) => {
-        const globalType = collateralTypes.find((ct) => ct.asset === sc.asset);
         return {
           asset: sc.asset,
           minCollateralRatio: sc.minCollateralRatio,
           liquidationRatio: sc.liquidationRatio,
           debtFloor: sc.debtFloor,
           enabled: sc.enabled,
-          oraclePrice: globalType?.oraclePrice ?? null,
+          oraclePrice: getOraclePrice(sc.asset),
         };
       });
-  }, [selectedStablecoinId, stablecoinCollaterals, collateralTypes]);
+  }, [selectedStablecoinId, stablecoinCollaterals, getOraclePrice]);
   const [collateralAmount, setCollateralAmount] = useState("");
   const [borrowAmount, setBorrowAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -91,7 +107,7 @@ export default function NewVaultPage() {
   const selectedCollateral =
     effectiveCollateralTypes.find((type) => type.asset === selectedCollateralAsset) || null;
 
-  const oraclePrice = selectedCollateral?.oraclePrice || 1;
+  const oraclePrice = selectedCollateral?.oraclePrice ?? 1;
 
   const formatAssetName = (asset: string) => {
     const [, contractName] = asset.split(".");
@@ -103,10 +119,32 @@ export default function NewVaultPage() {
     [stablecoins]
   );
 
+  const requestedStablecoinId = useMemo(() => {
+    const value = searchParams.get("stablecoinId");
+    if (value === null) return null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (requestedStablecoinId === null || selectedStablecoinId !== null || linkedStablecoins.length === 0) {
+      return;
+    }
+
+    const requestedStablecoin = linkedStablecoins.find((coin) => coin.id === requestedStablecoinId);
+    if (!requestedStablecoin) return;
+
+    setSelectedStablecoinId(requestedStablecoin.id);
+    setStep(2);
+  }, [linkedStablecoins, requestedStablecoinId, selectedStablecoinId]);
+
   const selectedStablecoin = linkedStablecoins.find((coin) => coin.id === selectedStablecoinId) || null;
   const stablecoinSymbol = selectedStablecoin?.symbol || "Stablecoin";
 
-  const collateralValue = parseFloat(collateralAmount || "0") * oraclePrice;
+  // Collateral amounts are in smallest units (e.g., satoshis for sBTC)
+  // For display, we show the raw amount but calculate value using oracle price
+  const collateralAmountNum = parseFloat(collateralAmount || "0");
+  const collateralValue = collateralAmountNum * oraclePrice;
   const borrowValue = parseFloat(borrowAmount || "0");
   const minRatio = selectedCollateral?.minCollateralRatio || 150;
   const debtFloor = selectedCollateral?.debtFloor ?? 0;
@@ -398,35 +436,70 @@ export default function NewVaultPage() {
                 </p>
               )}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">Collateral Amount</label>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  value={collateralAmount}
-                  onChange={(e) => setCollateralAmount(e.target.value)}
-                />
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Estimated value: ${formatNumber(collateralValue)} (oracle price: ${formatNumber(oraclePrice)})
-                </p>
-              </div>
+              {selectedCollateral ? (
+                <div className="rounded-lg border border-primary/50 bg-primary/5 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                      {formatAssetName(selectedCollateral.asset).charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-medium">{formatAssetName(selectedCollateral.asset)}</p>
+                      <p className="text-xs text-muted-foreground">Min Ratio: {selectedCollateral.minCollateralRatio}%</p>
+                    </div>
+                  </div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Deposit Amount ({formatAssetName(selectedCollateral.asset)})
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="Enter amount to deposit"
+                    value={collateralAmount}
+                    onChange={(e) => setCollateralAmount(e.target.value)}
+                    className="text-lg"
+                  />
+                  <div className="mt-2 space-y-1">
+                    {oraclePrice > 1 ? (
+                      <p className="text-sm text-muted-foreground">
+                        ≈ <span className="font-medium text-foreground">${formatNumber(collateralValue, 2)}</span> USD
+                        <span className="ml-2 text-xs">(@ ${formatNumber(oraclePrice, 2)} per {formatAssetName(selectedCollateral.asset)})</span>
+                      </p>
+                    ) : (
+                      <p className="text-sm text-yellow-600">
+                        ⚠ Oracle price unavailable - value estimate not shown
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-muted-foreground/50 p-4 text-center">
+                  <p className="text-sm text-muted-foreground">👆 Select a collateral type above to continue</p>
+                </div>
+              )}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">Borrow Amount ({stablecoinSymbol})</label>
+              <div className={!selectedCollateral ? "pointer-events-none opacity-50" : ""}>
+                <label className="mb-2 block text-sm font-medium">Mint Amount ({stablecoinSymbol})</label>
                 <Input
                   type="number"
-                  placeholder="0"
+                  placeholder={selectedCollateral ? "Enter amount to mint" : "Select collateral first"}
                   value={borrowAmount}
                   onChange={(e) => setBorrowAmount(e.target.value)}
+                  disabled={!selectedCollateral}
+                  className="text-lg"
                 />
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Max estimated: {formatNumber(maxBorrow)} {stablecoinSymbol}
-                  {debtFloor > 0 && ` · Min: ${formatNumber(debtFloor)} ${stablecoinSymbol}`}
-                </p>
-                {isBelowDebtFloor && (
-                  <div className="mt-1 flex items-center gap-1 text-sm text-destructive">
-                    <AlertTriangle className="h-3 w-3" />
-                    Minimum borrow is {formatNumber(debtFloor)} {stablecoinSymbol} (debt floor)
+                {selectedCollateral && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm text-muted-foreground">
+                      Max mintable: <span className="font-medium text-foreground">{formatNumber(maxBorrow, 2)}</span> {stablecoinSymbol}
+                      {debtFloor > 0 && (
+                        <span className="ml-2">· Min: <span className="font-medium">{formatNumber(debtFloor)}</span> {stablecoinSymbol}</span>
+                      )}
+                    </p>
+                    {isBelowDebtFloor && (
+                      <div className="flex items-center gap-1 text-sm text-destructive">
+                        <AlertTriangle className="h-3 w-3" />
+                        Minimum mint is {formatNumber(debtFloor)} {stablecoinSymbol} (debt floor)
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

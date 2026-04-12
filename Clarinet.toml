@@ -19,78 +19,31 @@ epoch = "3.1"
 path = "contracts/oracle-trait.clar"
 epoch = "3.1"
 
-[contracts.price-oracle-mock]
-path = "contracts/price-oracle-mock.clar"
-epoch = "3.1"
-depends_on = ["oracle-trait"]
-
-[contracts.collateral-registry-v2]
-path = "contracts/collateral-registry.clar"
-epoch = "3.1"
-depends_on = ["stablecoin-factory-v2"]
-
-[contracts.stablecoin-token-v2]
-path = "contracts/stablecoin-token.clar"
-epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
-
-[contracts.vault-engine-v2]
-path = "contracts/vault-engine.clar"
-epoch = "3.1"
-depends_on = ["stablecoin-token-v2", "price-oracle-mock"]
-
-[contracts.liquidation-engine-v2]
-path = "contracts/liquidation-engine.clar"
-epoch = "3.1"
-depends_on = ["vault-engine-v2"]
-
-[contracts.stability-pool]
-path = "contracts/stability-pool.clar"
-epoch = "3.1"
-
 [contracts.bridge-adapter-trait]
 path = "contracts/bridge-adapter-trait.clar"
 epoch = "3.1"
 
-[contracts.bridge-registry]
-path = "contracts/bridge-registry.clar"
+[contracts.bridge-registry-v3]
+path = "contracts/bridge-registry-v3.clar"
 epoch = "3.1"
 
-[contracts.xreserve-adapter-v2]
-path = "contracts/xreserve-adapter.clar"
-epoch = "3.1"
-depends_on = ["bridge-adapter-trait", "stablecoin-token-v2"]
-
-[contracts.multi-asset-vault-engine-v2]
-path = "contracts/multi-asset-vault-engine.clar"
-epoch = "3.1"
-depends_on = ["stablecoin-token-v2", "price-oracle-mock", "collateral-registry-v2", "stablecoin-factory-v2", "stablecoin-engine-token-trait"]
-
-[contracts.stablecoin-factory-v2]
-path = "contracts/stablecoin-factory.clar"
+[contracts.stablecoin-factory-v3]
+path = "contracts/stablecoin-factory-v3.clar"
 epoch = "3.1"
 
-[contracts.price-oracle-sbtc-v3]
-path = "contracts/price-oracle-sbtc-v3.clar"
-epoch = "3.1"
-depends_on = ["oracle-trait"]
-
-[contracts.price-oracle-stx-v3]
-path = "contracts/price-oracle-stx-v3.clar"
-epoch = "3.1"
-depends_on = ["oracle-trait"]
-
+# For simnet testing, use the mock adapter that allows set-value
+# For testnet/mainnet deployment, deploy contracts/dia-oracle-adapter.clar instead
 [contracts.dia-oracle-adapter]
-path = "contracts/dia-oracle-adapter.clar"
+path = "contracts/dia-oracle-adapter-simnet.clar"
 epoch = "3.1"
 
-[contracts.price-oracle-dia-btc]
-path = "contracts/price-oracle-dia-btc.clar"
+[contracts.price-oracle-dia-btc-v2]
+path = "contracts/price-oracle-dia-btc-v2.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait", "dia-oracle-adapter"]
 
-[contracts.price-oracle-dia-stx]
-path = "contracts/price-oracle-dia-stx.clar"
+[contracts.price-oracle-dia-stx-v2]
+path = "contracts/price-oracle-dia-stx-v2.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait", "dia-oracle-adapter"]
 
@@ -104,43 +57,30 @@ path = "contracts/stx-token-v3.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait"]
 
-[contracts.stablecoin-factory-v3]
-path = "contracts/stablecoin-factory-v3.clar"
-epoch = "3.1"
-
-[contracts.collateral-registry-v3]
-path = "contracts/collateral-registry-v3.clar"
-epoch = "3.1"
-depends_on = ["stablecoin-factory-v3"]
-
 [contracts.stablecoin-token-v3]
 path = "contracts/stablecoin-token-v3.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
 
-[contracts.stability-pool-v3]
-path = "contracts/stability-pool-v3.clar"
+[contracts.collateral-registry-v4]
+path = "contracts/collateral-registry-v4.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-factory-v3", "stablecoin-token-v3"]
+depends_on = ["stablecoin-factory-v3"]
 
-[contracts.bridge-registry-v3]
-path = "contracts/bridge-registry-v3.clar"
+[contracts.stability-pool-v4]
+path = "contracts/stability-pool-v4.clar"
 epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-factory-v3", "stablecoin-token-v3", "liquidation-engine-v5"]
 
-[contracts.liquidation-engine-v3]
-path = "contracts/liquidation-engine-v3.clar"
+[contracts.multi-asset-vault-engine-v5]
+path = "contracts/multi-asset-vault-engine-v5.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v3", "stability-pool-v3"]
+depends_on = ["sip-010-trait", "stablecoin-token-v3", "price-oracle-dia-btc-v2", "price-oracle-dia-stx-v2", "collateral-registry-v4", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v3", "stx-token-v3", "stability-pool-v4", "liquidation-engine-v5"]
 
-[contracts.multi-asset-vault-engine-v3]
-path = "contracts/multi-asset-vault-engine-v3.clar"
+[contracts.liquidation-engine-v5]
+path = "contracts/liquidation-engine-v5.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-token-v3", "price-oracle-sbtc-v3", "price-oracle-stx-v3", "price-oracle-dia-btc", "price-oracle-dia-stx", "collateral-registry-v3", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v3", "stx-token-v3"]
-
-[contracts.xreserve-adapter-v3]
-path = "contracts/xreserve-adapter-v3.clar"
-epoch = "3.1"
-depends_on = ["bridge-adapter-trait", "stablecoin-token-v3"]
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v5", "stability-pool-v4"]
 
 [repl.analysis]
 passes = ["check_checker"]

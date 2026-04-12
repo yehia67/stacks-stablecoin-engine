@@ -14,24 +14,35 @@ function getTestAccounts() {
   return { deployer, wallet1, wallet2 };
 }
 
+/** Seed DIA BTC price so oracle lookups work. */
+function seedDiaBtcPrice(deployer: string, value: number = 6700000000000) {
+  simnet.callPublicFn(
+    "dia-oracle-adapter",
+    "set-value",
+    [Cl.stringAscii("BTC/USD"), Cl.uint(value)],
+    deployer
+  );
+}
+
 /** Register sBTC oracle so the vault engine can price collateral. */
 function registerSbtcOracle(deployer: string) {
   const sbtcAsset = `${deployer}.sbtc-token-v3`;
   const result = simnet.callPublicFn(
-    "multi-asset-vault-engine-v3",
+    "multi-asset-vault-engine-v5",
     "register-asset-oracle",
-    [Cl.principal(sbtcAsset), Cl.uint(1)], // ORACLE-SBTC = u1
+    [Cl.principal(sbtcAsset), Cl.uint(3)], // ORACLE-DIA-BTC = u3
     deployer
   );
   expect(result.result).toBeOk(Cl.bool(true));
 }
 
-/** Add sBTC as a global collateral type in the registry. */
+/** Add sBTC as a global collateral type in the registry. Also seeds DIA price. */
 function addSbtcGlobalCollateral(deployer: string) {
+  seedDiaBtcPrice(deployer);
   const sbtcAsset = `${deployer}.sbtc-token-v3`;
-  const oraclePrincipal = `${deployer}.price-oracle-sbtc-v3`;
+  const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
   const result = simnet.callPublicFn(
-    "collateral-registry-v3",
+    "collateral-registry-v4",
     "add-collateral-type",
     [
       Cl.principal(sbtcAsset),
@@ -52,7 +63,7 @@ function addSbtcGlobalCollateral(deployer: string) {
 function configureSbtcForStablecoin(deployer: string, creator: string, stablecoinId: number) {
   const sbtcAsset = `${deployer}.sbtc-token-v3`;
   const result = simnet.callPublicFn(
-    "collateral-registry-v3",
+    "collateral-registry-v4",
     "configure-collateral-for-stablecoin",
     [
       Cl.uint(stablecoinId),
@@ -71,7 +82,7 @@ function configureSbtcForStablecoin(deployer: string, creator: string, stablecoi
 
 /** Authorize the multi-asset vault engine on the stablecoin token. */
 function authorizeMultiAssetVaultEngine(deployer: string) {
-  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v3`;
+  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v5`;
   const result = simnet.callPublicFn(
     "stablecoin-token-v3",
     "set-vault-engine",
@@ -130,14 +141,14 @@ function getSbtcBalance(owner: string): bigint {
 
 /** Get the vault engine contract principal. */
 function getVaultEnginePrincipal(deployer: string): string {
-  return `${deployer}.multi-asset-vault-engine-v3`;
+  return `${deployer}.multi-asset-vault-engine-v5`;
 }
 
 // ============================================
 // Collateral Custody Transfer Tests (v3)
 // ============================================
 
-describe("multi-asset-vault-engine-v3 collateral custody", () => {
+describe("multi-asset-vault-engine-v5 collateral custody", () => {
   describe("deposit transfers tokens to protocol", () => {
     it("transfers sBTC from user to vault engine on deposit", () => {
       const { deployer, wallet1 } = getTestAccounts();
@@ -156,11 +167,11 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Open vault for stablecoin and deposit
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3",
+        "multi-asset-vault-engine-v5",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
@@ -183,13 +194,13 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
       faucetMintSbtc(wallet1, 5000);
 
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
 
       // First deposit
       let result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "deposit-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v5", "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1000)],
         wallet1
       );
@@ -197,7 +208,7 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Second deposit
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "deposit-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v5", "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(500)],
         wallet1
       );
@@ -217,13 +228,13 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
       faucetMintSbtc(wallet1, 100); // Only 100 tokens
 
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
 
       // Try to deposit more than balance
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3",
+        "multi-asset-vault-engine-v5",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(500)],
         wallet1
@@ -243,13 +254,13 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
       faucetMintSbtc(wallet1, 1000);
 
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
 
       // Pass sBTC as asset but stx-token as trait — should fail
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3",
+        "multi-asset-vault-engine-v5",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(stxAsset), Cl.uint(500)],
         wallet1
@@ -271,11 +282,11 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Open vault, deposit
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "deposit-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v5", "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(3000)],
         wallet1
       );
@@ -286,7 +297,7 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Withdraw
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3",
+        "multi-asset-vault-engine-v5",
         "withdraw-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1000)],
         wallet1
@@ -311,8 +322,8 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
       // Set oracle price to 100000000 (= $1 per unit at 1e8 scale)
       // so collateral value = amount directly
       simnet.callPublicFn(
-        "price-oracle-sbtc-v3", "set-price",
-        [Cl.uint(100000000)],
+        "dia-oracle-adapter", "set-value",
+        [Cl.stringAscii("BTC/USD"), Cl.uint(100000000)],
         deployer
       );
 
@@ -320,24 +331,24 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Open vault, deposit, mint near limit
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "deposit-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v5", "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
       );
       // At $1/unit, 1500 collateral supports max 1000 debt at 150% ratio
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "mint-against-asset-for-stablecoin",
+        "multi-asset-vault-engine-v5", "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(900)],
         wallet1
       );
 
       // Withdrawing 200 leaves 1300 collateral with 900 debt → 144% < 150%
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3",
+        "multi-asset-vault-engine-v5",
         "withdraw-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(200)],
         wallet1
@@ -361,14 +372,14 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Open vault for stablecoin
       let result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "open-vault-for-stablecoin",
+        "multi-asset-vault-engine-v5", "open-vault-for-stablecoin",
         [Cl.uint(0)], wallet1
       );
       expect(result.result).toBeOk(Cl.bool(true));
 
       // Deposit 5000 sBTC
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "deposit-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v5", "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(5000)],
         wallet1
       );
@@ -378,7 +389,7 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Mint 2000 stablecoin
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "mint-against-asset-for-stablecoin",
+        "multi-asset-vault-engine-v5", "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(2000)],
         wallet1
       );
@@ -392,7 +403,7 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Repay all debt
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "repay-against-asset-for-stablecoin",
+        "multi-asset-vault-engine-v5", "repay-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(2000)],
         wallet1
       );
@@ -400,7 +411,7 @@ describe("multi-asset-vault-engine-v3 collateral custody", () => {
 
       // Withdraw all collateral
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v3", "withdraw-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v5", "withdraw-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(5000)],
         wallet1
       );
