@@ -184,14 +184,14 @@ Deployment is config-driven via `sse.config.json`. A single command deploys all 
 npm run deploy
 ```
 
-This reads from `sse.config.json` to determine which contracts to deploy and which bootstrap steps to run (authorizations, oracle mappings, mock prices, faucet mints, collateral types).
+This reads from `sse.config.json` to determine which contracts to deploy and which bootstrap steps to run (authorizations, oracle mappings, collateral types, oracle principal updates).
 
 Configure your deployer mnemonic/key in `settings/Testnet.toml` before running.
 
-## Testnet Deployment (v4 — current)
+## Testnet Deployment (v5 — current)
 Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
 
-Deployed 2026-04-11.
+Deployed 2026-04-12.
 
 ### Contracts on-chain:
 
@@ -200,20 +200,19 @@ Deployed 2026-04-11.
 | `stablecoin-factory` | v3 | Unchanged from v3 |
 | `stablecoin-token` | v3 | Unchanged from v3 |
 | `collateral-registry` | v4 | Adds `enable-collateral-for-stablecoin` |
-| `multi-asset-vault-engine` | v4 | DIA oracle support, SIP-010 transfers, liquidation position support |
+| `multi-asset-vault-engine` | v5 | DIA oracle v2 references, SIP-010 transfers, liquidation position support |
 | `stability-pool` | v4 | Real SIP-010 transfers, stablecoin-scoped deposits, liquidation reward accounting |
-| `liquidation-engine` | v4 | Full orchestration: health check → collateral seizure → pool accounting |
+| `liquidation-engine` | v5 | Full orchestration with vault-engine-v5 reference |
 | `dia-oracle-adapter` | — | Forwards to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` |
-| `price-oracle-dia-btc` | — | DIA-backed BTC price with staleness guard |
-| `price-oracle-dia-stx` | — | DIA-backed STX price with staleness guard |
+| `price-oracle-dia-btc` | v2 | DIA-backed BTC price with staleness guard (fixed ms→s timestamp) |
+| `price-oracle-dia-stx` | v2 | DIA-backed STX price with staleness guard (fixed ms→s timestamp) |
 
 ### Bootstrap steps (run automatically by `npm run deploy`):
-- Authorizing `multi-asset-vault-engine-v4` in `stablecoin-token-v3`
-- Authorizing `multi-asset-vault-engine-v4` in `collateral-registry-v4`
-- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v4`
-- Setting mock oracle prices (fallback)
-- Minting faucet tokens to deployer
-- Adding collateral types (sBTC + STX) with risk parameters in `collateral-registry-v4`
+- Authorizing `multi-asset-vault-engine-v5` in `stablecoin-token-v3`
+- Authorizing `multi-asset-vault-engine-v5` in `collateral-registry-v4`
+- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v5`
+- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v4`
+- Updating oracle principals in `collateral-registry-v4` to point to v2 DIA oracles
 
 ## How to Test on Testnet
 
@@ -232,10 +231,10 @@ Then verify:
 - `stablecoin-token::get-total-supply` tracks aggregate mint/burn changes
 
 ### 2) Oracle sensitivity check
-On testnet, prices come from DIA oracles (`price-oracle-dia-btc`, `price-oracle-dia-stx`). To test health factor changes, observe the live DIA price feed and check:
+On testnet, prices come from DIA oracles (`price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`). To test health factor changes, observe the live DIA price feed and check:
 
-1. Re-check `multi-asset-vault-engine-v4::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
-2. If health factor is below the liquidation ratio, call `liquidation-engine-v4::liquidate`.
+1. Re-check `multi-asset-vault-engine-v5::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
+2. If health factor is below the liquidation ratio, call `liquidation-engine-v5::liquidate`.
 
 Expected behavior:
 - Healthy vault: `liquidate` returns `(err u300)`
@@ -253,7 +252,7 @@ As deployer:
   u200
   u1000000
   u100
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-dia-btc
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-dia-btc-v2
 )
 
 (contract-call? .collateral-registry-v4 get-collateral-config
