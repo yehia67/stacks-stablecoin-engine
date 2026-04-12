@@ -56,13 +56,13 @@ Now I have a complete picture. Here's the full analysis:
 
 ### Contract: `vault-engine-v3` — **DELETED**
 
-The legacy single-collateral vault engine has been removed. All vault operations now go through `multi-asset-vault-engine-v4`. Frontend hooks for the legacy engine (`openVault`, `depositCollateral`, `withdrawCollateral`, `mint`, `burn`) have been removed.
+The legacy single-collateral vault engine has been removed. All vault operations now go through `multi-asset-vault-engine-v5`. Frontend hooks for the legacy engine (`openVault`, `depositCollateral`, `withdrawCollateral`, `mint`, `burn`) have been removed.
 
 ---
 
 ## 4. Multi-Asset Vault Engine (Production)
 
-### Contract: `multi-asset-vault-engine-v4`
+### Contract: `multi-asset-vault-engine-v5`
 ### Frontend: `/vaults/new`, [/vaults](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/vaults:0:0-0:0)
 
 | Feature | Contract | Frontend | Status |
@@ -108,7 +108,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 
 ## 6. Liquidation Engine
 
-### Contract: `liquidation-engine-v4`
+### Contract: `liquidation-engine-v5`
 ### Frontend: [/liquidations](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/liquidations:0:0-0:0)
 
 **Liquidation engine now orchestrates the full flow:**
@@ -150,17 +150,15 @@ This is an **xReserve/CCTP-style bridge** for moving stablecoins cross-chain (e.
 
 ## 8. Price Oracles
 
-### Mock Oracles: `price-oracle-sbtc-v3`, `price-oracle-stx-v3`
-### DIA Oracles: `price-oracle-dia-btc`, `price-oracle-dia-stx`, `dia-oracle-adapter`
+### DIA Oracles: `price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`, `dia-oracle-adapter`
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
-| Get price (mock) | ✅ | ✅ | Used for health factor calculations in vault creation |
 | Get price (DIA) | ✅ | ✅ | **Working** — DIA oracles active on testnet (oracle IDs 3/4) |
 | Staleness guard | ✅ | — | **Working** — DIA oracles reject stale prices (configurable max-age) |
-| **Admin**: set price (mock) | ✅ | ❌ | **No FE** — mock oracle, admin-only |
+| Timestamp conversion | ✅ | — | **Working** — v2 oracles convert DIA ms timestamps to seconds |
 
-Mock oracles (IDs 1/2) are used for simnet/devnet. DIA oracles (IDs 3/4) are used on testnet/mainnet, forwarding to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`.
+DIA oracles (IDs 3/4) are used on all networks, forwarding to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`. Mock oracles have been removed.
 
 ---
 
@@ -207,9 +205,9 @@ All data is **stub** — `TODO: Fetch from contracts` everywhere:
 11. **Admin functions** — registration fee, treasury, global collateral management, oracle updates, vault engine authorization
 12. **Token balance display** — wallet balances for stablecoin/collateral assets are still not shown
 
-### ✅ Contract-level TODOs (all completed, deployed as v4):
-- **Actual collateral custody**: `multi-asset-vault-engine-v4` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
+### ✅ Contract-level TODOs (all completed, deployed as v5):
+- **Actual collateral custody**: `multi-asset-vault-engine-v5` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
 - **Stability pool custody**: `stability-pool-v4` performs real SIP-010 token transfers with stablecoin-scoped balances. Token validated against factory-linked contract (`ERR_TOKEN_MISMATCH`).
 - **Liquidation reward accounting**: Creator-configurable reward percentage (basis points). Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution. Full liquidation flow: vault engine seizes collateral + burns stablecoins, stability pool updates accounting.
-- **Liquidation engine**: `liquidation-engine-v4` — Full orchestration: health check → calculate amounts → vault engine liquidate-position → pool distribute-liquidation-reward
-- **Oracles**: DIA push-based oracle integration. `dia-oracle-adapter` provides the DIA interface locally (mock for simnet, forwarding adapter for testnet). `price-oracle-dia-btc` and `price-oracle-dia-stx` implement `oracle-trait` with configurable staleness guard. Vault engine supports oracle IDs 1-4 (1/2 = mock, 3/4 = DIA). DIA testnet: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`. Prices use 8 decimal places (matches SSE's `PRICE-SCALE`).
+- **Liquidation engine**: `liquidation-engine-v5` — Full orchestration: health check → calculate amounts → vault engine liquidate-position → pool distribute-liquidation-reward
+- **Oracles**: DIA push-based oracle integration. `dia-oracle-adapter` forwards to the real DIA oracle on testnet. `price-oracle-dia-btc-v2` and `price-oracle-dia-stx-v2` implement `oracle-trait` with configurable staleness guard and ms→s timestamp conversion. Vault engine supports oracle IDs 3/4 (DIA only). DIA testnet: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`. Prices use 8 decimal places (matches SSE's `PRICE-SCALE`).
