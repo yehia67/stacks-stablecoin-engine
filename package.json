@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "clarinet check -d",
+    "lint": "clarinet check",
     "ci": "npm run lint && npm test",
     "test": "vitest run",
     "test:report": "vitest run -- --coverage --costs",
