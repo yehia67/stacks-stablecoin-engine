@@ -1,0 +1,62 @@
+---
+id: 0
+name: DIA Oracle Integration (testnet)
+network: testnet
+stacks-node: "https://api.testnet.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
+plan:
+  batches:
+    # Batch 0: Deploy traits and adapter first
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: oracle-trait
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 10000
+            path: contracts/oracle-trait.clar
+            anchor-block-only: true
+            clarity-version: 3
+        # Deploy the testnet adapter (forwards to real DIA) under the name "dia-oracle-adapter"
+        # so that price-oracle-dia-btc and price-oracle-dia-stx resolve .dia-oracle-adapter
+        - contract-publish:
+            contract-name: dia-oracle-adapter
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 12000
+            path: contracts/dia-oracle-adapter-testnet.clar
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.1"
+    # Batch 1: Deploy DIA wrapper oracles that depend on adapter
+    - id: 1
+      transactions:
+        - contract-publish:
+            contract-name: price-oracle-dia-btc
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 15000
+            path: contracts/price-oracle-dia-btc.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: price-oracle-dia-stx
+            expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+            cost: 15000
+            path: contracts/price-oracle-dia-stx.clar
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.1"
+    # Batch 2: Register assets with DIA oracle IDs
+    # After deploying multi-asset-vault-engine-v3 (from default.testnet-plan),
+    # call register-asset-oracle with DIA IDs (u3 = DIA-BTC, u4 = DIA-STX)
+    # Example (uncomment and adjust asset principal):
+    # - id: 2
+    #   transactions:
+    #     - contract-call:
+    #         contract-id: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v3
+    #         expected-sender: ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
+    #         method: register-asset-oracle
+    #         parameters:
+    #           - "'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3"
+    #           - "u3"
+    #         cost: 5000
+    #         anchor-block-only: true
+    #   epoch: "3.1"

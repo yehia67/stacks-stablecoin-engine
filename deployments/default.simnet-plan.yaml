@@ -89,6 +89,11 @@ plan:
             path: contracts/dia-oracle-adapter-simnet.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: dia-oracle-adapter
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/dia-oracle-adapter.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: oracle-trait
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/oracle-trait.clar
@@ -138,6 +143,9 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sbtc-token-v3.clar
             clarity-version: 3
+      epoch: "3.1"
+    - id: 1
+      transactions:
         - emulated-contract-publish:
             contract-name: stx-token-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
