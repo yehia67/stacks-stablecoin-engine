@@ -61,6 +61,20 @@ path = "contracts/price-oracle-dia-stx.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait", "dia-oracle-adapter"]
 
+[contracts.dia-oracle-adapter]
+path = "contracts/dia-oracle-adapter.clar"
+epoch = "3.1"
+
+[contracts.price-oracle-dia-btc]
+path = "contracts/price-oracle-dia-btc.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait", "dia-oracle-adapter"]
+
+[contracts.price-oracle-dia-stx]
+path = "contracts/price-oracle-dia-stx.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait", "dia-oracle-adapter"]
+
 [contracts.sbtc-token-v3]
 path = "contracts/sbtc-token-v3.clar"
 epoch = "3.1"
