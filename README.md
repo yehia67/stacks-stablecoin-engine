@@ -178,70 +178,41 @@ npm test
 ```
 
 ## How to Deploy
-This project uses Clarinet deployment plans.
+Deployment is config-driven via `sse.config.json`. A single command deploys all contracts and runs the bootstrap in sequence:
 
-1. Configure your deployer in `settings/Testnet.toml`.
-2. Generate a deployment plan:
-   ```bash
-   clarinet deployments generate --testnet
-   ```
-3. Apply the deployment plan:
-   ```bash
-   clarinet deployments apply --testnet
-   ```
-
-## Testnet Deployment (v3 clean flow)
-Deployer principal:
-- `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
-
-v3 contract names in this repository:
-- `stablecoin-factory-v3`
-- `collateral-registry-v3`
-- `stablecoin-token-v3`
-- `vault-engine-v3`
-- `liquidation-engine-v3`
-- `multi-asset-vault-engine-v3`
-- `xreserve-adapter-v3`
-- `price-oracle-sbtc-v3`
-- `price-oracle-stx-v3`
-- `stability-pool-v3`
-- `bridge-registry-v3`
-- `sbtc-token-v3` (faucet token)
-- `stx-token-v3` (faucet token)
-
-### Clean v3 Deployment (recommended)
-
-**Step 1** — Deploy core contracts via Clarinet:
 ```bash
-npm run deploy:v3
+npm run deploy
 ```
 
-**Step 2** — Bootstrap (deploys faucet tokens + configures everything):
-```bash
-npm run bootstrap:v3
-```
+This reads from `sse.config.json` to determine which contracts to deploy and which bootstrap steps to run (authorizations, oracle mappings, collateral types, oracle principal updates).
 
-The bootstrap script handles:
-- Deploying `sbtc-token-v3` and `stx-token-v3` faucet tokens
-- Authorizing vault engines in `stablecoin-token-v3`
-- Authorizing vault engines in `collateral-registry-v3`
-- Registering per-asset oracle mappings in `multi-asset-vault-engine-v3`
-- Setting oracle prices
-- Minting faucet tokens to deployer
-- Adding collateral types (sBTC + STX) with risk parameters
+Configure your deployer mnemonic/key in `settings/Testnet.toml` before running.
 
-> **Note:** Do NOT run `deploy:collaterals:v3` if using `bootstrap:v3` — the bootstrap script already deploys the faucet tokens.
+## Testnet Deployment (v5 — current)
+Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
 
-## Post-Deployment Initialization (Required)
-Before minting through `vault-engine-v3`, the deployer must authorize it inside `stablecoin-token-v3`:
+Deployed 2026-04-12.
 
-```clarity
-(contract-call? .stablecoin-token-v3 set-vault-engine
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.vault-engine-v3
-)
-```
+### Contracts on-chain:
 
-If this is skipped, `vault-engine-v3` mint/burn calls will fail with `err u401`.
+| Contract | Version | Notes |
+|---|---|---|
+| `stablecoin-factory` | v3 | Unchanged from v3 |
+| `stablecoin-token` | v3 | Unchanged from v3 |
+| `collateral-registry` | v4 | Adds `enable-collateral-for-stablecoin` |
+| `multi-asset-vault-engine` | v5 | DIA oracle v2 references, SIP-010 transfers, liquidation position support |
+| `stability-pool` | v4 | Real SIP-010 transfers, stablecoin-scoped deposits, liquidation reward accounting |
+| `liquidation-engine` | v5 | Full orchestration with vault-engine-v5 reference |
+| `dia-oracle-adapter` | — | Forwards to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` |
+| `price-oracle-dia-btc` | v2 | DIA-backed BTC price with staleness guard (fixed ms→s timestamp) |
+| `price-oracle-dia-stx` | v2 | DIA-backed STX price with staleness guard (fixed ms→s timestamp) |
+
+### Bootstrap steps (run automatically by `npm run deploy`):
+- Authorizing `multi-asset-vault-engine-v5` in `stablecoin-token-v3`
+- Authorizing `multi-asset-vault-engine-v5` in `collateral-registry-v4`
+- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v5`
+- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v4`
+- Updating oracle principals in `collateral-registry-v4` to point to v2 DIA oracles
 
 ## How to Test on Testnet
 
@@ -260,20 +231,20 @@ Then verify:
 - `stablecoin-token::get-total-supply` tracks aggregate mint/burn changes
 
 ### 2) Oracle sensitivity check
-As deployer:
-1. Call `price-oracle-mock::set-price u50000000` (drops price from 1.0 to 0.5 in 1e8 scale).
-2. Re-check `vault-engine-v3::get-health-factor '<YOUR_TESTNET_PRINCIPAL>`.
-3. If health factor is below `u150`, call `liquidation-engine-v3::liquidate '<YOUR_TESTNET_PRINCIPAL>`.
+On testnet, prices come from DIA oracles (`price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`). To test health factor changes, observe the live DIA price feed and check:
+
+1. Re-check `multi-asset-vault-engine-v5::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
+2. If health factor is below the liquidation ratio, call `liquidation-engine-v5::liquidate`.
 
 Expected behavior:
 - Healthy vault: `liquidate` returns `(err u300)`
-- Undercollateralized vault: `liquidate` returns `(ok true)` (stub liquidation path)
+- Undercollateralized vault: `liquidate` orchestrates collateral seizure and pool accounting
 
 ### 3) Collateral registry config check
 As deployer:
 
 ```clarity
-(contract-call? .collateral-registry-v3 add-collateral-type
+(contract-call? .collateral-registry-v4 add-collateral-type
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
   u150
   u120
@@ -281,10 +252,10 @@ As deployer:
   u200
   u1000000
   u100
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-sbtc-v3
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-dia-btc-v2
 )
 
-(contract-call? .collateral-registry-v3 get-collateral-config
+(contract-call? .collateral-registry-v4 get-collateral-config
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
 )
 ```

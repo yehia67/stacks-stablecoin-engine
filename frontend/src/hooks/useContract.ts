@@ -367,7 +367,25 @@ export function useContract() {
         onError,
       });
     },
-    [callContract]
+    [callContract, parseContractPrincipal]
+  );
+
+  const enableCollateralForStablecoin = useCallback(
+    (
+      stablecoinId: number,
+      asset: string,
+      onSuccess?: (txId: string) => void,
+      onError?: (error: Error) => void
+    ) => {
+      return callContract({
+        contractName: CONTRACTS.COLLATERAL_REGISTRY,
+        functionName: "enable-collateral-for-stablecoin",
+        functionArgs: [uintCV(stablecoinId), parseContractPrincipal(asset)],
+        onSuccess,
+        onError,
+      });
+    },
+    [callContract, parseContractPrincipal]
   );
 
   // Stability Pool functions
@@ -505,6 +523,7 @@ export function useContract() {
     configureCollateralForStablecoin,
     updateCollateralForStablecoin,
     disableCollateralForStablecoin,
+    enableCollateralForStablecoin,
     // Pool operations
     depositToPool,
     withdrawFromPool,

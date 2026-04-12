@@ -9,11 +9,11 @@ const DEPLOYER_ADDRESS = process.env.NEXT_PUBLIC_DEPLOYER_ADDRESS || DEFAULT_TES
 const STABLECOIN_FACTORY_CONTRACT =
   process.env.NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT || "stablecoin-factory-v3";
 const MULTI_ASSET_VAULT_ENGINE_CONTRACT =
-  process.env.NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT || "multi-asset-vault-engine-v3";
+  process.env.NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT || "multi-asset-vault-engine-v5";
 const COLLATERAL_REGISTRY_CONTRACT =
-  process.env.NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT || "collateral-registry-v3";
+  process.env.NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT || "collateral-registry-v4";
 const LIQUIDATION_ENGINE_CONTRACT =
-  process.env.NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT || "liquidation-engine-v3";
+  process.env.NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT || "liquidation-engine-v5";
 
 // Contract addresses
 export const CONTRACTS = {
@@ -25,11 +25,9 @@ export const CONTRACTS = {
   STABLECOIN_FACTORY: STABLECOIN_FACTORY_CONTRACT,
   COLLATERAL_REGISTRY: COLLATERAL_REGISTRY_CONTRACT,
   LIQUIDATION_ENGINE: LIQUIDATION_ENGINE_CONTRACT,
-  STABILITY_POOL: "stability-pool-v3",
-  PRICE_ORACLE_SBTC: "price-oracle-sbtc-v3",
-  PRICE_ORACLE_STX: "price-oracle-stx-v3",
-  PRICE_ORACLE_DIA_BTC: "price-oracle-dia-btc",
-  PRICE_ORACLE_DIA_STX: "price-oracle-dia-stx",
+  STABILITY_POOL: "stability-pool-v4",
+  PRICE_ORACLE_DIA_BTC: "price-oracle-dia-btc-v2",
+  PRICE_ORACLE_DIA_STX: "price-oracle-dia-stx-v2",
   DIA_ORACLE_ADAPTER: "dia-oracle-adapter",
   STABLECOIN_ENGINE_TOKEN_TRAIT: "stablecoin-engine-token-trait",
   BRIDGE_ADAPTER_TRAIT: "bridge-adapter-trait",
@@ -46,20 +44,15 @@ export const APP_CONFIG = {
   icon: "/logo.png",
 };
 
-// Oracle IDs matching contract constants in multi-asset-vault-engine-v3
-// Mock oracles (simnet/devnet): SBTC=1, STX=2
-// DIA oracles (testnet/mainnet): BTC=3, STX=4
+// Oracle IDs matching contract constants in multi-asset-vault-engine-v5
+// DIA oracles: BTC=3, STX=4
 export const ORACLE_IDS = {
-  MOCK_SBTC: 1,
-  MOCK_STX: 2,
   DIA_BTC: 3,
   DIA_STX: 4,
 };
 
-// Use DIA oracles on testnet/mainnet, mock oracles on devnet
-const USE_DIA = NETWORK === "testnet" || NETWORK === "mainnet";
-export const ACTIVE_ORACLE_ID_BTC = USE_DIA ? ORACLE_IDS.DIA_BTC : ORACLE_IDS.MOCK_SBTC;
-export const ACTIVE_ORACLE_ID_STX = USE_DIA ? ORACLE_IDS.DIA_STX : ORACLE_IDS.MOCK_STX;
+export const ACTIVE_ORACLE_ID_BTC = ORACLE_IDS.DIA_BTC;
+export const ACTIVE_ORACLE_ID_STX = ORACLE_IDS.DIA_STX;
 
 // Default values (used when contracts aren't deployed or data can't be fetched)
 export const DEFAULTS = {
@@ -70,12 +63,11 @@ export const DEFAULTS = {
 };
 
 // Explorer URLs
-export const EXPLORER_URL = IS_MAINNET
-  ? "https://explorer.stacks.co"
-  : "https://explorer.stacks.co/?chain=testnet";
+const EXPLORER_CHAIN = IS_MAINNET ? "mainnet" : "testnet";
+export const EXPLORER_URL = "https://explorer.hiro.so";
 
 export const getExplorerTxUrl = (txId: string) =>
-  `${EXPLORER_URL}/txid/${txId}`;
+  `${EXPLORER_URL}/txid/${txId}?chain=${EXPLORER_CHAIN}`;
 
 export const getExplorerAddressUrl = (address: string) =>
-  `${EXPLORER_URL}/address/${address}`;
+  `${EXPLORER_URL}/address/${address}?chain=${EXPLORER_CHAIN}`;

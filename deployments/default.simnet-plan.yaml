@@ -69,24 +69,9 @@ plan:
             path: contracts/bridge-adapter-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: bridge-registry
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/bridge-registry.clar
-            clarity-version: 3
-        - emulated-contract-publish:
             contract-name: bridge-registry-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/bridge-registry-v3.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: stablecoin-factory-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stablecoin-factory.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: collateral-registry-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/collateral-registry.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: stablecoin-factory-v3
@@ -94,14 +79,14 @@ plan:
             path: contracts/stablecoin-factory-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: collateral-registry-v3
+            contract-name: collateral-registry-v4
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/collateral-registry-v3.clar
+            path: contracts/collateral-registry-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: dia-oracle-adapter
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/dia-oracle-adapter.clar
+            path: contracts/dia-oracle-adapter-simnet.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: oracle-trait
@@ -109,9 +94,14 @@ plan:
             path: contracts/oracle-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: price-oracle-mock
+            contract-name: price-oracle-dia-btc-v2
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/price-oracle-mock.clar
+            path: contracts/price-oracle-dia-btc-v2.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-dia-stx-v2
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-dia-stx-v2.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: sip-010-trait
@@ -124,91 +114,33 @@ plan:
             path: contracts/stablecoin-engine-token-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: stablecoin-token-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stablecoin-token.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: vault-engine-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/vault-engine.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: liquidation-engine-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/liquidation-engine.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: price-oracle-dia-btc
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/price-oracle-dia-btc.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: price-oracle-dia-stx
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/price-oracle-dia-stx.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: price-oracle-sbtc-v3
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/price-oracle-sbtc-v3.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: price-oracle-stx-v3
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/price-oracle-stx-v3.clar
-            clarity-version: 3
-        - emulated-contract-publish:
             contract-name: stablecoin-token-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stablecoin-token-v3.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: multi-asset-vault-engine-v3
+            contract-name: multi-asset-vault-engine-v5
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/multi-asset-vault-engine-v3.clar
+            path: contracts/multi-asset-vault-engine-v5.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: stability-pool-v3
+            contract-name: stability-pool-v4
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stability-pool-v3.clar
+            path: contracts/stability-pool-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: liquidation-engine-v3
+            contract-name: liquidation-engine-v5
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/liquidation-engine-v3.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: multi-asset-vault-engine-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/multi-asset-vault-engine.clar
+            path: contracts/liquidation-engine-v5.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: sbtc-token-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sbtc-token-v3.clar
             clarity-version: 3
-      epoch: "3.1"
-    - id: 1
-      transactions:
-        - emulated-contract-publish:
-            contract-name: stability-pool
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stability-pool.clar
-            clarity-version: 3
         - emulated-contract-publish:
             contract-name: stx-token-v3
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stx-token-v3.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: xreserve-adapter-v2
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/xreserve-adapter.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: xreserve-adapter-v3
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/xreserve-adapter-v3.clar
             clarity-version: 3
       epoch: "3.1"

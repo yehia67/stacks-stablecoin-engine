@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, Wallet, Loader2, RefreshCw, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -231,8 +231,11 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
               )}
 
               <div className="flex gap-2">
+                <Button size="sm" className="flex-1" asChild>
+                  <Link href={`/vaults/${vault.stablecoinId}`}>Manage</Link>
+                </Button>
                 <Button variant="outline" size="sm" className="flex-1" asChild>
-                  <Link href="/vaults/new">Deposit / Mint</Link>
+                  <Link href={`/vaults/new?stablecoinId=${vault.stablecoinId}`}>Add / Mint</Link>
                 </Button>
               </div>
             </CardContent>

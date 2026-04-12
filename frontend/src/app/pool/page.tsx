@@ -1,139 +1,184 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { TrendingUp, TrendingDown, Wallet, Info, Gift, Settings } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Gift, Info, Loader2, Settings, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useRegisteredStablecoins } from "@/hooks/useContractRead";
+import { useRegisteredStablecoins, useStabilityPoolState } from "@/hooks/useContractRead";
 import { formatNumber } from "@/lib/utils";
+import { getExplorerTxUrl, IS_MAINNET } from "@/lib/constants";
+
+const API_BASE = IS_MAINNET ? "https://api.mainnet.hiro.so" : "https://api.testnet.hiro.so";
+
+function formatAssetName(asset: string) {
+  const [, contractName] = asset.split(".");
+  return contractName || asset;
+}
 
 export default function PoolPage() {
-  const { isConnected } = useWallet();
-  const { depositToPool, withdrawFromPool, setLiquidationRewardPct, claimCollateralReward } = useContract();
+  const { isConnected, address } = useWallet();
+  const {
+    depositToPool,
+    withdrawFromPool,
+    setLiquidationRewardPct,
+    claimCollateralReward,
+  } = useContract();
   const { stablecoins, isLoading: stablecoinsLoading } = useRegisteredStablecoins();
 
   const [selectedStablecoinId, setSelectedStablecoinId] = useState<number | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [rewardPct, setRewardPct] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("deposit");
+  const [actionState, setActionState] = useState<"idle" | "submitting" | "confirming" | "success" | "error">("idle");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [latestTxId, setLatestTxId] = useState<string | null>(null);
+  const [lastActionLabel, setLastActionLabel] = useState<string | null>(null);
 
-  // Only show stablecoins that have a linked token contract
   const linkedStablecoins = useMemo(
     () => stablecoins.filter((coin) => coin.tokenContract !== null),
     [stablecoins]
   );
 
+  useEffect(() => {
+    if (selectedStablecoinId !== null || linkedStablecoins.length === 0) return;
+    setSelectedStablecoinId(linkedStablecoins[0].id);
+  }, [linkedStablecoins, selectedStablecoinId]);
+
+  useEffect(() => {
+    setDepositAmount("");
+    setWithdrawAmount("");
+    setRewardPct("");
+    setActionState("idle");
+    setActionError(null);
+    setLatestTxId(null);
+    setLastActionLabel(null);
+  }, [selectedStablecoinId]);
+
   const selectedStablecoin = linkedStablecoins.find((coin) => coin.id === selectedStablecoinId) ?? null;
+  const {
+    poolState,
+    isLoading: poolStateLoading,
+    error: poolStateError,
+    refetch: refetchPoolState,
+  } = useStabilityPoolState(address, selectedStablecoinId);
 
-  // TODO: Fetch from contracts using balance-of-for-stablecoin / get-total-deposits
-  const [poolStats, setPoolStats] = useState<{
-    totalDeposits: number;
-    userDeposit: number;
-    userShare: number;
-    pendingRewards: number;
-    apy: number;
-    utilizationRate: number;
-  } | null>(null);
+  const depositUnits = Math.floor(Number(depositAmount || "0"));
+  const withdrawUnits = Math.floor(Number(withdrawAmount || "0"));
 
-  const handleDeposit = async () => {
-    if (!depositAmount || !selectedStablecoin || !selectedStablecoin.tokenContract) return;
-    setIsLoading(true);
-    try {
-      await depositToPool(
+  const callAsPromise = useCallback(
+    (fn: (...args: any[]) => void, ...args: any[]) =>
+      new Promise<string>((resolve, reject) => {
+        fn(...args, (txId: string) => resolve(txId), (error: Error) => reject(error));
+      }),
+    []
+  );
+
+  const pollTx = useCallback(async (txId: string) => {
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const response = await fetch(`${API_BASE}/extended/v1/tx/${txId}`, {
+        headers: {
+          "x-api-key": process.env.NEXT_PUBLIC_HIRO_API_KEY || "",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.tx_status === "success") return;
+        if (data.tx_status === "abort_by_response" || data.tx_status === "abort_by_post_condition") {
+          throw new Error(data.tx_result?.repr || "Transaction failed on-chain");
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+
+    throw new Error("Transaction confirmation timed out");
+  }, []);
+
+  const executePoolAction = useCallback(
+    async (label: string, action: () => Promise<string>) => {
+      setActionState("submitting");
+      setActionError(null);
+      setLatestTxId(null);
+      setLastActionLabel(label);
+
+      try {
+        const txId = await action();
+        setLatestTxId(txId);
+        setActionState("confirming");
+        await pollTx(txId);
+        await refetchPoolState();
+        setActionState("success");
+      } catch (error: any) {
+        setActionState("error");
+        setActionError(error?.message || `${label} failed`);
+      }
+    },
+    [pollTx, refetchPoolState]
+  );
+
+  const handleDeposit = useCallback(async () => {
+    if (!selectedStablecoin || !selectedStablecoin.tokenContract || depositUnits <= 0) return;
+
+    await executePoolAction(`Deposit ${selectedStablecoin.symbol}`, () =>
+      callAsPromise(
+        depositToPool,
         selectedStablecoin.id,
         selectedStablecoin.tokenContract,
-        parseFloat(depositAmount) * 1000000,
-        (txId) => {
-          console.log("Deposit successful:", txId);
-          setDepositAmount("");
-          setIsLoading(false);
-        },
-        (error) => {
-          console.error("Deposit failed:", error);
-          setIsLoading(false);
-        }
-      );
-    } catch (error) {
-      console.error(error);
-      setIsLoading(false);
-    }
-  };
+        depositUnits
+      )
+    );
 
-  const handleWithdraw = async () => {
-    if (!withdrawAmount || !selectedStablecoin || !selectedStablecoin.tokenContract) return;
-    setIsLoading(true);
-    try {
-      await withdrawFromPool(
+    setDepositAmount("");
+  }, [callAsPromise, depositToPool, depositUnits, executePoolAction, selectedStablecoin]);
+
+  const handleWithdraw = useCallback(async () => {
+    if (!selectedStablecoin || !selectedStablecoin.tokenContract || withdrawUnits <= 0) return;
+
+    await executePoolAction(`Withdraw ${selectedStablecoin.symbol}`, () =>
+      callAsPromise(
+        withdrawFromPool,
         selectedStablecoin.id,
         selectedStablecoin.tokenContract,
-        parseFloat(withdrawAmount) * 1000000,
-        (txId) => {
-          console.log("Withdrawal successful:", txId);
-          setWithdrawAmount("");
-          setIsLoading(false);
-        },
-        (error) => {
-          console.error("Withdrawal failed:", error);
-          setIsLoading(false);
-        }
-      );
-    } catch (error) {
-      console.error(error);
-      setIsLoading(false);
-    }
-  };
+        withdrawUnits
+      )
+    );
 
-  const handleSetRewardPct = async () => {
-    if (!rewardPct || !selectedStablecoin) return;
-    setIsLoading(true);
-    try {
-      const basisPoints = Math.round(parseFloat(rewardPct) * 100);
-      await setLiquidationRewardPct(
-        selectedStablecoin.id,
-        basisPoints,
-        (txId) => {
-          console.log("Reward pct set:", txId);
-          setRewardPct("");
-          setIsLoading(false);
-        },
-        (error) => {
-          console.error("Set reward pct failed:", error);
-          setIsLoading(false);
-        }
-      );
-    } catch (error) {
-      console.error(error);
-      setIsLoading(false);
-    }
-  };
+    setWithdrawAmount("");
+  }, [callAsPromise, executePoolAction, selectedStablecoin, withdrawFromPool, withdrawUnits]);
 
-  const handleClaimReward = async (assetPrincipal: string) => {
-    if (!selectedStablecoin) return;
-    setIsLoading(true);
-    try {
-      await claimCollateralReward(
+  const handleSetRewardPct = useCallback(async () => {
+    if (!selectedStablecoin || rewardPct === "") return;
+
+    const parsedPct = Number(rewardPct);
+    if (!Number.isFinite(parsedPct) || parsedPct < 0 || parsedPct > 50) return;
+
+    await executePoolAction(`Update reward bonus for ${selectedStablecoin.symbol}`, () =>
+      callAsPromise(
+        setLiquidationRewardPct,
         selectedStablecoin.id,
-        assetPrincipal,
-        (txId) => {
-          console.log("Reward claimed:", txId);
-          setIsLoading(false);
-        },
-        (error) => {
-          console.error("Claim failed:", error);
-          setIsLoading(false);
-        }
+        Math.round(parsedPct * 100)
+      )
+    );
+
+    setRewardPct("");
+  }, [callAsPromise, executePoolAction, rewardPct, selectedStablecoin, setLiquidationRewardPct]);
+
+  const handleClaimReward = useCallback(
+    async (asset: string) => {
+      if (!selectedStablecoin) return;
+
+      await executePoolAction(`Claim ${formatAssetName(asset)} reward`, () =>
+        callAsPromise(claimCollateralReward, selectedStablecoin.id, asset)
       );
-    } catch (error) {
-      console.error(error);
-      setIsLoading(false);
-    }
-  };
+    },
+    [callAsPromise, claimCollateralReward, executePoolAction, selectedStablecoin]
+  );
 
   if (!isConnected) {
     return (
@@ -153,15 +198,13 @@ export default function PoolPage() {
 
   return (
     <div className="container px-4 py-8">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Stability Pool</h1>
         <p className="text-muted-foreground">
-          Deposit stablecoins to earn liquidation rewards and help stabilize the protocol
+          Deposit stablecoins to absorb bad debt and claim collateral seized during liquidations.
         </p>
       </div>
 
-      {/* Stablecoin Selection */}
       <div className="mb-8">
         <h2 className="mb-3 text-lg font-semibold">Select Stablecoin Pool</h2>
         {stablecoinsLoading ? (
@@ -187,79 +230,72 @@ export default function PoolPage() {
         )}
       </div>
 
-      {/* Pool Stats */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Pool Deposits
-            </CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Pool Deposits</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {poolStats ? `$${formatNumber(poolStats.totalDeposits)}` : "—"}
-            </div>
-            <p className="text-xs text-muted-foreground">stablecoins</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Current APY
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-green-500">
-                {poolStats ? `${poolStats.apy}%` : "—"}
-              </span>
-              <TrendingUp className="h-5 w-5 text-green-500" />
-            </div>
-            <p className="text-xs text-muted-foreground">From liquidations</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Your Deposit
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {poolStats ? `$${formatNumber(poolStats.userDeposit)}` : "—"}
+              {poolStateLoading ? "..." : poolState ? formatNumber(poolState.totalDeposits) : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
-              {poolStats ? `${poolStats.userShare}% of pool` : "—"}
+              {selectedStablecoin ? selectedStablecoin.symbol : "Stablecoin"} deposited
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pending Rewards
-            </CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Your Deposit</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">
-              {poolStats ? `$${formatNumber(poolStats.pendingRewards)}` : "—"}
+            <div className="text-2xl font-bold">
+              {poolStateLoading ? "..." : poolState ? formatNumber(poolState.userDeposit) : "—"}
             </div>
-            <p className="text-xs text-muted-foreground">Claimable now</p>
+            <p className="text-xs text-muted-foreground">Effective balance after liquidations</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Your Share</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {poolStateLoading ? "..." : poolState ? `${formatNumber(poolState.userShare)}%` : "—"}
+            </div>
+            <p className="text-xs text-muted-foreground">Portion of current pool deposits</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Reward Bonus</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {poolStateLoading ? "..." : poolState ? `${formatNumber(poolState.liquidationRewardPct / 100)}%` : "—"}
+            </div>
+            <p className="text-xs text-muted-foreground">Creator-configured liquidation bonus</p>
           </CardContent>
         </Card>
       </div>
 
+      {poolStateError && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {poolStateError.message}
+        </div>
+      )}
+
       <div className="grid gap-8 lg:grid-cols-2">
-        {/* Deposit/Withdraw Card */}
         <Card>
           <CardHeader>
             <CardTitle>Manage Position</CardTitle>
-            <CardDescription>Deposit or withdraw from the stability pool</CardDescription>
+            <CardDescription>Deposit into or withdraw from the selected stability pool.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="deposit">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="deposit">Deposit</TabsTrigger>
                 <TabsTrigger value="withdraw">Withdraw</TabsTrigger>
@@ -267,72 +303,55 @@ export default function PoolPage() {
 
               <TabsContent value="deposit" className="space-y-4 pt-4">
                 <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Amount to Deposit
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      className="pr-16"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      stablecoins
-                    </span>
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    {[25, 50, 75, 100].map((pct) => (
-                      <Button
-                        key={pct}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDepositAmount((10000 * pct / 100).toString())}
-                      >
-                        {pct}%
-                      </Button>
-                    ))}
-                  </div>
+                  <label className="mb-2 block text-sm font-medium">Amount to Deposit</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={depositAmount}
+                    onChange={(event) => setDepositAmount(event.target.value)}
+                    disabled={!selectedStablecoin}
+                  />
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Deposits transfer the stablecoin into pool custody and earn proportional liquidation rewards.
+                  </p>
                 </div>
                 <Button
                   className="w-full"
                   onClick={handleDeposit}
-                  disabled={!selectedStablecoin || !depositAmount || parseFloat(depositAmount) <= 0}
-                  loading={isLoading}
+                  disabled={!selectedStablecoin || depositUnits <= 0 || actionState === "submitting" || actionState === "confirming"}
+                  loading={activeTab === "deposit" && (actionState === "submitting" || actionState === "confirming")}
                 >
                   <TrendingUp className="mr-2 h-4 w-4" />
-                  Deposit stablecoins
+                  Deposit into Pool
                 </Button>
               </TabsContent>
 
               <TabsContent value="withdraw" className="space-y-4 pt-4">
                 <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Amount to Withdraw
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={withdrawAmount}
-                      onChange={(e) => setWithdrawAmount(e.target.value)}
-                      className="pr-16"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      stablecoins
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Available: {poolStats ? formatNumber(poolStats.userDeposit) : "—"} stablecoins
+                  <label className="mb-2 block text-sm font-medium">Amount to Withdraw</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={withdrawAmount}
+                    onChange={(event) => setWithdrawAmount(event.target.value)}
+                    disabled={!selectedStablecoin}
+                  />
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Available effective balance: {poolState ? formatNumber(poolState.userDeposit) : "—"}
                   </p>
                   <div className="mt-2 flex gap-2">
-                    {[25, 50, 75, 100].map((pct) => (
+                    {[25, 50, 100].map((pct) => (
                       <Button
                         key={pct}
-                        variant="outline"
                         size="sm"
-                        onClick={() => poolStats && setWithdrawAmount((poolStats.userDeposit * pct / 100).toString())}
+                        variant="outline"
+                        disabled={!poolState}
+                        onClick={() =>
+                          poolState &&
+                          setWithdrawAmount(Math.floor((poolState.userDeposit * pct) / 100).toString())
+                        }
                       >
                         {pct}%
                       </Button>
@@ -343,91 +362,163 @@ export default function PoolPage() {
                   className="w-full"
                   variant="outline"
                   onClick={handleWithdraw}
-                  disabled={!selectedStablecoin || !withdrawAmount || parseFloat(withdrawAmount) <= 0}
-                  loading={isLoading}
+                  disabled={
+                    !selectedStablecoin ||
+                    !poolState ||
+                    withdrawUnits <= 0 ||
+                    withdrawUnits > poolState.userDeposit ||
+                    actionState === "submitting" ||
+                    actionState === "confirming"
+                  }
+                  loading={activeTab === "withdraw" && (actionState === "submitting" || actionState === "confirming")}
                 >
                   <TrendingDown className="mr-2 h-4 w-4" />
-                  Withdraw stablecoins
+                  Withdraw from Pool
                 </Button>
               </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
 
-        {/* Rewards & Settings Card */}
         <div className="space-y-6">
-          {/* Claim Rewards */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Gift className="h-5 w-5" />
-                Collateral Rewards
+                Claimable Collateral Rewards
               </CardTitle>
-              <CardDescription>Claim collateral earned from liquidations</CardDescription>
+              <CardDescription>Rewards are tracked per collateral asset and update from on-chain reads.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                When vaults are liquidated, your pool deposit absorbs bad debt and you receive
-                the seized collateral (including the liquidation reward bonus) proportionally.
-              </p>
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => handleClaimReward(`${process.env.NEXT_PUBLIC_DEPLOYER_ADDRESS}.sbtc-token-v3`)}
-                disabled={!selectedStablecoin || isLoading}
-              >
-                <Gift className="mr-2 h-4 w-4" />
-                Claim sBTC Rewards
-              </Button>
+              {!poolState || poolState.rewards.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No configured collateral assets found for this stablecoin pool yet.
+                </p>
+              ) : (
+                poolState.rewards.map((reward) => (
+                  <div
+                    key={reward.asset}
+                    className="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">{formatAssetName(reward.asset)}</p>
+                      <p className="text-xs text-muted-foreground">{reward.asset}</p>
+                      {!reward.enabled && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          This collateral is disabled for new vault activity but rewards remain claimable.
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{formatNumber(reward.claimableAmount)}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2"
+                        disabled={reward.claimableAmount <= 0 || actionState === "submitting" || actionState === "confirming"}
+                        onClick={() => handleClaimReward(reward.asset)}
+                      >
+                        Claim
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
 
-          {/* Reward Config (Creator Only) */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
                 Reward Configuration
               </CardTitle>
-              <CardDescription>Set liquidation reward percentage (stablecoin creator only)</CardDescription>
+              <CardDescription>Only the stablecoin creator can update the liquidation reward bonus.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="rounded-lg bg-muted/60 p-3 text-sm">
+                Current reward bonus:{" "}
+                <span className="font-medium">
+                  {poolState ? `${formatNumber(poolState.liquidationRewardPct / 100)}%` : "—"}
+                </span>
+              </div>
               <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Reward Percentage
-                </label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    placeholder="e.g. 10 for 10%"
-                    value={rewardPct}
-                    onChange={(e) => setRewardPct(e.target.value)}
-                    className="pr-8"
-                    min="0"
-                    max="50"
-                    step="0.01"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    %
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Max 50%. This is the bonus collateral depositors receive on liquidations.
+                <label className="mb-2 block text-sm font-medium">Set Reward Percentage</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="0.01"
+                  placeholder="e.g. 10"
+                  value={rewardPct}
+                  onChange={(event) => setRewardPct(event.target.value)}
+                  disabled={!selectedStablecoin}
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Maximum 50%. This value is stored on-chain in basis points.
                 </p>
               </div>
               <Button
                 className="w-full"
                 onClick={handleSetRewardPct}
-                disabled={!selectedStablecoin || !rewardPct || parseFloat(rewardPct) < 0 || parseFloat(rewardPct) > 50}
-                loading={isLoading}
+                disabled={
+                  !selectedStablecoin ||
+                  rewardPct === "" ||
+                  Number(rewardPct) < 0 ||
+                  Number(rewardPct) > 50 ||
+                  actionState === "submitting" ||
+                  actionState === "confirming"
+                }
+                loading={lastActionLabel?.includes("reward bonus") && (actionState === "submitting" || actionState === "confirming")}
               >
                 <Settings className="mr-2 h-4 w-4" />
-                Set Reward %
+                Update Reward Bonus
               </Button>
             </CardContent>
           </Card>
 
-          {/* Info Card */}
+          {(actionState !== "idle" || actionError || latestTxId) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Transaction Status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {actionState === "submitting" && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Waiting for wallet approval for {lastActionLabel}...
+                  </div>
+                )}
+                {actionState === "confirming" && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Transaction submitted. Waiting for on-chain confirmation...
+                  </div>
+                )}
+                {actionState === "success" && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                    {lastActionLabel} confirmed on-chain and pool data refreshed.
+                  </div>
+                )}
+                {actionState === "error" && actionError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {actionError}
+                  </div>
+                )}
+                {latestTxId && (
+                  <a
+                    href={getExplorerTxUrl(latestTxId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                  >
+                    View transaction
+                  </a>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>How It Works</CardTitle>
@@ -436,19 +527,18 @@ export default function PoolPage() {
               <div className="flex items-start gap-3 rounded-lg bg-muted p-4">
                 <Info className="mt-0.5 h-5 w-5 text-primary" />
                 <div>
-                  <p className="font-medium">Earn Liquidation Rewards</p>
+                  <p className="font-medium">Deposits Shrink During Liquidations</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    When vaults are liquidated, stability pool depositors receive 
-                    the liquidated collateral at a discount.
+                    The pool offsets bad debt, so your effective deposit can decrease when liquidations are distributed.
                   </p>
                 </div>
               </div>
               <div className="flex items-start gap-3 rounded-lg bg-muted p-4">
                 <Info className="mt-0.5 h-5 w-5 text-primary" />
                 <div>
-                  <p className="font-medium">No Lock-up Period</p>
+                  <p className="font-medium">Rewards Accrue Per Collateral Asset</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Withdraw your funds at any time. No minimum deposit or lock-up.
+                    Claimable collateral is tracked separately for each supported asset using on-chain reward-per-token accounting.
                   </p>
                 </div>
               </div>

@@ -42,6 +42,79 @@ function parseClarityValue(hex: string): bigint | string | boolean | null {
   }
 }
 
+function parseRequiredUint(hex: string | null, context: string): number {
+  if (!hex) {
+    throw new Error(`[SSE] Missing read-only result for ${context}`);
+  }
+
+  try {
+    const cv = hexToCV(hex);
+    const parsed = cvToValue(cv) as any;
+    
+    // Direct bigint
+    if (typeof parsed === "bigint") {
+      return Number(parsed);
+    }
+    
+    // Typed wrapper { type: "uint", value: bigint }
+    if (parsed && typeof parsed === "object" && parsed.type === "uint" && typeof parsed.value === "bigint") {
+      return Number(parsed.value);
+    }
+    
+    // Fallback to parseClarityValue
+    const value = parseClarityValue(hex);
+    if (typeof value === "bigint") {
+      return Number(value);
+    }
+    
+    console.error(`[SSE] parseRequiredUint: unexpected parsed value for ${context}:`, parsed);
+    throw new Error(`[SSE] Expected uint for ${context}, received ${JSON.stringify(parsed)}`);
+  } catch (e) {
+    console.error(`[SSE] parseRequiredUint error for ${context}:`, e, "hex:", hex);
+    throw e;
+  }
+}
+
+// Parse (ok uint) response - extracts the uint value from an ok response
+// Used for oracle get-price which returns (response uint uint)
+function parseOkUint(hex: string | null): number | null {
+  if (!hex) return null;
+  try {
+    const cv = hexToCV(hex);
+    const parsed = cvToValue(cv) as any;
+    
+    // Handle direct bigint (some contracts return just uint)
+    if (typeof parsed === "bigint") {
+      return Number(parsed);
+    }
+    
+    // Handle (ok uint) response - cvToValue returns { type: "ok", value: { type: "uint", value: bigint } }
+    if (parsed && typeof parsed === "object") {
+      // Check for ok response wrapper
+      if (parsed.type === "ok" && parsed.value !== undefined) {
+        const inner = parsed.value;
+        if (typeof inner === "bigint") {
+          return Number(inner);
+        }
+        if (inner && typeof inner === "object" && inner.value !== undefined) {
+          if (typeof inner.value === "bigint") {
+            return Number(inner.value);
+          }
+        }
+      }
+      // Direct value wrapper { type: "uint", value: bigint }
+      if (parsed.value !== undefined && typeof parsed.value === "bigint") {
+        return Number(parsed.value);
+      }
+    }
+    
+    return null;
+  } catch (e) {
+    console.error("[SSE] Error parsing ok uint:", e, "hex:", hex);
+    return null;
+  }
+}
+
 export function useContractRead<T = any>(
   options: ReadContractOptions
 ): UseContractReadResult<T> {
@@ -164,9 +237,38 @@ export function useRegisteredStablecoins() {
   const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { count } = useStablecoinCount();
+  const { count: initialCount } = useStablecoinCount();
 
   const fetchStablecoins = useCallback(async () => {
+    // Always re-fetch the count directly to avoid stale values after registration
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (API_KEY) {
+      headers["x-api-key"] = API_KEY;
+    }
+
+    let count: number | null = initialCount;
+    try {
+      const countResp = await fetch(
+        `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.STABLECOIN_FACTORY}/get-stablecoin-count`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+        }
+      );
+      if (countResp.ok) {
+        const countResult = await countResp.json();
+        if (countResult.okay && countResult.result) {
+          const val = parseClarityValue(countResult.result);
+          if (typeof val === "bigint") count = Number(val);
+        }
+      }
+    } catch {
+      // Fall back to hook count
+    }
+
     if (count === null || count === 0) {
       setStablecoins([]);
       setIsLoading(false);
@@ -177,23 +279,14 @@ export function useRegisteredStablecoins() {
     setError(null);
 
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (API_KEY) {
-        headers["x-api-key"] = API_KEY;
-      }
-
       const coins: Stablecoin[] = [];
-      
-      // Fetch each stablecoin by ID
+
       for (let i = 0; i < count; i++) {
         const url = `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.STABLECOIN_FACTORY}/get-stablecoin`;
-        
-        // Encode uint as Clarity value: 0x01 + 16 bytes big-endian
+
         const idHex = i.toString(16).padStart(32, '0');
         const uintArg = `0x01${idHex}`;
-        
+
         const response = await fetch(url, {
           method: "POST",
           headers,
@@ -206,8 +299,6 @@ export function useRegisteredStablecoins() {
         if (response.ok) {
           const result = await response.json();
           if (result.okay && result.result) {
-            // Parse the tuple response - it's returned as a Clarity value
-            // For simplicity, we'll decode it manually or use the repr
             const decoded = decodeClarityTuple(result.result);
             if (!decoded) {
               console.error(`[SSE] Failed to decode stablecoin id=${i}: decodeClarityTuple returned null for hex`, result.result);
@@ -239,7 +330,7 @@ export function useRegisteredStablecoins() {
     } finally {
       setIsLoading(false);
     }
-  }, [count]);
+  }, [initialCount]);
 
   useEffect(() => {
     fetchStablecoins();
@@ -252,6 +343,9 @@ export interface CollateralType {
   asset: string;
   minCollateralRatio: number;
   liquidationRatio: number;
+  liquidationPenalty: number;
+  stabilityFee: number;
+  debtCeiling: number;
   debtFloor: number;
   enabled: boolean;
   oraclePrice: number | null;
@@ -339,23 +433,28 @@ export function useCollateralTypes() {
         if (oracleAddr) {
           const [oracleContractAddr, oracleContractName] = oracleAddr.split(".");
           if (oracleContractAddr && oracleContractName) {
-            const priceResp = await fetch(
-              `${API_BASE}/v2/contracts/call-read/${oracleContractAddr}/${oracleContractName}/get-price`,
-              {
-                method: "POST",
-                headers,
-                body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
-              }
-            );
-            if (priceResp.ok) {
-              const priceResult = await priceResp.json();
-              if (priceResult.okay && priceResult.result) {
-                const priceVal = parseClarityValue(priceResult.result);
-                if (priceVal !== null) {
-                  // Price is scaled by 1e8 (PRICE-SCALE)
-                  oraclePrice = Number(priceVal) / 1e8;
+            try {
+              const priceResp = await fetch(
+                `${API_BASE}/v2/contracts/call-read/${oracleContractAddr}/${oracleContractName}/get-price`,
+                {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+                }
+              );
+              if (priceResp.ok) {
+                const priceResult = await priceResp.json();
+                if (priceResult.okay && priceResult.result) {
+                  // Use parseOkUint to handle (ok uint) response from oracles
+                  const priceVal = parseOkUint(priceResult.result);
+                  if (priceVal !== null) {
+                    // Price is scaled by 1e8 (PRICE-SCALE)
+                    oraclePrice = priceVal / 1e8;
+                  }
                 }
               }
+            } catch (e) {
+              console.error(`[SSE] Error fetching oracle price from ${oracleAddr}:`, e);
             }
           }
         }
@@ -369,6 +468,9 @@ export function useCollateralTypes() {
           asset,
           minCollateralRatio: Number(decoded["min-collateral-ratio"]),
           liquidationRatio: Number(decoded["liquidation-ratio"]),
+          liquidationPenalty: Number(decoded["liquidation-penalty"] ?? 0),
+          stabilityFee: Number(decoded["stability-fee"] ?? 0),
+          debtCeiling: Number(decoded["debt-ceiling"] ?? 0),
           debtFloor: Number(decoded["debt-floor"] ?? 0),
           enabled: Boolean(decoded.enabled),
           oraclePrice,
@@ -434,12 +536,23 @@ export function useStablecoinCollateralList(stablecoinId: number | null) {
         }
       );
 
-      if (!countResp.ok) { setCollaterals([]); return; }
+      if (!countResp.ok) {
+        throw new Error(`[SSE] Failed to fetch stablecoin collateral count for stablecoin ${stablecoinId}`);
+      }
       const countResult = await countResp.json();
-      if (!countResult.okay) { setCollaterals([]); return; }
-      const count = Number(parseClarityValue(countResult.result) || 0);
+      if (!countResult.okay) {
+        throw new Error(countResult.cause || `[SSE] Failed read-only call for stablecoin collateral count ${stablecoinId}`);
+      }
+      const count = parseRequiredUint(
+        countResult.result,
+        `stablecoin collateral count for stablecoin ${stablecoinId}`
+      );
 
-      if (count === 0) { setCollaterals([]); setIsLoading(false); return; }
+      if (count === 0) {
+        setCollaterals([]);
+        setIsLoading(false);
+        return;
+      }
 
       const configs: StablecoinCollateralConfig[] = [];
 
@@ -481,17 +594,40 @@ export function useStablecoinCollateralList(stablecoinId: number | null) {
         const configResult = await configResp.json();
         if (!configResult.okay) continue;
         const configDecoded = decodeClarityTuple(configResult.result);
-        if (!configDecoded) continue;
+        if (!configDecoded) {
+          console.error(
+            `[SSE] Failed to decode stablecoin collateral config for stablecoin=${stablecoinId}, asset=${asset}. Raw:`,
+            configResult.result
+          );
+          continue;
+        }
+
+        const requiredUintFields = [
+          "min-collateral-ratio",
+          "liquidation-ratio",
+          "liquidation-penalty",
+          "stability-fee",
+          "debt-ceiling",
+          "debt-floor",
+        ] as const;
+
+        const invalidUintField = requiredUintFields.find(
+          (field) => typeof configDecoded[field] !== "number"
+        );
+
+        if (invalidUintField || typeof configDecoded.enabled !== "boolean") {
+          continue;
+        }
 
         configs.push({
           asset,
-          minCollateralRatio: Number(configDecoded["min-collateral-ratio"] ?? 150),
-          liquidationRatio: Number(configDecoded["liquidation-ratio"] ?? 120),
-          liquidationPenalty: Number(configDecoded["liquidation-penalty"] ?? 10),
-          stabilityFee: Number(configDecoded["stability-fee"] ?? 200),
-          debtCeiling: Number(configDecoded["debt-ceiling"] ?? 0),
-          debtFloor: Number(configDecoded["debt-floor"] ?? 0),
-          enabled: Boolean(configDecoded.enabled),
+          minCollateralRatio: Number(configDecoded["min-collateral-ratio"]),
+          liquidationRatio: Number(configDecoded["liquidation-ratio"]),
+          liquidationPenalty: Number(configDecoded["liquidation-penalty"]),
+          stabilityFee: Number(configDecoded["stability-fee"]),
+          debtCeiling: Number(configDecoded["debt-ceiling"]),
+          debtFloor: Number(configDecoded["debt-floor"]),
+          enabled: configDecoded.enabled,
         });
       }
 
@@ -611,11 +747,63 @@ export function useIsSymbolTaken(symbol: string) {
 // This recursively extracts the plain JS value.
 function unwrapClarityValue(raw: any): any {
   if (raw === null || raw === undefined) return raw;
+  
   // Detect { type, value } wrapper produced by cvToValue v6
-  if (typeof raw === "object" && "type" in raw && "value" in raw && typeof raw.type === "string") {
-    return unwrapClarityValue(raw.value);
+  if (typeof raw === "object" && "type" in raw && typeof raw.type === "string") {
+    const clarityType = raw.type;
+    
+    // Handle optional types
+    if (clarityType === "none") {
+      return null;
+    }
+    if (clarityType === "some" && "value" in raw) {
+      return unwrapClarityValue(raw.value);
+    }
+    
+    // Handle ok/err response types
+    if (clarityType === "ok" && "value" in raw) {
+      return unwrapClarityValue(raw.value);
+    }
+    if (clarityType === "err" && "value" in raw) {
+      return null; // Treat errors as null
+    }
+    
+    // Handle principal type - return the string directly
+    if (clarityType === "principal" && "value" in raw) {
+      return String(raw.value);
+    }
+    
+    // Handle boolean types (true/false in Clarity)
+    if (clarityType === "true") {
+      return true;
+    }
+    if (clarityType === "false") {
+      return false;
+    }
+    if (clarityType === "bool" && "value" in raw) {
+      return Boolean(raw.value);
+    }
+    
+    // Handle int/uint types
+    if ((clarityType === "uint" || clarityType === "int") && "value" in raw) {
+      if (typeof raw.value === "bigint") return Number(raw.value);
+      if (typeof raw.value === "string") return Number(raw.value);
+      return raw.value;
+    }
+    
+    // Handle other typed values with value property
+    if ("value" in raw) {
+      return unwrapClarityValue(raw.value);
+    }
   }
+  
   if (typeof raw === "bigint") return Number(raw);
+  
+  // Handle string numbers (cvToValue sometimes returns bigints as strings)
+  if (typeof raw === "string" && /^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  
   // If it's a plain object (could be a tuple's inner fields), unwrap each value
   if (typeof raw === "object" && !Array.isArray(raw)) {
     return Object.fromEntries(
@@ -629,14 +817,14 @@ function unwrapClarityValue(raw: any): any {
 function decodeClarityTuple(hex: string): Record<string, any> | null {
   try {
     if (!hex) return null;
-    const raw = cvToValue(hexToCV(hex)) as any;
+    const cv = hexToCV(hex);
+    const raw = cvToValue(cv) as any;
     if (!raw || typeof raw !== "object") return null;
 
     const unwrapped = unwrapClarityValue(raw);
     if (!unwrapped || typeof unwrapped !== "object") return null;
     return unwrapped;
-  } catch (e) {
-    console.error("[SSE] Error decoding Clarity tuple:", e, "hex:", hex);
+  } catch {
     return null;
   }
 }
@@ -686,6 +874,123 @@ async function readContract(
   return data.result;
 }
 
+async function loadVaultForStablecoin(
+  userAddress: string,
+  coin: Stablecoin
+): Promise<UserVault | null> {
+  const vaultHex = await readContract(
+    CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+    "get-vault-for-stablecoin",
+    [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id))],
+    userAddress
+  );
+
+  if (!vaultHex || vaultHex.startsWith("0x09")) {
+    return null;
+  }
+
+  const vaultData = decodeClarityTuple(vaultHex);
+  if (!vaultData) {
+    console.error(`[SSE] Failed to decode vault for stablecoin ${coin.id}, hex:`, vaultHex);
+    return null;
+  }
+
+  if (typeof vaultData["total-debt"] !== "number" || typeof vaultData["created-at"] !== "number") {
+    console.error(`[SSE] Vault for stablecoin ${coin.id} has missing required fields:`, vaultData);
+    return null;
+  }
+
+  const countHex = await readContract(
+    CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+    "get-vault-asset-count-for-stablecoin",
+    [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id))],
+    userAddress
+  );
+
+  const assetCount = parseRequiredUint(
+    countHex,
+    `vault asset count for owner=${userAddress} stablecoin=${coin.id}`
+  );
+
+  const positions: CollateralPosition[] = [];
+
+  for (let i = 0; i < assetCount; i++) {
+    const assetHex = await readContract(
+      CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+      "get-vault-asset-at-index-for-stablecoin",
+      [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(uintCV(i))],
+      userAddress
+    );
+
+    if (!assetHex || assetHex.startsWith("0x09")) continue;
+
+    const assetData = decodeClarityTuple(assetHex);
+    const asset = assetData?.asset;
+    if (typeof asset !== "string") {
+      console.error(
+        `[SSE] Invalid vault asset at index ${i} for owner=${userAddress} stablecoin=${coin.id}:`,
+        assetData
+      );
+      continue;
+    }
+
+    const posHex = await readContract(
+      CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+      "get-collateral-position-for-stablecoin",
+      [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
+      userAddress
+    );
+
+    if (!posHex || posHex.startsWith("0x09")) continue;
+
+    const posData = decodeClarityTuple(posHex);
+    if (!posData) {
+      console.error(
+        `[SSE] Failed to decode collateral position for owner=${userAddress}, stablecoin=${coin.id}, asset=${asset}. Raw:`,
+        posHex
+      );
+      continue;
+    }
+
+    if (typeof posData.amount !== "number" || typeof posData["debt-share"] !== "number") {
+      console.error(
+        `[SSE] Missing required fields in position for owner=${userAddress}, stablecoin=${coin.id}, asset=${asset}:`,
+        posData
+      );
+      continue;
+    }
+
+    const hfHex = await readContract(
+      CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
+      "get-position-health-factor-for-stablecoin",
+      [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
+      userAddress
+    );
+
+    const healthFactor = parseRequiredUint(
+      hfHex,
+      `health factor for owner=${userAddress} stablecoin=${coin.id} asset=${asset}`
+    );
+
+    positions.push({
+      asset,
+      amount: Number(posData.amount),
+      debtShare: Number(posData["debt-share"]),
+      healthFactor,
+    });
+  }
+
+  return {
+    stablecoinId: coin.id,
+    stablecoinName: coin.name,
+    stablecoinSymbol: coin.symbol,
+    tokenContract: coin.tokenContract,
+    totalDebt: Number(vaultData["total-debt"]),
+    createdAt: Number(vaultData["created-at"]),
+    positions,
+  };
+}
+
 export function useUserVaults(userAddress: string | null) {
   const [vaults, setVaults] = useState<UserVault[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -703,101 +1008,10 @@ export function useUserVaults(userAddress: string | null) {
     setError(null);
 
     try {
-      const userVaults: UserVault[] = [];
-
-      for (const coin of stablecoins) {
-        // Check if user has a vault for this stablecoin
-        const vaultHex = await readContract(
-          CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
-          "get-vault-for-stablecoin",
-          [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id))],
-          userAddress
-        );
-
-        if (!vaultHex || vaultHex.startsWith("0x09")) continue; // 0x09 = none
-
-        const vaultData = decodeClarityTuple(vaultHex);
-        if (!vaultData) {
-          console.error(`[SSE] Failed to decode vault for stablecoin ${coin.id}, hex:`, vaultHex);
-          continue;
-        }
-
-        // Get asset count for this vault
-        const countHex = await readContract(
-          CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
-          "get-vault-asset-count-for-stablecoin",
-          [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id))],
-          userAddress
-        );
-
-        const assetCount = countHex ? Number(parseClarityValue(countHex) ?? 0) : 0;
-
-        const positions: CollateralPosition[] = [];
-
-        for (let i = 0; i < assetCount; i++) {
-          // Get asset at index
-          const assetHex = await readContract(
-            CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
-            "get-vault-asset-at-index-for-stablecoin",
-            [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(uintCV(i))],
-            userAddress
-          );
-
-          if (!assetHex || assetHex.startsWith("0x09")) continue;
-          const assetData = decodeClarityTuple(assetHex);
-          const asset = assetData?.asset;
-          if (typeof asset !== "string") {
-            console.error(`[SSE] Invalid asset at index ${i} for vault stablecoin=${coin.id}:`, assetData);
-            continue;
-          }
-
-          // Get collateral position
-          const posHex = await readContract(
-            CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
-            "get-collateral-position-for-stablecoin",
-            [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
-            userAddress
-          );
-
-          if (!posHex || posHex.startsWith("0x09")) continue;
-          const posData = decodeClarityTuple(posHex);
-          if (!posData) continue;
-
-          if (posData.amount == null || posData["debt-share"] == null) {
-            console.error(`[SSE] Missing required fields in position for asset=${asset}, stablecoin=${coin.id}:`, posData);
-            continue;
-          }
-
-          // Get health factor
-          const hfHex = await readContract(
-            CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
-            "get-position-health-factor-for-stablecoin",
-            [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
-            userAddress
-          );
-
-          const healthFactor = hfHex ? Number(parseClarityValue(hfHex) ?? 0) : 0;
-
-          positions.push({
-            asset,
-            amount: Number(posData.amount),
-            debtShare: Number(posData["debt-share"]),
-            healthFactor,
-          });
-        }
-
-        userVaults.push({
-          stablecoinId: coin.id,
-          stablecoinName: coin.name,
-          stablecoinSymbol: coin.symbol,
-          tokenContract: coin.tokenContract,
-          totalDebt: Number(vaultData["total-debt"] ?? 0),
-          createdAt: Number(vaultData["created-at"] ?? 0),
-          positions,
-        });
-      }
-
-      setVaults(userVaults);
+      const loadedVaults = await Promise.all(
+        stablecoins.map((coin) => loadVaultForStablecoin(userAddress, coin))
+      );
+      setVaults(loadedVaults.filter((vault): vault is UserVault => vault !== null));
     } catch (err) {
       console.error("[SSE] Error fetching user vaults:", err);
       setError(err as Error);
@@ -811,4 +1025,228 @@ export function useUserVaults(userAddress: string | null) {
   }, [fetchVaults]);
 
   return { vaults, isLoading, error, refetch: fetchVaults };
+}
+
+export function useUserVault(userAddress: string | null, stablecoinId: number | null) {
+  const [vault, setVault] = useState<UserVault | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const { stablecoins } = useRegisteredStablecoins();
+
+  const fetchVault = useCallback(async () => {
+    if (!userAddress || stablecoinId === null) {
+      setVault(null);
+      return;
+    }
+
+    const coin = stablecoins.find((stablecoin) => stablecoin.id === stablecoinId);
+    if (!coin) {
+      setVault(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const loadedVault = await loadVaultForStablecoin(userAddress, coin);
+      setVault(loadedVault);
+    } catch (err) {
+      console.error(
+        `[SSE] Error fetching vault for owner=${userAddress} stablecoin=${stablecoinId}:`,
+        err
+      );
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [stablecoinId, stablecoins, userAddress]);
+
+  useEffect(() => {
+    fetchVault();
+  }, [fetchVault]);
+
+  return { vault, isLoading, error, refetch: fetchVault };
+}
+
+export interface StabilityPoolReward {
+  asset: string;
+  claimableAmount: number;
+  enabled: boolean;
+}
+
+export interface StabilityPoolState {
+  totalDeposits: number;
+  userDeposit: number;
+  userShare: number;
+  liquidationRewardPct: number;
+  rewards: StabilityPoolReward[];
+}
+
+export function useStabilityPoolState(userAddress: string | null, stablecoinId: number | null) {
+  const [poolState, setPoolState] = useState<StabilityPoolState | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const { collaterals } = useStablecoinCollateralList(stablecoinId);
+
+  const fetchPoolState = useCallback(async () => {
+    if (stablecoinId === null) {
+      setPoolState(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const sender = userAddress || CONTRACTS.DEPLOYER;
+
+      const totalDeposits = parseRequiredUint(
+        await readContract(
+          CONTRACTS.STABILITY_POOL,
+          "get-total-deposits",
+          [cvToHex(uintCV(stablecoinId))],
+          sender
+        ),
+        `stability pool total deposits for stablecoin=${stablecoinId}`
+      );
+
+      const liquidationRewardPct = parseRequiredUint(
+        await readContract(
+          CONTRACTS.STABILITY_POOL,
+          "get-liquidation-reward-pct",
+          [cvToHex(uintCV(stablecoinId))],
+          sender
+        ),
+        `stability pool reward pct for stablecoin=${stablecoinId}`
+      );
+
+      const userDeposit = userAddress
+        ? parseRequiredUint(
+            await readContract(
+              CONTRACTS.STABILITY_POOL,
+              "balance-of-for-stablecoin",
+              [cvToHex(principalCV(userAddress)), cvToHex(uintCV(stablecoinId))],
+              sender
+            ),
+            `stability pool user balance for owner=${userAddress} stablecoin=${stablecoinId}`
+          )
+        : 0;
+
+      const rewards: StabilityPoolReward[] = [];
+
+      for (const collateral of collaterals) {
+        const claimableAmount = userAddress
+          ? parseRequiredUint(
+              await readContract(
+                CONTRACTS.STABILITY_POOL,
+                "get-claimable-collateral-reward",
+                [
+                  cvToHex(principalCV(userAddress)),
+                  cvToHex(uintCV(stablecoinId)),
+                  cvToHex(principalCV(collateral.asset)),
+                ],
+                sender
+              ),
+              `claimable reward for owner=${userAddress} stablecoin=${stablecoinId} asset=${collateral.asset}`
+            )
+          : 0;
+
+        rewards.push({
+          asset: collateral.asset,
+          claimableAmount,
+          enabled: collateral.enabled,
+        });
+      }
+
+      setPoolState({
+        totalDeposits,
+        userDeposit,
+        userShare: totalDeposits > 0 ? (userDeposit / totalDeposits) * 100 : 0,
+        liquidationRewardPct,
+        rewards,
+      });
+    } catch (err) {
+      console.error(`[SSE] Error fetching stability pool state for stablecoin=${stablecoinId}:`, err);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [collaterals, stablecoinId, userAddress]);
+
+  useEffect(() => {
+    fetchPoolState();
+  }, [fetchPoolState]);
+
+  return { poolState, isLoading, error, refetch: fetchPoolState };
+}
+
+// ========================================
+// DIA Oracle Price Hook
+// ========================================
+
+export interface OraclePrices {
+  btcUsd: number | null;
+  stxUsd: number | null;
+}
+
+// Fetch prices directly from DIA oracle contracts
+export function useDiaOraclePrices() {
+  const [prices, setPrices] = useState<OraclePrices>({ btcUsd: null, stxUsd: null });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchPrices = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      const fetchOraclePrice = async (contractName: string): Promise<number | null> => {
+        try {
+          const resp = await fetch(
+            `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${contractName}/get-price`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+            }
+          );
+          if (!resp.ok) return null;
+          const result = await resp.json();
+          if (!result.okay || !result.result) return null;
+          const priceVal = parseOkUint(result.result);
+          return priceVal !== null ? priceVal / 1e8 : null;
+        } catch (e) {
+          console.error(`[SSE] Error fetching price from ${contractName}:`, e);
+          return null;
+        }
+      };
+
+      const [btcUsd, stxUsd] = await Promise.all([
+        fetchOraclePrice(CONTRACTS.PRICE_ORACLE_DIA_BTC),
+        fetchOraclePrice(CONTRACTS.PRICE_ORACLE_DIA_STX),
+      ]);
+
+      setPrices({ btcUsd, stxUsd });
+    } catch (err) {
+      console.error("[SSE] Error fetching DIA oracle prices:", err);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPrices();
+    // Refresh prices every 60 seconds
+    const interval = setInterval(fetchPrices, 60000);
+    return () => clearInterval(interval);
+  }, [fetchPrices]);
+
+  return { prices, isLoading, error, refetch: fetchPrices };
 }

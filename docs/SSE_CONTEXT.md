@@ -28,13 +28,24 @@ It is intended as infrastructure-as-a-service, not a single fixed stablecoin pro
 4. Health factor should be presented from on-chain reads where possible
    - previews are fine for UX, but canonical value is contract state
 
-## Prototype Caveats
+## Implementation Status
 
-The repo still contains placeholders/TODOs for:
-- ~~custody transfers for collateral~~ — **DONE**: `multi-asset-vault-engine-v3` now performs real SIP-010 token transfers on deposit/withdraw
-- ~~custody transfers for pool assets~~ — **DONE**: `stability-pool-v3` now performs real SIP-010 token transfers with stablecoin-scoped balances
-- ~~liquidation reward accounting~~ — **DONE**: Creator-configurable reward percentage. Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution.
-- ~~liquidation settlement logic~~ — **DONE**: Full orchestration in `liquidation-engine-v3`: health check → vault engine `liquidate-position` (seizes collateral, burns stablecoins) → stability pool `distribute-liquidation-reward`
-- ~~production-grade oracle validation~~ — **DONE**: DIA push-based oracle integration with staleness guard. `price-oracle-dia-btc` / `price-oracle-dia-stx` wrap DIA's `get-value` with configurable max-age check. Mock oracles (IDs 1/2) retained for simnet; DIA oracles (IDs 3/4) for testnet/mainnet.
+All contract-level TODOs from the grant scope have been completed and deployed as v5:
+- **Collateral custody**: `multi-asset-vault-engine-v5` performs real SIP-010 token transfers on deposit/withdraw
+- **Pool custody**: `stability-pool-v4` performs real SIP-010 token transfers with stablecoin-scoped balances
+- **Liquidation reward accounting**: Creator-configurable reward percentage. Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution.
+- **Liquidation settlement**: Full orchestration in `liquidation-engine-v5`: health check → vault engine `liquidate-position` (seizes collateral, burns stablecoins) → stability pool `distribute-liquidation-reward`
+- **Oracle integration**: DIA push-based oracle integration with staleness guard. `price-oracle-dia-btc-v2` / `price-oracle-dia-stx-v2` wrap DIA's `get-value` with configurable max-age check and ms→s timestamp conversion. Only DIA oracles (IDs 3/4) are supported; mock oracles have been removed.
 
-These are known prototype boundaries and should be documented when touched.
+## Versioning
+
+Unchanged contracts remain at v3 on-chain (`stablecoin-factory-v3`, `stablecoin-token-v3`). The collateral registry and stability pool remain at v4: `collateral-registry-v4`, `stability-pool-v4`. The vault engine and liquidation engine were upgraded to v5: `multi-asset-vault-engine-v5`, `liquidation-engine-v5`. DIA oracle contracts were upgraded to v2: `price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2` (fixed DIA timestamp ms→s conversion). The `dia-oracle-adapter` remains unchanged.
+
+## Deployment
+
+All contracts are deployed via a single command:
+```bash
+npm run deploy
+```
+
+This reads `sse.config.json` for contract list and bootstrap steps. No version-specific scripts are needed.
