@@ -1,5 +1,7 @@
 # SSE Platform - UI/UX Design Document
 
+> See [`../getting_started.md`](../getting_started.md) for the combined user + technical reference and canonical sequence diagrams. This file captures long-form UI/UX flow specifications.
+
 ## Table of Contents
 1. [User Personas](#user-personas)
 2. [Platform Overview](#platform-overview)

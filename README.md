@@ -1,19 +1,34 @@
 # Stacks Stablecoin Engine (SSE)
 
+**Live app:** https://app.stablecoin-engine.com/vaults
+
+## Documentation Map
+
+| Doc | Purpose |
+|---|---|
+| [`docs/getting_started.md`](./docs/getting_started.md) | Combined user + technical reference (personas, sequence diagrams, full function reference) |
+| [`docs/SSE_CONTEXT.md`](./docs/SSE_CONTEXT.md) | Product intent and consistency rules |
+| [`docs/roadmap.md`](./docs/roadmap.md) | Feature coverage status and roadmap (contract vs frontend) |
+| [`docs/adl/user_flows.md`](./docs/adl/user_flows.md) | Long-form user-flow specifications |
+| [`docs/adl/crosschain.md`](./docs/adl/crosschain.md) | Cross-chain bridge design notes |
+| [`AGENTS.md`](./AGENTS.md) | Repository rules for coding agents |
+| [`sse.config.json`](./sse.config.json) | Source of truth for deployed contract names |
+
 ## Project Overview
-Stacks Stablecoin Engine (SSE) is a minimal, reusable infrastructure template for experimenting with Bitcoin-backed, overcollateralized stablecoins on Stacks using sBTC. This is an early-stage prototype intended for a grant submission and rapid developer experimentation.
+Stacks Stablecoin Engine (SSE) is a modular infrastructure layer for launching and operating Bitcoin-backed, overcollateralized stablecoins on Stacks using sBTC and STX as collateral. Creators register stablecoins through a factory, configure per-stablecoin risk parameters, and users open vaults and mint against them. A reference Next.js frontend is deployed at https://app.stablecoin-engine.com.
 
 ## Problem Statement
 Developers who want to explore sBTC-backed CDP systems on Stacks need a clean, modular starting point. SSE provides that foundation with minimal logic, clear interfaces, and TODO markers for production-grade risk and liquidation systems.
 
-## Grant Scope (Prototype Infrastructure Only)
-This project is intentionally scoped to an 8–12 week grant timeline and focuses on infrastructure only:
+## Grant Scope
+This project is scoped to an 8–12 week grant timeline and focuses on core infrastructure:
 - No governance
 - No tokenomics
 - No emissions model
-- No frontend
 - No AI components
-- No advanced liquidation math
+- No advanced liquidation auctions (simple proportional reward model)
+
+A reference frontend is included (not part of the protocol surface) at `frontend/` and deployed at https://app.stablecoin-engine.com.
 
 ## Architecture Overview
 High-level flow (simplified current state):
@@ -28,18 +43,18 @@ User → VaultEngine → StablecoinToken
 
 ## Contract Breakdown
 
-### Core Contracts
-- `vault-engine.clar`: Original single-asset CDP logic. Tracks vaults, collateral, and debt.
-- `multi-asset-vault-engine.clar`: **Multi-asset CDP engine** supporting multiple collateral types with per-asset positions, health factors, and debt tracking.
-- `collateral-registry.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, and per-asset oracles.
-- `stablecoin-token.clar`: Minimal SIP-010 token with mint/burn restricted to vault engines and cross-chain bridge support.
-- `stablecoin-factory.clar`: **Stablecoin registration factory** with configurable STX fees and treasury address.
-- `liquidation-engine.clar`: Stub liquidation entry point with placeholder health checks.
-- `stability-pool.clar`: Simple deposit/withdraw tracking with TODO for liquidation redistribution.
+### Core Contracts (deployed versions)
+- `stablecoin-factory-v3.clar`: **Stablecoin registration factory** with configurable STX fees and treasury address.
+- `stablecoin-token-v3.clar`: Minimal SIP-010 token with mint/burn restricted to vault engines and cross-chain bridge hooks.
+- `collateral-registry-v4.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, per-asset oracles, and per-stablecoin overrides.
+- `multi-asset-vault-engine-v5.clar`: **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers.
+- `stability-pool-v4.clar`: Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution.
+- `liquidation-engine-v5.clar`: Full liquidation orchestrator (health check → vault-engine seize → pool distribute).
 
 ### Oracle Contracts
 - `oracle-trait.clar`: Trait defining `get-price`.
-- `price-oracle-mock.clar`: Mock oracle returning a constant price for testing.
+- `dia-oracle-adapter.clar`: Forwards to the real DIA oracle on testnet/mainnet (`ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`).
+- `price-oracle-dia-btc-v2.clar` / `price-oracle-dia-stx-v2.clar`: `oracle-trait` implementations wrapping DIA with staleness guard and ms→s timestamp conversion.
 - `sip-010-trait.clar`: Local SIP-010 trait definition used by the token.
 
 ### Cross-Chain Bridge Contracts
@@ -260,14 +275,40 @@ As deployer:
 )
 ```
 
-## Example Usage Flow
-1. `open-vault`
-2. `deposit-collateral`
-3. `mint`
-4. `burn`
-5. `withdraw-collateral`
+## Example Usage Flow (Multi-Asset)
 
-Note: Current collateral transfers and liquidation logic are placeholders with TODOs for production-grade behavior.
+```clarity
+;; 1. Register a stablecoin (pays STX fee)
+(contract-call? .stablecoin-factory-v3 register-stablecoin "MyUSD" "mUSD")
+;; -> (ok u0)   ; stablecoin-id
+
+;; 2. After deploying & linking a token contract, configure collateral
+(contract-call? .collateral-registry-v4 configure-collateral-for-stablecoin
+  u0                                                            ;; stablecoin-id
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3      ;; asset
+  u150 u120 u10 u200 u1000000 u100)                             ;; min-cr / liq-ratio / penalty / fee / ceiling / floor
+
+;; 3. Open vault and deposit
+(contract-call? .multi-asset-vault-engine-v5 open-vault-for-stablecoin u0)
+(contract-call? .multi-asset-vault-engine-v5 deposit-collateral-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+  .sbtc-token-v3 u1000000)
+
+;; 4. Mint against the position (validates health factor)
+(contract-call? .multi-asset-vault-engine-v5 mint-against-asset-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+  .<your-linked-token> u500)
+
+;; 5. Repay and withdraw
+(contract-call? .multi-asset-vault-engine-v5 repay-against-asset-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+  .<your-linked-token> u200)
+(contract-call? .multi-asset-vault-engine-v5 withdraw-collateral-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+  .sbtc-token-v3 u300)
+```
+
+See [`docs/getting_started.md`](./docs/getting_started.md) for complete sequence diagrams and function reference.
 
 
 ## User Flows (Grant Scope)

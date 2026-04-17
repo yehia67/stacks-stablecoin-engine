@@ -11,9 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices } from "@/hooks/useContractRead";
+import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices, useTokenDecimals } from "@/hooks/useContractRead";
 import { CONTRACTS } from "@/lib/constants";
-import { calculateHealthFactor, formatNumber } from "@/lib/utils";
+import { calculateHealthFactor, formatNumber, toSmallestUnits, toHumanReadable } from "@/lib/utils";
 
 type StepStatus = 'pending' | 'active' | 'done' | 'skipped' | 'error';
 
@@ -49,6 +49,15 @@ export default function NewVaultPage() {
 
   const { collaterals: stablecoinCollaterals } = useStablecoinCollateralList(selectedStablecoinId);
   const { prices: diaOraclePrices } = useDiaOraclePrices();
+
+  // Fetch token decimals dynamically from chain
+  const { decimals: collateralDecimals } = useTokenDecimals(selectedCollateralAsset);
+  const stablecoinTokenContract = useMemo(() => {
+    if (selectedStablecoinId === null) return null;
+    const coin = stablecoins.find((c) => c.id === selectedStablecoinId);
+    return coin?.tokenContract ?? null;
+  }, [selectedStablecoinId, stablecoins]);
+  const { decimals: stablecoinDecimals } = useTokenDecimals(stablecoinTokenContract);
 
   // Helper to get oracle price for an asset - use DIA prices with fallback to registry oracle
   const getOraclePrice = useCallback((asset: string): number | null => {
@@ -107,7 +116,7 @@ export default function NewVaultPage() {
   const selectedCollateral =
     effectiveCollateralTypes.find((type) => type.asset === selectedCollateralAsset) || null;
 
-  const oraclePrice = selectedCollateral?.oraclePrice ?? 1;
+  const oraclePrice = selectedCollateral?.oraclePrice ?? null;
 
   const formatAssetName = (asset: string) => {
     const [, contractName] = asset.split(".");
@@ -141,20 +150,47 @@ export default function NewVaultPage() {
   const selectedStablecoin = linkedStablecoins.find((coin) => coin.id === selectedStablecoinId) || null;
   const stablecoinSymbol = selectedStablecoin?.symbol || "Stablecoin";
 
-  // Collateral amounts are in smallest units (e.g., satoshis for sBTC)
-  // For display, we show the raw amount but calculate value using oracle price
-  const collateralAmountNum = parseFloat(collateralAmount || "0");
-  const collateralValue = collateralAmountNum * oraclePrice;
-  const borrowValue = parseFloat(borrowAmount || "0");
+  // Human-readable input amounts (e.g. 0.001 BTC, 50 EGP)
+  const collateralHuman = parseFloat(collateralAmount || "0");
+  const borrowHuman = parseFloat(borrowAmount || "0");
+
   const minRatio = selectedCollateral?.minCollateralRatio || 150;
-  const debtFloor = selectedCollateral?.debtFloor ?? 0;
-  const previewHealthFactor = calculateHealthFactor(collateralValue, borrowValue, minRatio);
-  const maxBorrow = (collateralValue / minRatio) * 100;
+  const debtFloorRaw = selectedCollateral?.debtFloor ?? 0; // in smallest units on-chain
 
-  const collateralUnits = Math.floor(parseFloat(collateralAmount || "0"));
-  const borrowUnits = Math.floor(parseFloat(borrowAmount || "0"));
+  // Convert human inputs to on-chain smallest units
+  const collateralUnits = collateralDecimals !== null ? toSmallestUnits(collateralHuman, collateralDecimals) : 0;
+  const borrowUnits = stablecoinDecimals !== null ? toSmallestUnits(borrowHuman, stablecoinDecimals) : 0;
 
-  const isBelowDebtFloor = borrowUnits > 0 && borrowUnits < debtFloor;
+  // On-chain collateral value: units * oraclePrice (oraclePrice is already rawPrice / 1e8)
+  const collateralValue = oraclePrice !== null ? collateralUnits * oraclePrice : 0;
+
+  // Health factor preview: matches on-chain formula — (collateralValue / borrowUnits) * 100
+  const previewHealthFactor = calculateHealthFactor(collateralValue, borrowUnits, minRatio);
+
+  // Max borrowable in smallest units, converted to human-readable
+  const maxBorrowUnits = minRatio > 0 ? (collateralValue / minRatio) * 100 : 0;
+  const maxBorrow = stablecoinDecimals !== null ? toHumanReadable(maxBorrowUnits, stablecoinDecimals) : 0;
+
+  // Debt floor in human-readable
+  const debtFloorHuman = stablecoinDecimals !== null ? toHumanReadable(debtFloorRaw, stablecoinDecimals) : 0;
+
+  // USD value of collateral deposit (human-readable amount * price per whole token)
+  const collateralUsd = oraclePrice !== null ? collateralHuman * oraclePrice : 0;
+
+  const isBelowDebtFloor = borrowUnits > 0 && borrowUnits < debtFloorRaw;
+
+  // Dynamic placeholder values: minimum acceptable amounts from on-chain config
+  const minBorrowPlaceholder = stablecoinDecimals !== null && debtFloorRaw > 0
+    ? `e.g. ${toHumanReadable(debtFloorRaw, stablecoinDecimals)}`
+    : stablecoinDecimals !== null ? "e.g. 1" : "Loading...";
+  const minCollateralPlaceholder = useMemo(() => {
+    if (collateralDecimals === null || oraclePrice === null || oraclePrice === 0) return "Loading...";
+    // Min collateral to cover debt floor at min ratio
+    const minDebt = debtFloorRaw > 0 ? debtFloorRaw : (stablecoinDecimals !== null ? 10 ** stablecoinDecimals : 1);
+    const minCollateralUnits = (minDebt * minRatio) / (100 * oraclePrice);
+    const minHuman = toHumanReadable(Math.ceil(minCollateralUnits), collateralDecimals);
+    return `e.g. ${Number(minHuman.toPrecision(3))}`;
+  }, [collateralDecimals, stablecoinDecimals, oraclePrice, debtFloorRaw, minRatio]);
 
   const isValidPosition =
     !!selectedStablecoin &&
@@ -452,21 +488,25 @@ export default function NewVaultPage() {
                   </label>
                   <Input
                     type="number"
-                    placeholder="Enter amount to deposit"
+                    step="any"
+                    placeholder={minCollateralPlaceholder}
                     value={collateralAmount}
                     onChange={(e) => setCollateralAmount(e.target.value)}
                     className="text-lg"
                   />
                   <div className="mt-2 space-y-1">
-                    {oraclePrice > 1 ? (
+                    {oraclePrice !== null && oraclePrice > 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        ≈ <span className="font-medium text-foreground">${formatNumber(collateralValue, 2)}</span> USD
+                        ≈ <span className="font-medium text-foreground">${formatNumber(collateralUsd, 2)}</span> USD
                         <span className="ml-2 text-xs">(@ ${formatNumber(oraclePrice, 2)} per {formatAssetName(selectedCollateral.asset)})</span>
                       </p>
                     ) : (
                       <p className="text-sm text-yellow-600">
                         ⚠ Oracle price unavailable - value estimate not shown
                       </p>
+                    )}
+                    {collateralDecimals === null && (
+                      <p className="text-sm text-yellow-600">Loading token decimals...</p>
                     )}
                   </div>
                 </div>
@@ -480,7 +520,8 @@ export default function NewVaultPage() {
                 <label className="mb-2 block text-sm font-medium">Mint Amount ({stablecoinSymbol})</label>
                 <Input
                   type="number"
-                  placeholder={selectedCollateral ? "Enter amount to mint" : "Select collateral first"}
+                  step="any"
+                  placeholder={selectedCollateral ? minBorrowPlaceholder : "Select collateral first"}
                   value={borrowAmount}
                   onChange={(e) => setBorrowAmount(e.target.value)}
                   disabled={!selectedCollateral}
@@ -490,14 +531,14 @@ export default function NewVaultPage() {
                   <div className="mt-2 space-y-1">
                     <p className="text-sm text-muted-foreground">
                       Max mintable: <span className="font-medium text-foreground">{formatNumber(maxBorrow, 2)}</span> {stablecoinSymbol}
-                      {debtFloor > 0 && (
-                        <span className="ml-2">· Min: <span className="font-medium">{formatNumber(debtFloor)}</span> {stablecoinSymbol}</span>
+                      {debtFloorHuman > 0 && (
+                        <span className="ml-2">· Min: <span className="font-medium">{formatNumber(debtFloorHuman)}</span> {stablecoinSymbol}</span>
                       )}
                     </p>
                     {isBelowDebtFloor && (
                       <div className="flex items-center gap-1 text-sm text-destructive">
                         <AlertTriangle className="h-3 w-3" />
-                        Minimum mint is {formatNumber(debtFloor)} {stablecoinSymbol} (debt floor)
+                        Minimum mint is {formatNumber(debtFloorHuman)} {stablecoinSymbol} (debt floor)
                       </div>
                     )}
                   </div>
@@ -516,11 +557,11 @@ export default function NewVaultPage() {
                           : "text-red-500"
                     }`}
                   >
-                    {borrowValue > 0 ? `${previewHealthFactor}%` : "-"}
+                    {borrowHuman > 0 ? `${previewHealthFactor}%` : "-"}
                   </span>
                 </div>
                 <Progress value={Math.min(previewHealthFactor, 100)} className="h-2" />
-                {previewHealthFactor < minRatio && borrowValue > 0 && (
+                {previewHealthFactor < minRatio && borrowHuman > 0 && (
                   <div className="mt-2 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
                     Health factor too low. Reduce borrow amount.
@@ -567,16 +608,16 @@ export default function NewVaultPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Collateral Amount</span>
-                  <span className="font-medium">{collateralUnits}</span>
+                  <span className="font-medium">{collateralHuman} {formatAssetName(selectedCollateral?.asset || "")} ({collateralUnits} units)</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Borrow Amount</span>
-                  <span className="font-medium">{borrowUnits} {stablecoinSymbol}</span>
+                  <span className="font-medium">{borrowHuman} {stablecoinSymbol} ({borrowUnits} units)</span>
                 </div>
-                {debtFloor > 0 && (
+                {debtFloorHuman > 0 && (
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Debt Floor (minimum)</span>
-                    <span>{formatNumber(debtFloor)} {stablecoinSymbol}</span>
+                    <span>{formatNumber(debtFloorHuman)} {stablecoinSymbol}</span>
                   </div>
                 )}
                 <div className="flex justify-between">

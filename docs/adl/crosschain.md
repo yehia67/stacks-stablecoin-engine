@@ -1,5 +1,7 @@
 # Cross-Chain Stablecoin Infrastructure Plan
 
+> Out of MVP scope. See [`../getting_started.md`](../getting_started.md) for the combined user + technical reference of the in-scope flows.
+
 Add bridge-ready infrastructure to SSE so that every stablecoin created through the protocol can be bridged to/from Ethereum (and other EVM chains) using a pattern similar to USDCx and Circle's xReserve.
 
 

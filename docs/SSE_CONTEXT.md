@@ -1,5 +1,7 @@
 # SSE Context
 
+> See [`getting_started.md`](./getting_started.md) for the combined user + technical reference (personas, sequence diagrams, function tables). This file documents product intent and consistency rules.
+
 ## What SSE Is
 
 Stacks Stablecoin Engine (SSE) is a modular protocol scaffold for launching and operating overcollateralized stablecoins on Stacks.

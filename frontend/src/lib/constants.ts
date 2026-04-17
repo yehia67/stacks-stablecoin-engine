@@ -54,6 +54,24 @@ export const ORACLE_IDS = {
 export const ACTIVE_ORACLE_ID_BTC = ORACLE_IDS.DIA_BTC;
 export const ACTIVE_ORACLE_ID_STX = ORACLE_IDS.DIA_STX;
 
+// Faucet collateral tokens (testnet only)
+export const FAUCET_COLLATERALS = [
+  {
+    name: "Test sBTC",
+    symbol: "sBTC",
+    contractName: "sbtc-token-v3",
+    decimals: 8,
+    mintAmount: 10_00000000, // 10 sBTC (8 decimals)
+  },
+  {
+    name: "Test STX",
+    symbol: "STX",
+    contractName: "stx-token-v3",
+    decimals: 6,
+    mintAmount: 10_000000, // 10 STX (6 decimals)
+  },
+];
+
 // Default values (used when contracts aren't deployed or data can't be fetched)
 export const DEFAULTS = {
   REGISTRATION_FEE_STX: 100, // 100 STX registration fee
