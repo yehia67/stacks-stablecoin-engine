@@ -41,7 +41,7 @@ export const getContractId = (contractName: string) =>
 // App configuration
 export const APP_CONFIG = {
   name: "Stacks Stablecoin Engine",
-  icon: "/logo.png",
+  icon: "/logo.jpg",
 };
 
 // Oracle IDs matching contract constants in multi-asset-vault-engine-v5
