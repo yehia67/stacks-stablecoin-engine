@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback } from "react";
-import { useConnect, openContractDeploy } from "@stacks/connect-react";
+import { useConnect, openContractDeploy, openContractCall } from "@stacks/connect-react";
 import {
   PostConditionMode,
   uintCV,
   stringAsciiCV,
   principalCV,
+  standardPrincipalCV,
   contractPrincipalCV,
   makeStandardSTXPostCondition,
   FungibleConditionCode,
@@ -480,6 +481,42 @@ export function useContract() {
     [callContract, parseContractPrincipal]
   );
 
+  // Faucet mint for testnet collateral tokens
+  // Uses openContractCall directly to avoid wallet extension ABI parsing issues
+  const faucetMint = useCallback(
+    async (
+      tokenContractName: string,
+      amount: number,
+      recipient: string,
+      onSuccess?: (txId: string) => void,
+      onError?: (error: Error) => void
+    ) => {
+      try {
+        await openContractCall({
+          network: stacksNetwork,
+          contractAddress: CONTRACTS.DEPLOYER,
+          contractName: tokenContractName,
+          functionName: "faucet-mint",
+          functionArgs: [uintCV(amount), standardPrincipalCV(recipient)],
+          postConditionMode: PostConditionMode.Allow,
+          postConditions: [],
+          onFinish: (data: any) => {
+            console.log("Faucet mint tx submitted:", data.txId);
+            onSuccess?.(data.txId);
+          },
+          onCancel: () => {
+            console.log("Faucet mint cancelled");
+            onError?.(new Error("Transaction cancelled by user"));
+          },
+        });
+      } catch (error) {
+        console.error("Faucet mint error:", error);
+        onError?.(error as Error);
+      }
+    },
+    []
+  );
+
   // Liquidation functions
   const liquidate = useCallback(
     (
@@ -531,5 +568,7 @@ export function useContract() {
     claimCollateralReward,
     // Liquidation
     liquidate,
+    // Faucet
+    faucetMint,
   };
 }

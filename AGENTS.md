@@ -101,7 +101,7 @@ Do not skip context loading. The codebase contains prototype and production-inte
 4. **Update documentation** — update ALL of these in the same task:
    - `README.md` (deployment section)
    - `docs/SSE_CONTEXT.md`
-   - `docs/current.md`
+   - `docs/roadmap.md`
    with the new contract names, version info, and deployment timestamp.
 
 **Steps 3 and 4 can run in parallel** (frontend update and docs update are independent). But NEVER skip them. A deployment without frontend and docs updates is an incomplete deployment.

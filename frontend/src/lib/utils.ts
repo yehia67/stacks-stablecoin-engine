@@ -36,6 +36,16 @@ export function stxToMicroSTX(stx: number): number {
   return Math.floor(stx * 1_000_000);
 }
 
+/** Convert a human-readable token amount to its smallest on-chain unit. */
+export function toSmallestUnits(humanAmount: number, decimals: number): number {
+  return Math.floor(humanAmount * 10 ** decimals);
+}
+
+/** Convert smallest on-chain units back to a human-readable amount. */
+export function toHumanReadable(smallestUnits: number, decimals: number): number {
+  return smallestUnits / 10 ** decimals;
+}
+
 export function calculateHealthFactor(
   collateralValue: number,
   debtValue: number,

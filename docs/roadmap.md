@@ -1,22 +1,13 @@
-Let me systematically analyze the smart contracts and frontend to map out all flows.
+# SSE Complete Flow Analysis
 
-
-
-
-
-
-Now let me check the [useContract.ts](cci:7://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/stacks-stablecoin-engine/src/hooks/useContract.ts:0:0-0:0) hook to see what contract calls are wired up on the frontend:
-
-Now I have a complete picture. Here's the full analysis:
+> See [`getting_started.md`](./getting_started.md) for the combined user + technical reference. This file tracks feature-by-feature coverage between contracts and frontend.
 
 ---
-
-# SSE Complete Flow Analysis
 
 ## 1. Stablecoin Factory (Registration & Token Linking)
 
 ### Contract: `stablecoin-factory-v3`
-### Frontend: [/factory](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/factory:0:0-0:0)
+### Frontend: `/factory`
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
@@ -34,7 +25,7 @@ Now I have a complete picture. Here's the full analysis:
 ## 2. Collateral Registry (Per-Stablecoin Risk Configuration)
 
 ### Contract: `collateral-registry-v4`
-### Frontend: [/factory](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/factory:0:0-0:0) (configure collateral section)
+### Frontend: `/factory` (configure collateral section)
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
@@ -63,7 +54,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 ## 4. Multi-Asset Vault Engine (Production)
 
 ### Contract: `multi-asset-vault-engine-v5`
-### Frontend: `/vaults/new`, [/vaults](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/vaults:0:0-0:0)
+### Frontend: `/vaults/new`, `/vaults`
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
@@ -86,7 +77,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 ## 5. Stability Pool
 
 ### Contract: `stability-pool-v4`
-### Frontend: [/pool](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/pool:0:0-0:0)
+### Frontend: `/pool`
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
@@ -109,7 +100,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 ## 6. Liquidation Engine
 
 ### Contract: `liquidation-engine-v5`
-### Frontend: [/liquidations](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/liquidations:0:0-0:0)
+### Frontend: `/liquidations`
 
 **Liquidation engine now orchestrates the full flow:**
 1. Checks vault health factor < MIN_HEALTH
@@ -171,14 +162,14 @@ DIA oracles (IDs 3/4) are used on all networks, forwarding to `ST1S5ZGRZV5K4S920
 | SIP-010 transfer | ✅ | — | Standard |
 | Vault engine mint/burn | ✅ | — | Called by vault engine |
 | Bridge mint/burn (`mint-from-bridge`, `burn-to-remote`) | ✅ (`stablecoin-token-v3`) | ❌ | **No FE** |
-| Faucet mint (test tokens) | ✅ (`sbtc-token-v3`, `stx-token-v3`) | ❌ | **No FE** — useful for testing |
+| Faucet mint (test tokens) | ✅ (`sbtc-token-v3`, `stx-token-v3`) | ✅ | **Working** — home-page faucet section mints 10 sBTC / 10 STX |
 | Token balance display | ✅ | ❌ | **No FE shows user token balances** |
 
 ---
 
 ## 10. Dashboard
 
-### Frontend: [/dashboard](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/dashboard:0:0-0:0)
+### Frontend: `/dashboard`
 
 All data is **stub** — `TODO: Fetch from contracts` everywhere:
 - Protocol stats (TVL, total debt, active vaults, avg collateral ratio) — all "—"
@@ -190,20 +181,20 @@ All data is **stub** — `TODO: Fetch from contracts` everywhere:
 # Summary: What Users Can Actually Do End-to-End
 
 ### ✅ Fully working flows:
-1. **Register a stablecoin** (name, symbol, pay fee) → [/factory](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/factory:0:0-0:0)
-2. **Deploy & link a token contract** → [/factory](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/factory:0:0-0:0)
-3. **Configure, update, or disable collateral** (STX and/or sBTC) for a stablecoin → [/factory](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/factory:0:0-0:0)
+1. **Register a stablecoin** (name, symbol, pay fee) → `/factory`
+2. **Deploy & link a token contract** → `/factory`
+3. **Configure, update, or disable collateral** (STX and/or sBTC) for a stablecoin → `/factory`
 4. **Open vault → deposit collateral → mint stablecoins** → `/vaults/new`
-5. **View and manage existing vaults** (positions, health factors, repay, withdraw) → [/vaults](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/vaults:0:0-0:0), `/vaults/[stablecoinId]`
-6. **Use the stability pool** (deposit, withdraw, claim rewards, view pool stats) → [/pool](cci:9://file:///Users/yehiatarek/Documents/projects/Stacks/Stacks%20Stablecoin%20Engine%20%28SSE%29/frontend/src/app/pool:0:0-0:0)
+5. **View and manage existing vaults** (positions, health factors, repay, withdraw) → `/vaults`, `/vaults/[stablecoinId]`
+6. **Use the stability pool** (deposit, withdraw, claim rewards, view pool stats) → `/pool`
+7. **Faucet mint** test sBTC/STX → `/` (home page)
 
 ### ❌ Contract features with zero FE:
-7. **Cross-chain bridge** (burn-to-remote, mint-from-remote) — entire subsystem
-8. **Liquidation vault scanning** — contract logic is complete, FE doesn't scan for liquidatable vaults on-chain
-9. **Dashboard data** — all stats are placeholders
-10. **Faucet mint** for test sBTC/STX tokens
-11. **Admin functions** — registration fee, treasury, global collateral management, oracle updates, vault engine authorization
-12. **Token balance display** — wallet balances for stablecoin/collateral assets are still not shown
+- **Cross-chain bridge** (burn-to-remote, mint-from-remote) — entire subsystem
+- **Liquidation vault scanning** — contract logic is complete, FE doesn't scan for liquidatable vaults on-chain
+- **Dashboard data** — all stats are placeholders
+- **Admin functions** — registration fee, treasury, global collateral management, oracle updates, vault engine authorization
+- **Token balance display** — wallet balances for stablecoin/collateral assets are still not shown
 
 ### ✅ Contract-level TODOs (all completed, deployed as v5):
 - **Actual collateral custody**: `multi-asset-vault-engine-v5` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.

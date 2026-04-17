@@ -673,7 +673,7 @@ export default function FactoryPage() {
                 <p className="text-sm text-muted-foreground">Be the first to create one!</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="h-[500px] overflow-y-auto space-y-4 pr-2">
                 {registeredStablecoins.map((coin) => (
                   <div
                     key={coin.id}

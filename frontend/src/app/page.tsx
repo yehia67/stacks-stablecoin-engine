@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Shield, Coins, RefreshCw, Layers } from "lucide-react";
+import { ArrowRight, Shield, Coins, RefreshCw, Layers, Droplets, Loader2, CheckCircle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWallet } from "@/hooks/useWallet";
+import { useContract } from "@/hooks/useContract";
+import { FAUCET_COLLATERALS, IS_MAINNET, getExplorerTxUrl } from "@/lib/constants";
 
 const features = [
   {
@@ -30,10 +33,34 @@ const features = [
 ];
 
 export default function Home() {
-  const { isConnected, mounted, connect } = useWallet();
+  const { isConnected, mounted, connect, address } = useWallet();
+  const { faucetMint } = useContract();
+  const [mintingToken, setMintingToken] = useState<string | null>(null);
+  const [mintSuccess, setMintSuccess] = useState<{ token: string; txId: string } | null>(null);
 
   // Wait for client-side hydration to check wallet state
   const showDashboardButton = mounted && isConnected;
+
+  const handleFaucetMint = async (collateral: typeof FAUCET_COLLATERALS[0]) => {
+    if (!address) return;
+    
+    setMintingToken(collateral.contractName);
+    setMintSuccess(null);
+    
+    await faucetMint(
+      collateral.contractName,
+      collateral.mintAmount,
+      address,
+      (txId) => {
+        setMintingToken(null);
+        setMintSuccess({ token: collateral.symbol, txId });
+      },
+      (error) => {
+        console.error("Faucet mint error:", error);
+        setMintingToken(null);
+      }
+    );
+  };
 
   return (
     <div className="flex flex-col">
@@ -93,6 +120,73 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Testnet Faucet Section */}
+      {!IS_MAINNET && (
+        <section className="container px-4 py-12">
+          <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
+            <CardHeader className="text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-2">
+                <Droplets className="h-6 w-6 text-primary" />
+              </div>
+              <CardTitle>Testnet Faucet</CardTitle>
+              <CardDescription>
+                Get test collateral tokens to try out SSE. Each mint gives you 10 tokens.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!isConnected ? (
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Connect your wallet to mint test collateral tokens.
+                  </p>
+                  <Button onClick={connect}>Connect Wallet</Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
+                    {FAUCET_COLLATERALS.map((collateral) => (
+                      <Button
+                        key={collateral.contractName}
+                        variant="outline"
+                        className="h-auto py-4 flex flex-col items-center gap-2"
+                        disabled={mintingToken !== null}
+                        onClick={() => handleFaucetMint(collateral)}
+                      >
+                        {mintingToken === collateral.contractName ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            <span>Minting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Coins className="h-5 w-5" />
+                            <span>Mint 10 {collateral.symbol}</span>
+                          </>
+                        )}
+                      </Button>
+                    ))}
+                  </div>
+                  {mintSuccess && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-green-600 dark:text-green-400">
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Minted 10 {mintSuccess.token}!</span>
+                      <a
+                        href={getExplorerTxUrl(mintSuccess.txId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 underline hover:no-underline"
+                      >
+                        View tx <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Features Section */}
       <section className="container px-4 py-24">

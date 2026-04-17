@@ -88,23 +88,30 @@ function parseOkUint(hex: string | null): number | null {
       return Number(parsed);
     }
     
-    // Handle (ok uint) response - cvToValue returns { type: "ok", value: { type: "uint", value: bigint } }
+    // Handle (ok uint) response - cvToValue may return nested objects with bigint or string values
     if (parsed && typeof parsed === "object") {
       // Check for ok response wrapper
       if (parsed.type === "ok" && parsed.value !== undefined) {
         const inner = parsed.value;
-        if (typeof inner === "bigint") {
+        if (typeof inner === "bigint" || typeof inner === "number") {
+          return Number(inner);
+        }
+        if (typeof inner === "string" && /^\d+$/.test(inner)) {
           return Number(inner);
         }
         if (inner && typeof inner === "object" && inner.value !== undefined) {
-          if (typeof inner.value === "bigint") {
-            return Number(inner.value);
-          }
+          return Number(inner.value);
         }
       }
-      // Direct value wrapper { type: "uint", value: bigint }
-      if (parsed.value !== undefined && typeof parsed.value === "bigint") {
-        return Number(parsed.value);
+      // Direct value wrapper { type: "uint", value: string|bigint }
+      if (parsed.value !== undefined) {
+        const v = parsed.value;
+        if (typeof v === "bigint" || typeof v === "number") {
+          return Number(v);
+        }
+        if (typeof v === "string" && /^\d+$/.test(v)) {
+          return Number(v);
+        }
       }
     }
     
@@ -1249,4 +1256,56 @@ export function useDiaOraclePrices() {
   }, [fetchPrices]);
 
   return { prices, isLoading, error, refetch: fetchPrices };
+}
+
+/**
+ * Fetch the number of decimals for a SIP-010 token by calling its `get-decimals` read-only function.
+ * Returns `null` while loading or if the call fails.
+ */
+export function useTokenDecimals(tokenPrincipal: string | null) {
+  const [decimals, setDecimals] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchDecimals = useCallback(async () => {
+    if (!tokenPrincipal) {
+      setDecimals(null);
+      return;
+    }
+
+    const [addr, name] = tokenPrincipal.split(".");
+    if (!addr || !name) {
+      setDecimals(null);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      const resp = await fetch(
+        `${API_BASE}/v2/contracts/call-read/${addr}/${name}/get-decimals`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ sender: addr, arguments: [] }),
+        }
+      );
+      if (!resp.ok) { setDecimals(null); return; }
+
+      const result = await resp.json();
+      const parsed = parseOkUint(result.result);
+      setDecimals(parsed);
+    } catch {
+      setDecimals(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tokenPrincipal]);
+
+  useEffect(() => {
+    fetchDecimals();
+  }, [fetchDecimals]);
+
+  return { decimals, isLoading };
 }
