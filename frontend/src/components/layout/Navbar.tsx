@@ -15,6 +15,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/vaults", label: "Vaults" },
   { href: "/factory", label: "Create Stablecoin" },
+  { href: "/my-stablecoins", label: "My Stablecoins" },
   { href: "/pool", label: "Stability Pool" },
   { href: "/liquidations", label: "Liquidations" },
 ];
