@@ -15,7 +15,7 @@
     "deploy:mainnet": "node scripts/deploy.cjs --network mainnet"
   },
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@hirosystems/clarinet-sdk": "^3.6.0",
     "@types/node": "^24.4.0",
