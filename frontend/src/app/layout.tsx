@@ -7,14 +7,6 @@ import { StacksProvider } from '@/components/providers/StacksProvider'
 export const metadata: Metadata = {
   title: 'Stacks Stablecoin Engine',
   description: 'Bitcoin-backed stablecoins on Stacks',
-  icons: {
-    icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico', sizes: 'any' },
-    ],
-    shortcut: '/favicon.ico',
-    apple: '/icon.svg',
-  },
   openGraph: {
     images: ['/logo.jpg'],
   },
