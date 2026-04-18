@@ -531,3 +531,11 @@ const evmBytes32 = encodeEvmAddressToBytes32('0x742d35Cc6634C0532925a3b844Bc9e75
 
 ## Disclaimer
 This repository is a prototype infrastructure template only. It is not production-ready and should not be used to secure real value. Use at your own risk.
+
+## License
+Source-available under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
+
+- **Permitted:** personal use, research, education, non-profit use, hobby projects, and contributions back to this repository.
+- **Not permitted without a separate commercial license:** offering the software (or a derivative) as a paid product or hosted service, using it inside a for-profit product, or any other commercial purpose.
+
+For commercial licensing, contact the maintainer at yehiatarek67@gmail.com.
