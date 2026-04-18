@@ -1309,3 +1309,386 @@ export function useTokenDecimals(tokenPrincipal: string | null) {
 
   return { decimals, isLoading };
 }
+
+// ========================================
+// Creator-scoped stablecoin management data
+// ========================================
+
+/**
+ * Stablecoins created by a specific address.
+ *
+ * Implementation note: the factory exposes `get-creator-stablecoin-at-index`
+ * but the returned tuple lacks the numeric id. We walk the global list instead
+ * (`get-stablecoin-count` + `get-stablecoin(id)`) and filter by creator, which
+ * keeps the id alongside each stablecoin and avoids a second lookup round-trip.
+ */
+export function useCreatorStablecoins(creator: string | null) {
+  const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchCreatorStablecoins = useCallback(async () => {
+    if (!creator) {
+      setStablecoins([]);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      const countResp = await fetch(
+        `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.STABLECOIN_FACTORY}/get-stablecoin-count`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+        }
+      );
+      if (!countResp.ok) throw new Error(`Failed to fetch stablecoin count: ${countResp.status}`);
+      const countResult = await countResp.json();
+      if (!countResult.okay) throw new Error(countResult.cause || "Failed to read stablecoin count");
+      const totalCount = parseRequiredUint(countResult.result, "stablecoin count");
+
+      const coins: Stablecoin[] = [];
+      for (let i = 0; i < totalCount; i++) {
+        const idArg = cvToHex(uintCV(i));
+        const resp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.STABLECOIN_FACTORY}/get-stablecoin`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [idArg] }),
+          }
+        );
+        if (!resp.ok) continue;
+        const result = await resp.json();
+        if (!result.okay || !result.result) continue;
+
+        const decoded = decodeClarityTuple(result.result);
+        if (!decoded) continue;
+        const { name, symbol, creator: coinCreator } = decoded;
+        if (typeof name !== "string" || typeof symbol !== "string" || typeof coinCreator !== "string") continue;
+        if (coinCreator !== creator) continue;
+
+        coins.push({
+          id: i,
+          name,
+          symbol,
+          creator: coinCreator,
+          tokenContract: decoded["token-contract"] ?? null,
+          registeredAt: decoded["registered-at"] ?? 0,
+          feePaid: decoded["fee-paid"] ?? 0,
+        });
+      }
+
+      setStablecoins(coins);
+    } catch (err) {
+      console.error("[SSE] useCreatorStablecoins error:", err);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [creator]);
+
+  useEffect(() => {
+    fetchCreatorStablecoins();
+  }, [fetchCreatorStablecoins]);
+
+  return { stablecoins, isLoading, error, refetch: fetchCreatorStablecoins };
+}
+
+/**
+ * Total supply of a SIP-010 stablecoin token. Returns raw smallest-unit value.
+ * Callers combine with `useTokenDecimals` for a human-readable number.
+ */
+export function useTokenTotalSupply(tokenPrincipal: string | null) {
+  const [totalSupply, setTotalSupply] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchSupply = useCallback(async () => {
+    if (!tokenPrincipal) {
+      setTotalSupply(null);
+      return;
+    }
+    const [addr, name] = tokenPrincipal.split(".");
+    if (!addr || !name) {
+      setTotalSupply(null);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      const resp = await fetch(
+        `${API_BASE}/v2/contracts/call-read/${addr}/${name}/get-total-supply`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ sender: addr, arguments: [] }),
+        }
+      );
+      if (!resp.ok) {
+        setTotalSupply(null);
+        return;
+      }
+      const result = await resp.json();
+      const parsed = parseOkUint(result.result);
+      setTotalSupply(parsed);
+    } catch {
+      setTotalSupply(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tokenPrincipal]);
+
+  useEffect(() => {
+    fetchSupply();
+  }, [fetchSupply]);
+
+  return { totalSupply, isLoading, refetch: fetchSupply };
+}
+
+export interface TokenHolder {
+  address: string;
+  balance: string;
+}
+
+export interface TokenHoldersSummary {
+  total: number;
+  topHolders: TokenHolder[];
+}
+
+/**
+ * Number of holders for a SIP-010 token via Hiro's token holders endpoint.
+ * Returns `null` if the endpoint errors or the token isn't indexed yet.
+ */
+export function useTokenHolders(tokenPrincipal: string | null, previewSize = 5) {
+  const [holders, setHolders] = useState<TokenHoldersSummary | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchHolders = useCallback(async () => {
+    if (!tokenPrincipal) {
+      setHolders(null);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      const url = `${API_BASE}/extended/v1/tokens/ft/${encodeURIComponent(tokenPrincipal)}/holders?limit=${previewSize}`;
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) {
+        setHolders(null);
+        return;
+      }
+      const data = await resp.json();
+      const total = typeof data?.total === "number" ? data.total : 0;
+      const results = Array.isArray(data?.results) ? data.results : [];
+      const topHolders: TokenHolder[] = results
+        .map((r: any) => ({ address: String(r?.address ?? ""), balance: String(r?.balance ?? "0") }))
+        .filter((h: TokenHolder) => h.address);
+      setHolders({ total, topHolders });
+    } catch {
+      setHolders(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tokenPrincipal, previewSize]);
+
+  useEffect(() => {
+    fetchHolders();
+  }, [fetchHolders]);
+
+  return { holders, isLoading, refetch: fetchHolders };
+}
+
+export interface StablecoinCollateralMetrics {
+  asset: string;
+  enabled: boolean;
+  minCollateralRatio: number;
+  liquidationRatio: number;
+  liquidationPenalty: number;
+  stabilityFee: number;
+  debtCeiling: number;
+  debtFloor: number;
+  debtOutstanding: number;
+  utilization: number;
+  oraclePrice: number | null;
+  requiredCollateralValueUsd: number | null;
+}
+
+export interface StablecoinMetrics {
+  stablecoinId: number;
+  totalDebt: number;
+  totalRequiredCollateralUsd: number | null;
+  perAsset: StablecoinCollateralMetrics[];
+}
+
+/**
+ * Aggregated debt + collateral metrics for a stablecoin. Iterates the
+ * stablecoin's configured collaterals, reads outstanding debt per asset, and
+ * joins oracle prices. Collateral "value" reported here is the REQUIRED
+ * collateral floor (debt * minRatio/100) — the actual deposited collateral
+ * across all users isn't enumerable per-stablecoin on-chain.
+ */
+export function useStablecoinMetrics(
+  stablecoinId: number | null,
+  priceByAsset?: Record<string, number | null>
+) {
+  const [metrics, setMetrics] = useState<StablecoinMetrics | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const priceKey = useMemo(() => JSON.stringify(priceByAsset ?? {}), [priceByAsset]);
+
+  const fetchMetrics = useCallback(async () => {
+    if (stablecoinId === null) {
+      setMetrics(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      const countResp = await fetch(
+        `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-count-ro`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            sender: CONTRACTS.DEPLOYER,
+            arguments: [cvToHex(uintCV(stablecoinId))],
+          }),
+        }
+      );
+      if (!countResp.ok) throw new Error(`Failed to fetch collateral count: ${countResp.status}`);
+      const countResult = await countResp.json();
+      if (!countResult.okay) throw new Error(countResult.cause || "Failed collateral count read");
+      const count = parseRequiredUint(countResult.result, `stablecoin collateral count for ${stablecoinId}`);
+
+      const perAsset: StablecoinCollateralMetrics[] = [];
+      let totalDebt = 0;
+      let totalRequiredCollateralUsd = 0;
+      let anyPriceMissing = false;
+      const prices = JSON.parse(priceKey) as Record<string, number | null>;
+
+      for (let i = 0; i < count; i++) {
+        const indexResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-at-index`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [cvToHex(uintCV(stablecoinId)), cvToHex(uintCV(i))],
+            }),
+          }
+        );
+        if (!indexResp.ok) continue;
+        const indexResult = await indexResp.json();
+        if (!indexResult.okay) continue;
+        const indexDecoded = decodeClarityTuple(indexResult.result);
+        const asset = indexDecoded?.asset;
+        if (typeof asset !== "string") continue;
+
+        const configResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-config`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [cvToHex(uintCV(stablecoinId)), cvToHex(principalCV(asset))],
+            }),
+          }
+        );
+        if (!configResp.ok) continue;
+        const configResult = await configResp.json();
+        if (!configResult.okay) continue;
+        const cfg = decodeClarityTuple(configResult.result);
+        if (!cfg) continue;
+
+        const debtResp = await fetch(
+          `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.COLLATERAL_REGISTRY}/get-stablecoin-collateral-debt-ro`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              sender: CONTRACTS.DEPLOYER,
+              arguments: [cvToHex(uintCV(stablecoinId)), cvToHex(principalCV(asset))],
+            }),
+          }
+        );
+        const debtResult = debtResp.ok ? await debtResp.json() : null;
+        const debtOutstanding = debtResult?.okay
+          ? parseRequiredUint(debtResult.result, `debt for stablecoin=${stablecoinId} asset=${asset}`)
+          : 0;
+
+        const minCollateralRatio = Number(cfg["min-collateral-ratio"] ?? 0);
+        const liquidationRatio = Number(cfg["liquidation-ratio"] ?? 0);
+        const liquidationPenalty = Number(cfg["liquidation-penalty"] ?? 0);
+        const stabilityFee = Number(cfg["stability-fee"] ?? 0);
+        const debtCeiling = Number(cfg["debt-ceiling"] ?? 0);
+        const debtFloor = Number(cfg["debt-floor"] ?? 0);
+        const enabled = Boolean(cfg.enabled);
+
+        const utilization = debtCeiling > 0 ? (debtOutstanding / debtCeiling) * 100 : 0;
+        const oraclePrice = prices[asset] ?? null;
+        const requiredCollateralValueUsd =
+          minCollateralRatio > 0 ? (debtOutstanding * minCollateralRatio) / 100 : null;
+
+        if (requiredCollateralValueUsd !== null) {
+          totalRequiredCollateralUsd += requiredCollateralValueUsd;
+        } else {
+          anyPriceMissing = true;
+        }
+        totalDebt += debtOutstanding;
+
+        perAsset.push({
+          asset,
+          enabled,
+          minCollateralRatio,
+          liquidationRatio,
+          liquidationPenalty,
+          stabilityFee,
+          debtCeiling,
+          debtFloor,
+          debtOutstanding,
+          utilization,
+          oraclePrice,
+          requiredCollateralValueUsd,
+        });
+      }
+
+      setMetrics({
+        stablecoinId,
+        totalDebt,
+        totalRequiredCollateralUsd: anyPriceMissing && totalRequiredCollateralUsd === 0 ? null : totalRequiredCollateralUsd,
+        perAsset,
+      });
+    } catch (err) {
+      console.error(`[SSE] useStablecoinMetrics error for stablecoin=${stablecoinId}:`, err);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [stablecoinId, priceKey]);
+
+  useEffect(() => {
+    fetchMetrics();
+  }, [fetchMetrics]);
+
+  return { metrics, isLoading, error, refetch: fetchMetrics };
+}
