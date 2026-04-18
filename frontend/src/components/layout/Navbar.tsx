@@ -37,7 +37,6 @@ export function Navbar() {
             className="h-24 w-24 rounded-lg object-cover"
             priority
           />
-          <span className="hidden font-bold sm:inline-block">SSE</span>
         </Link>
 
         {/* Desktop Navigation */}
