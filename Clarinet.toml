@@ -62,8 +62,28 @@ path = "contracts/stablecoin-token-v3.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
 
+[contracts.sbtc-token-v4]
+path = "contracts/sbtc-token-v4.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait"]
+
+[contracts.stx-token-v4]
+path = "contracts/stx-token-v4.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait"]
+
+[contracts.stablecoin-token-v4]
+path = "contracts/stablecoin-token-v4.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
+
 [contracts.collateral-registry-v4]
 path = "contracts/collateral-registry-v4.clar"
+epoch = "3.1"
+depends_on = ["stablecoin-factory-v3"]
+
+[contracts.collateral-registry-v5]
+path = "contracts/collateral-registry-v5.clar"
 epoch = "3.1"
 depends_on = ["stablecoin-factory-v3"]
 
@@ -72,15 +92,35 @@ path = "contracts/stability-pool-v4.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-factory-v3", "stablecoin-token-v3", "liquidation-engine-v5"]
 
+[contracts.stability-pool-v5]
+path = "contracts/stability-pool-v5.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-factory-v3", "stablecoin-token-v4", "liquidation-engine-v6"]
+
 [contracts.multi-asset-vault-engine-v5]
 path = "contracts/multi-asset-vault-engine-v5.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-token-v3", "price-oracle-dia-btc-v2", "price-oracle-dia-stx-v2", "collateral-registry-v4", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v3", "stx-token-v3", "stability-pool-v4", "liquidation-engine-v5"]
 
+[contracts.multi-asset-vault-engine-v6]
+path = "contracts/multi-asset-vault-engine-v6.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-token-v4", "price-oracle-dia-btc-v2", "price-oracle-dia-stx-v2", "collateral-registry-v5", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v4", "stx-token-v4", "stability-pool-v5", "liquidation-engine-v6"]
+
 [contracts.liquidation-engine-v5]
 path = "contracts/liquidation-engine-v5.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v5", "stability-pool-v4"]
+
+[contracts.liquidation-engine-v6]
+path = "contracts/liquidation-engine-v6.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v6", "stability-pool-v5"]
+
+[contracts.xreserve-adapter-v4]
+path = "contracts/xreserve-adapter-v4.clar"
+epoch = "3.1"
+depends_on = ["bridge-adapter-trait", "stablecoin-token-v4", "bridge-registry-v3"]
 
 [repl.analysis]
 passes = ["check_checker"]

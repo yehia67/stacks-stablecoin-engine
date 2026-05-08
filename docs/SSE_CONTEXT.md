@@ -32,16 +32,17 @@ It is intended as infrastructure-as-a-service, not a single fixed stablecoin pro
 
 ## Implementation Status
 
-All contract-level TODOs from the grant scope have been completed and deployed as v5:
-- **Collateral custody**: `multi-asset-vault-engine-v5` performs real SIP-010 token transfers on deposit/withdraw
-- **Pool custody**: `stability-pool-v4` performs real SIP-010 token transfers with stablecoin-scoped balances
+All contract-level TODOs from the grant scope have been completed and deployed as v6:
+- **Collateral custody**: `multi-asset-vault-engine-v6` performs real SIP-010 token transfers on deposit/withdraw
+- **Pool custody**: `stability-pool-v5` performs real SIP-010 token transfers with stablecoin-scoped balances
 - **Liquidation reward accounting**: Creator-configurable reward percentage. Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution.
-- **Liquidation settlement**: Full orchestration in `liquidation-engine-v5`: health check → vault engine `liquidate-position` (seizes collateral, burns stablecoins) → stability pool `distribute-liquidation-reward`
+- **Liquidation settlement**: Full orchestration in `liquidation-engine-v6`: health check → vault engine `liquidate-position` (seizes collateral, burns stablecoins) → stability pool `distribute-liquidation-reward`
 - **Oracle integration**: DIA push-based oracle integration with staleness guard. `price-oracle-dia-btc-v2` / `price-oracle-dia-stx-v2` wrap DIA's `get-value` with configurable max-age check and ms→s timestamp conversion. Only DIA oracles (IDs 3/4) are supported; mock oracles have been removed.
+- **Native fungible tokens**: All token contracts (`sbtc-token-v4`, `stx-token-v4`, `stablecoin-token-v4`) use `define-fungible-token` with `ft-transfer?`/`ft-mint?`/`ft-burn?` for proper Stacks post-condition enforcement.
 
 ## Versioning
 
-Unchanged contracts remain at v3 on-chain (`stablecoin-factory-v3`, `stablecoin-token-v3`). The collateral registry and stability pool remain at v4: `collateral-registry-v4`, `stability-pool-v4`. The vault engine and liquidation engine were upgraded to v5: `multi-asset-vault-engine-v5`, `liquidation-engine-v5`. DIA oracle contracts were upgraded to v2: `price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2` (fixed DIA timestamp ms→s conversion). The `dia-oracle-adapter` remains unchanged.
+Unchanged contracts remain at v3 on-chain (`stablecoin-factory-v3`). Token contracts were upgraded to v4 with native `define-fungible-token`: `sbtc-token-v4`, `stx-token-v4`, `stablecoin-token-v4`. The collateral registry is at v5: `collateral-registry-v5`. The stability pool is at v5: `stability-pool-v5`. The vault engine and liquidation engine were upgraded to v6: `multi-asset-vault-engine-v6`, `liquidation-engine-v6`. DIA oracle contracts remain at v2: `price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`. The `dia-oracle-adapter` remains unchanged.
 
 ## Deployment
 

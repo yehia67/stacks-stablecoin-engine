@@ -45,11 +45,12 @@ User → VaultEngine → StablecoinToken
 
 ### Core Contracts (deployed versions)
 - `stablecoin-factory-v3.clar`: **Stablecoin registration factory** with configurable STX fees and treasury address.
-- `stablecoin-token-v3.clar`: Minimal SIP-010 token with mint/burn restricted to vault engines and cross-chain bridge hooks.
-- `collateral-registry-v4.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, per-asset oracles, and per-stablecoin overrides.
-- `multi-asset-vault-engine-v5.clar`: **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers.
-- `stability-pool-v4.clar`: Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution.
-- `liquidation-engine-v5.clar`: Full liquidation orchestrator (health check → vault-engine seize → pool distribute).
+- `stablecoin-token-v4.clar`: SIP-010 token using native `define-fungible-token` with mint/burn restricted to vault engines and cross-chain bridge hooks. Enables proper Stacks post-condition enforcement.
+- `sbtc-token-v4.clar` / `stx-token-v4.clar`: Collateral tokens using native `define-fungible-token` for post-condition support.
+- `collateral-registry-v5.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, per-asset oracles, and per-stablecoin overrides.
+- `multi-asset-vault-engine-v6.clar`: **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers.
+- `stability-pool-v5.clar`: Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution.
+- `liquidation-engine-v6.clar`: Full liquidation orchestrator (health check → vault-engine seize → pool distribute).
 
 ### Oracle Contracts
 - `oracle-trait.clar`: Trait defining `get-price`.
@@ -203,31 +204,33 @@ This reads from `sse.config.json` to determine which contracts to deploy and whi
 
 Configure your deployer mnemonic/key in `settings/Testnet.toml` before running.
 
-## Testnet Deployment (v5 — current)
+## Testnet Deployment (v6 — current)
 Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
 
-Deployed 2026-04-12.
+Deployed 2026-05-08.
 
 ### Contracts on-chain:
 
 | Contract | Version | Notes |
 |---|---|---|
 | `stablecoin-factory` | v3 | Unchanged from v3 |
-| `stablecoin-token` | v3 | Unchanged from v3 |
-| `collateral-registry` | v4 | Adds `enable-collateral-for-stablecoin` |
-| `multi-asset-vault-engine` | v5 | DIA oracle v2 references, SIP-010 transfers, liquidation position support |
-| `stability-pool` | v4 | Real SIP-010 transfers, stablecoin-scoped deposits, liquidation reward accounting |
-| `liquidation-engine` | v5 | Full orchestration with vault-engine-v5 reference |
+| `stablecoin-token` | v4 | Native `define-fungible-token` for post-condition support |
+| `sbtc-token` | v4 | Native `define-fungible-token` for post-condition support |
+| `stx-token` | v4 | Native `define-fungible-token` for post-condition support |
+| `collateral-registry` | v5 | Updated refs to vault-engine-v6 |
+| `multi-asset-vault-engine` | v6 | Updated refs to token-v4, registry-v5, pool-v5, liquidation-v6 |
+| `stability-pool` | v5 | Updated refs to liquidation-engine-v6 |
+| `liquidation-engine` | v6 | Full orchestration with vault-engine-v6 reference |
 | `dia-oracle-adapter` | — | Forwards to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` |
-| `price-oracle-dia-btc` | v2 | DIA-backed BTC price with staleness guard (fixed ms→s timestamp) |
-| `price-oracle-dia-stx` | v2 | DIA-backed STX price with staleness guard (fixed ms→s timestamp) |
+| `price-oracle-dia-btc` | v2 | DIA-backed BTC price with staleness guard |
+| `price-oracle-dia-stx` | v2 | DIA-backed STX price with staleness guard |
 
 ### Bootstrap steps (run automatically by `npm run deploy`):
-- Authorizing `multi-asset-vault-engine-v5` in `stablecoin-token-v3`
-- Authorizing `multi-asset-vault-engine-v5` in `collateral-registry-v4`
-- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v5`
-- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v4`
-- Updating oracle principals in `collateral-registry-v4` to point to v2 DIA oracles
+- Authorizing `multi-asset-vault-engine-v6` in `stablecoin-token-v4`
+- Authorizing `multi-asset-vault-engine-v6` in `collateral-registry-v5`
+- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v6`
+- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v5`
+- Updating oracle principals in `collateral-registry-v5` to point to v2 DIA oracles
 
 ## How to Test on Testnet
 
@@ -248,8 +251,8 @@ Then verify:
 ### 2) Oracle sensitivity check
 On testnet, prices come from DIA oracles (`price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`). To test health factor changes, observe the live DIA price feed and check:
 
-1. Re-check `multi-asset-vault-engine-v5::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
-2. If health factor is below the liquidation ratio, call `liquidation-engine-v5::liquidate`.
+1. Re-check `multi-asset-vault-engine-v6::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
+2. If health factor is below the liquidation ratio, call `liquidation-engine-v6::liquidate`.
 
 Expected behavior:
 - Healthy vault: `liquidate` returns `(err u300)`
@@ -259,8 +262,8 @@ Expected behavior:
 As deployer:
 
 ```clarity
-(contract-call? .collateral-registry-v4 add-collateral-type
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+(contract-call? .collateral-registry-v5 add-collateral-type
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   u150
   u120
   u10
@@ -270,8 +273,8 @@ As deployer:
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-dia-btc-v2
 )
 
-(contract-call? .collateral-registry-v4 get-collateral-config
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+(contract-call? .collateral-registry-v5 get-collateral-config
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
 )
 ```
 
@@ -283,29 +286,29 @@ As deployer:
 ;; -> (ok u0)   ; stablecoin-id
 
 ;; 2. After deploying & linking a token contract, configure collateral
-(contract-call? .collateral-registry-v4 configure-collateral-for-stablecoin
+(contract-call? .collateral-registry-v5 configure-collateral-for-stablecoin
   u0                                                            ;; stablecoin-id
-  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3      ;; asset
+  'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4      ;; asset
   u150 u120 u10 u200 u1000000 u100)                             ;; min-cr / liq-ratio / penalty / fee / ceiling / floor
 
 ;; 3. Open vault and deposit
-(contract-call? .multi-asset-vault-engine-v5 open-vault-for-stablecoin u0)
-(contract-call? .multi-asset-vault-engine-v5 deposit-collateral-for-stablecoin
-  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
-  .sbtc-token-v3 u1000000)
+(contract-call? .multi-asset-vault-engine-v6 open-vault-for-stablecoin u0)
+(contract-call? .multi-asset-vault-engine-v6 deposit-collateral-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
+  .sbtc-token-v4 u1000000)
 
 ;; 4. Mint against the position (validates health factor)
-(contract-call? .multi-asset-vault-engine-v5 mint-against-asset-for-stablecoin
-  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+(contract-call? .multi-asset-vault-engine-v6 mint-against-asset-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .<your-linked-token> u500)
 
 ;; 5. Repay and withdraw
-(contract-call? .multi-asset-vault-engine-v5 repay-against-asset-for-stablecoin
-  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
+(contract-call? .multi-asset-vault-engine-v6 repay-against-asset-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .<your-linked-token> u200)
-(contract-call? .multi-asset-vault-engine-v5 withdraw-collateral-for-stablecoin
-  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3
-  .sbtc-token-v3 u300)
+(contract-call? .multi-asset-vault-engine-v6 withdraw-collateral-for-stablecoin
+  u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
+  .sbtc-token-v4 u300)
 ```
 
 See [`docs/getting_started.md`](./docs/getting_started.md) for complete sequence diagrams and function reference.

@@ -24,7 +24,7 @@
 
 ## 2. Collateral Registry (Per-Stablecoin Risk Configuration)
 
-### Contract: `collateral-registry-v4`
+### Contract: `collateral-registry-v5`
 ### Frontend: `/factory` (configure collateral section)
 
 | Feature | Contract | Frontend | Status |
@@ -47,13 +47,13 @@
 
 ### Contract: `vault-engine-v3` — **DELETED**
 
-The legacy single-collateral vault engine has been removed. All vault operations now go through `multi-asset-vault-engine-v5`. Frontend hooks for the legacy engine (`openVault`, `depositCollateral`, `withdrawCollateral`, `mint`, `burn`) have been removed.
+The legacy single-collateral vault engine has been removed. All vault operations now go through `multi-asset-vault-engine-v6`. Frontend hooks for the legacy engine (`openVault`, `depositCollateral`, `withdrawCollateral`, `mint`, `burn`) have been removed.
 
 ---
 
 ## 4. Multi-Asset Vault Engine (Production)
 
-### Contract: `multi-asset-vault-engine-v5`
+### Contract: `multi-asset-vault-engine-v6`
 ### Frontend: `/vaults/new`, `/vaults`
 
 | Feature | Contract | Frontend | Status |
@@ -76,7 +76,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 
 ## 5. Stability Pool
 
-### Contract: `stability-pool-v4`
+### Contract: `stability-pool-v5`
 ### Frontend: `/pool`
 
 | Feature | Contract | Frontend | Status |
@@ -99,7 +99,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 
 ## 6. Liquidation Engine
 
-### Contract: `liquidation-engine-v5`
+### Contract: `liquidation-engine-v6`
 ### Frontend: `/liquidations`
 
 **Liquidation engine now orchestrates the full flow:**
@@ -155,14 +155,14 @@ DIA oracles (IDs 3/4) are used on all networks, forwarding to `ST1S5ZGRZV5K4S920
 
 ## 9. Token Contracts
 
-### Contracts: `stablecoin-token-v3`, `sbtc-token-v3`, `stx-token-v3`
+### Contracts: `stablecoin-token-v4`, `sbtc-token-v4`, `stx-token-v4`
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
 | SIP-010 transfer | ✅ | — | Standard |
 | Vault engine mint/burn | ✅ | — | Called by vault engine |
-| Bridge mint/burn (`mint-from-bridge`, `burn-to-remote`) | ✅ (`stablecoin-token-v3`) | ❌ | **No FE** |
-| Faucet mint (test tokens) | ✅ (`sbtc-token-v3`, `stx-token-v3`) | ✅ | **Working** — home-page faucet section mints 10 sBTC / 10 STX |
+| Bridge mint/burn (`mint-from-bridge`, `burn-to-remote`) | ✅ (`stablecoin-token-v4`) | ❌ | **No FE** |
+| Faucet mint (test tokens) | ✅ (`sbtc-token-v4`, `stx-token-v4`) | ✅ | **Working** — home-page faucet section mints 10 sBTC / 10 STX |
 | Token balance display | ✅ | ❌ | **No FE shows user token balances** |
 
 ---
@@ -196,9 +196,10 @@ All data is **stub** — `TODO: Fetch from contracts` everywhere:
 - **Admin functions** — registration fee, treasury, global collateral management, oracle updates, vault engine authorization
 - **Token balance display** — wallet balances for stablecoin/collateral assets are still not shown
 
-### ✅ Contract-level TODOs (all completed, deployed as v5):
-- **Actual collateral custody**: `multi-asset-vault-engine-v5` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
-- **Stability pool custody**: `stability-pool-v4` performs real SIP-010 token transfers with stablecoin-scoped balances. Token validated against factory-linked contract (`ERR_TOKEN_MISMATCH`).
+### ✅ Contract-level TODOs (all completed, deployed as v6):
+- **Actual collateral custody**: `multi-asset-vault-engine-v6` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
+- **Stability pool custody**: `stability-pool-v5` performs real SIP-010 token transfers with stablecoin-scoped balances. Token validated against factory-linked contract (`ERR_TOKEN_MISMATCH`).
+- **Native fungible tokens**: All token contracts use `define-fungible-token` with `ft-transfer?`/`ft-mint?`/`ft-burn?` for proper Stacks post-condition enforcement in wallet UIs.
 - **Liquidation reward accounting**: Creator-configurable reward percentage (basis points). Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution. Full liquidation flow: vault engine seizes collateral + burns stablecoins, stability pool updates accounting.
-- **Liquidation engine**: `liquidation-engine-v5` — Full orchestration: health check → calculate amounts → vault engine liquidate-position → pool distribute-liquidation-reward
+- **Liquidation engine**: `liquidation-engine-v6` — Full orchestration: health check → calculate amounts → vault engine liquidate-position → pool distribute-liquidation-reward
 - **Oracles**: DIA push-based oracle integration. `dia-oracle-adapter` forwards to the real DIA oracle on testnet. `price-oracle-dia-btc-v2` and `price-oracle-dia-stx-v2` implement `oracle-trait` with configurable staleness guard and ms→s timestamp conversion. Vault engine supports oracle IDs 3/4 (DIA only). DIA testnet: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`. Prices use 8 decimal places (matches SSE's `PRICE-SCALE`).
