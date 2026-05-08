@@ -30,10 +30,10 @@ function seedDiaBtcPrice(deployer: string, value: number = 6700000000000) {
 
 function addSbtcGlobalCollateral(deployer: string) {
   seedDiaBtcPrice(deployer);
-  const sbtcAsset = `${deployer}.sbtc-token-v3`;
+  const sbtcAsset = `${deployer}.sbtc-token-v4`;
   const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
   simnet.callPublicFn(
-    "collateral-registry-v4",
+    "collateral-registry-v5",
     "add-collateral-type",
     [
       Cl.principal(sbtcAsset),
@@ -61,7 +61,7 @@ function registerAndLinkStablecoin(
   );
   expect(regResult.result).toBeOk(Cl.uint(expectedId));
 
-  const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+  const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
   const linkResult = simnet.callPublicFn(
     "stablecoin-factory-v3",
     "set-token-contract",
@@ -72,9 +72,9 @@ function registerAndLinkStablecoin(
 }
 
 function configureSbtcForStablecoin(deployer: string, creator: string, stablecoinId: number) {
-  const sbtcAsset = `${deployer}.sbtc-token-v3`;
+  const sbtcAsset = `${deployer}.sbtc-token-v4`;
   const result = simnet.callPublicFn(
-    "collateral-registry-v4",
+    "collateral-registry-v5",
     "configure-collateral-for-stablecoin",
     [
       Cl.uint(stablecoinId),
@@ -101,16 +101,16 @@ function setupStablecoinPool(
 
 /** Authorize the vault engine on the stablecoin token and register oracle. */
 function authorizeVaultEngine(deployer: string) {
-  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v5`;
-  const sbtcAsset = `${deployer}.sbtc-token-v3`;
+  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v6`;
+  const sbtcAsset = `${deployer}.sbtc-token-v4`;
   simnet.callPublicFn(
-    "stablecoin-token-v3",
+    "stablecoin-token-v4",
     "set-vault-engine",
     [Cl.principal(vaultEnginePrincipal)],
     deployer
   );
   simnet.callPublicFn(
-    "multi-asset-vault-engine-v5",
+    "multi-asset-vault-engine-v6",
     "register-asset-oracle",
     [Cl.principal(sbtcAsset), Cl.uint(3)],
     deployer
@@ -124,18 +124,18 @@ function openVaultAndMint(
   collateralAmount: number,
   mintAmount: number
 ) {
-  const sbtcAsset = `${deployer}.sbtc-token-v3`;
-  const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+  const sbtcAsset = `${deployer}.sbtc-token-v4`;
+  const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
   // Faucet-mint sBTC
-  simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(collateralAmount), Cl.principal(user)], user);
+  simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(collateralAmount), Cl.principal(user)], user);
 
   // Open vault
-  simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], user);
+  simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], user);
 
   // Deposit collateral
   simnet.callPublicFn(
-    "multi-asset-vault-engine-v5",
+    "multi-asset-vault-engine-v6",
     "deposit-collateral-for-stablecoin",
     [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(collateralAmount)],
     user
@@ -143,7 +143,7 @@ function openVaultAndMint(
 
   // Mint stablecoins
   const mintResult = simnet.callPublicFn(
-    "multi-asset-vault-engine-v5",
+    "multi-asset-vault-engine-v6",
     "mint-against-asset-for-stablecoin",
     [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(mintAmount)],
     user
@@ -153,9 +153,9 @@ function openVaultAndMint(
 
 /** Deposit stablecoins into the stability pool. */
 function depositToPool(deployer: string, user: string, amount: number) {
-  const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+  const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
   const result = simnet.callPublicFn(
-    "stability-pool-v4",
+    "stability-pool-v5",
     "deposit",
     [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(amount)],
     user
@@ -165,7 +165,7 @@ function depositToPool(deployer: string, user: string, amount: number) {
 
 function getSbtcBalance(deployer: string, owner: string): bigint {
   const result = simnet.callReadOnlyFn(
-    "sbtc-token-v3",
+    "sbtc-token-v4",
     "get-balance",
     [Cl.principal(owner)],
     deployer
@@ -174,7 +174,7 @@ function getSbtcBalance(deployer: string, owner: string): bigint {
 }
 
 function getPoolPrincipal(deployer: string): string {
-  return `${deployer}.stability-pool-v4`;
+  return `${deployer}.stability-pool-v5`;
 }
 
 // ============================================
@@ -187,7 +187,7 @@ describe("liquidation reward configuration", () => {
     setupStablecoinPool(deployer, wallet1, "Rew Dollar", "RUSD", 0);
 
     const result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "set-liquidation-reward-pct",
       [Cl.uint(0), Cl.uint(1000)], // 10%
       wallet1
@@ -195,7 +195,7 @@ describe("liquidation reward configuration", () => {
     expect(result.result).toBeOk(Cl.bool(true));
 
     const pct = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-liquidation-reward-pct",
       [Cl.uint(0)],
       deployer
@@ -208,7 +208,7 @@ describe("liquidation reward configuration", () => {
     setupStablecoinPool(deployer, wallet1, "Auth Dollar", "ADOL", 0);
 
     const result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "set-liquidation-reward-pct",
       [Cl.uint(0), Cl.uint(500)],
       wallet2 // not the creator
@@ -221,7 +221,7 @@ describe("liquidation reward configuration", () => {
     setupStablecoinPool(deployer, wallet1, "Max Dollar", "MXSD", 0);
 
     const result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "set-liquidation-reward-pct",
       [Cl.uint(0), Cl.uint(6000)], // 60% > MAX 50%
       wallet1
@@ -232,7 +232,7 @@ describe("liquidation reward configuration", () => {
   it("defaults to 0% when not configured", () => {
     const { deployer } = getTestAccounts();
     const pct = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-liquidation-reward-pct",
       [Cl.uint(99)],
       deployer
@@ -244,8 +244,8 @@ describe("liquidation reward configuration", () => {
 describe("full liquidation flow", () => {
   it("liquidates unhealthy vault and distributes collateral reward to pool depositors", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
     const poolPrincipal = getPoolPrincipal(deployer);
 
     // Setup stablecoin + authorize vault engine
@@ -254,7 +254,7 @@ describe("full liquidation flow", () => {
 
     // Set liquidation reward to 10%
     simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "set-liquidation-reward-pct",
       [Cl.uint(0), Cl.uint(1000)],
       wallet1
@@ -270,7 +270,7 @@ describe("full liquidation flow", () => {
 
     // Verify pool state
     const poolDeposits = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-total-deposits",
       [Cl.uint(0)],
       deployer
@@ -291,7 +291,7 @@ describe("full liquidation flow", () => {
 
     // Verify vault is now unhealthy
     const healthFactor = simnet.callReadOnlyFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "get-position-health-factor-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       deployer
@@ -305,7 +305,7 @@ describe("full liquidation flow", () => {
 
     // Liquidate!
     const liqResult = simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet1),
@@ -330,7 +330,7 @@ describe("full liquidation flow", () => {
 
     // Pool total deposits should be reduced (stablecoins burned)
     const newPoolDeposits = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-total-deposits",
       [Cl.uint(0)],
       deployer
@@ -339,7 +339,7 @@ describe("full liquidation flow", () => {
 
     // wallet1 should have claimable collateral reward
     const claimable = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-claimable-collateral-reward",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       deployer
@@ -350,8 +350,8 @@ describe("full liquidation flow", () => {
 
   it("rejects liquidation of healthy vault", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     setupStablecoinPool(deployer, wallet1, "Hlth Dollar", "HLSD", 0);
     authorizeVaultEngine(deployer);
@@ -360,7 +360,7 @@ describe("full liquidation flow", () => {
 
     // Try to liquidate a healthy vault
     const result = simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet1),
@@ -376,8 +376,8 @@ describe("full liquidation flow", () => {
 
   it("rejects liquidation when pool is empty", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     setupStablecoinPool(deployer, wallet1, "Emp Dollar", "EMSD", 0);
     authorizeVaultEngine(deployer);
@@ -388,7 +388,7 @@ describe("full liquidation flow", () => {
 
     // No deposits in pool — liquidation should fail
     const result = simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet1),
@@ -406,15 +406,15 @@ describe("full liquidation flow", () => {
 describe("collateral reward claiming", () => {
   it("depositor claims collateral after liquidation", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     setupStablecoinPool(deployer, wallet1, "Clm Dollar", "CLSD", 0);
     authorizeVaultEngine(deployer);
 
     // Set 10% reward
     simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "set-liquidation-reward-pct",
       [Cl.uint(0), Cl.uint(1000)],
       wallet1
@@ -434,7 +434,7 @@ describe("collateral reward claiming", () => {
 
     // Liquidate wallet2's vault
     simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet2),
@@ -448,7 +448,7 @@ describe("collateral reward claiming", () => {
 
     // wallet1 should have claimable sBTC rewards
     const claimable = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-claimable-collateral-reward",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       deployer
@@ -461,7 +461,7 @@ describe("collateral reward claiming", () => {
 
     // Claim!
     const claimResult = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "claim-collateral-reward",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset)],
       wallet1
@@ -474,7 +474,7 @@ describe("collateral reward claiming", () => {
 
     // After claim, claimable should be 0
     const claimableAfter = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "get-claimable-collateral-reward",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       deployer
@@ -484,12 +484,12 @@ describe("collateral reward claiming", () => {
 
   it("rejects claim when no reward available", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
 
     setupStablecoinPool(deployer, wallet1, "NoR Dollar", "NRSD", 0);
 
     const result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "claim-collateral-reward",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset)],
       wallet1
@@ -501,15 +501,15 @@ describe("collateral reward claiming", () => {
 describe("deposit loss tracking after liquidation", () => {
   it("effective balance decreases after liquidation offsets debt", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     setupStablecoinPool(deployer, wallet1, "Loss Dollar", "LOSD", 0);
     authorizeVaultEngine(deployer);
 
     // Set 0% reward (focus on deposit loss)
     simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "set-liquidation-reward-pct",
       [Cl.uint(0), Cl.uint(0)],
       wallet1
@@ -524,7 +524,7 @@ describe("deposit loss tracking after liquidation", () => {
 
     // Check effective balance before liquidation
     const balBefore = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "balance-of-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0)],
       deployer
@@ -534,7 +534,7 @@ describe("deposit loss tracking after liquidation", () => {
     // Crash price and liquidate
     simnet.callPublicFn("dia-oracle-adapter", "set-value", [Cl.stringAscii("BTC/USD"), Cl.uint(500000000)], deployer);
     simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet2),
@@ -548,7 +548,7 @@ describe("deposit loss tracking after liquidation", () => {
 
     // Effective balance should be reduced (2000 stablecoins used to offset debt)
     const balAfter = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "balance-of-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0)],
       deployer

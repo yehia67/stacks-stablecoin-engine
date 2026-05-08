@@ -15,9 +15,9 @@ function getTestAccounts() {
 }
 
 function authorizeMultiAssetVaultEngine(deployer: string) {
-  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v5`;
+  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v6`;
   const result = simnet.callPublicFn(
-    "stablecoin-token-v3",
+    "stablecoin-token-v4",
     "set-vault-engine",
     [Cl.principal(vaultEnginePrincipal)],
     deployer
@@ -38,7 +38,7 @@ function addCollateralType(deployer: string, asset: string) {
   seedDiaBtcPrice(deployer);
   const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
   const result = simnet.callPublicFn(
-    "collateral-registry-v4",
+    "collateral-registry-v5",
     "add-collateral-type",
     [
       Cl.principal(asset),
@@ -57,7 +57,7 @@ function addCollateralType(deployer: string, asset: string) {
 
 function registerOracleForAsset(deployer: string, asset: string) {
   const result = simnet.callPublicFn(
-    "multi-asset-vault-engine-v5",
+    "multi-asset-vault-engine-v6",
     "register-asset-oracle",
     [Cl.principal(asset), Cl.uint(3)], // DIA BTC oracle
     deployer
@@ -76,7 +76,7 @@ function registerLinkedStablecoin(deployer: string, creator: string, name: strin
   );
   expect(registerResult.result).toBeOk(Cl.uint(0));
 
-  const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+  const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
   const linkResult = simnet.callPublicFn(
     "stablecoin-factory-v3",
     "set-token-contract",
@@ -88,7 +88,7 @@ function registerLinkedStablecoin(deployer: string, creator: string, name: strin
 
 function configureCollateralForStablecoin(deployer: string, creator: string, asset: string) {
   const result = simnet.callPublicFn(
-    "collateral-registry-v4",
+    "collateral-registry-v5",
     "configure-collateral-for-stablecoin",
     [
       Cl.uint(0), Cl.principal(asset),
@@ -104,15 +104,15 @@ function configureCollateralForStablecoin(deployer: string, creator: string, ass
 // Collateral Registry Tests
 // ============================================
 
-describe("collateral-registry-v4 multi-asset", () => {
+describe("collateral-registry-v5 multi-asset", () => {
   describe("add collateral type", () => {
     it("allows owner to add new collateral types with extended parameters", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       const result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -130,7 +130,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Verify config was stored
       const config = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-collateral-config",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -151,11 +151,11 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("rejects non-owner collateral additions", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       const result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -174,12 +174,12 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("rejects duplicate collateral types", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // First addition
       let result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -197,7 +197,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Duplicate should fail
       result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -216,12 +216,12 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("rejects invalid ratios", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stability-pool-v4`;
+      const assetPrincipal = `${deployer}.stability-pool-v5`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // min-collateral-ratio <= 100 should fail
       let result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -240,12 +240,12 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("rejects liquidation ratio > min collateral ratio", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stability-pool-v4`;
+      const assetPrincipal = `${deployer}.stability-pool-v5`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // liquidation-ratio > min-collateral-ratio should fail
       const result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -266,12 +266,12 @@ describe("collateral-registry-v4 multi-asset", () => {
   describe("collateral management", () => {
     it("allows owner to enable/disable collateral types", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // Add collateral
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -288,7 +288,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Authorize test caller for debt mutation helpers
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "set-vault-engine-authorized",
         [Cl.principal(deployer), Cl.bool(true)],
         deployer
@@ -296,7 +296,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Verify enabled by default
       let isEnabled = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "is-collateral-enabled",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -305,7 +305,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Disable
       let result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "set-collateral-enabled",
         [Cl.principal(assetPrincipal), Cl.bool(false)],
         deployer
@@ -314,7 +314,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Verify disabled
       isEnabled = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "is-collateral-enabled",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -324,12 +324,12 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("allows owner to update collateral parameters", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // Add collateral
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -346,7 +346,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Update parameters
       const result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "update-collateral-params",
         [
           Cl.principal(assetPrincipal),
@@ -363,7 +363,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Verify updated
       const minRatio = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-min-collateral-ratio",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -373,13 +373,13 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("tracks collateral count and enumeration", () => {
       const { deployer } = getTestAccounts();
-      const asset1 = `${deployer}.stablecoin-token-v3`;
-      const asset2 = `${deployer}.stability-pool-v4`;
+      const asset1 = `${deployer}.stablecoin-token-v4`;
+      const asset2 = `${deployer}.stability-pool-v5`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // Add first collateral
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(asset1),
@@ -396,7 +396,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Add second collateral
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(asset2),
@@ -413,7 +413,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Check count
       const count = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-collateral-count",
         [],
         deployer
@@ -422,7 +422,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Check enumeration
       const first = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-collateral-at-index",
         [Cl.uint(0)],
         deployer
@@ -430,7 +430,7 @@ describe("collateral-registry-v4 multi-asset", () => {
       expect(first.result).toBeSome(Cl.tuple({ asset: Cl.principal(asset1) }));
 
       const second = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-collateral-at-index",
         [Cl.uint(1)],
         deployer
@@ -442,12 +442,12 @@ describe("collateral-registry-v4 multi-asset", () => {
   describe("debt tracking", () => {
     it("tracks total debt per collateral type", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // Add collateral
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -463,7 +463,7 @@ describe("collateral-registry-v4 multi-asset", () => {
       );
 
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "set-vault-engine-authorized",
         [Cl.principal(deployer), Cl.bool(true)],
         deployer
@@ -471,7 +471,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Initial debt should be 0
       let totalDebt = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-total-debt",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -480,7 +480,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Increase debt
       let result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "increase-debt",
         [Cl.principal(assetPrincipal), Cl.uint(1000)],
         deployer
@@ -489,7 +489,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Check updated debt
       totalDebt = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-total-debt",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -498,7 +498,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Decrease debt
       result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "decrease-debt",
         [Cl.principal(assetPrincipal), Cl.uint(400)],
         deployer
@@ -508,12 +508,12 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("enforces debt ceiling", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // Add collateral with low ceiling
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -530,7 +530,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Authorize test caller for debt mutation helpers
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "set-vault-engine-authorized",
         [Cl.principal(deployer), Cl.bool(true)],
         deployer
@@ -538,7 +538,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Try to exceed ceiling
       const result = simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "increase-debt",
         [Cl.principal(assetPrincipal), Cl.uint(1500)],
         deployer
@@ -548,12 +548,12 @@ describe("collateral-registry-v4 multi-asset", () => {
 
     it("calculates available debt capacity", () => {
       const { deployer } = getTestAccounts();
-      const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+      const assetPrincipal = `${deployer}.stablecoin-token-v4`;
       const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
       // Add collateral
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "add-collateral-type",
         [
           Cl.principal(assetPrincipal),
@@ -570,7 +570,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Authorize test caller for debt mutation helpers
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "set-vault-engine-authorized",
         [Cl.principal(deployer), Cl.bool(true)],
         deployer
@@ -578,7 +578,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Initial capacity = ceiling
       let capacity = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-available-debt-capacity",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -587,7 +587,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Add some debt
       simnet.callPublicFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "increase-debt",
         [Cl.principal(assetPrincipal), Cl.uint(3000)],
         deployer
@@ -595,7 +595,7 @@ describe("collateral-registry-v4 multi-asset", () => {
 
       // Check remaining capacity
       capacity = simnet.callReadOnlyFn(
-        "collateral-registry-v4",
+        "collateral-registry-v5",
         "get-available-debt-capacity",
         [Cl.principal(assetPrincipal)],
         deployer
@@ -609,11 +609,11 @@ describe("collateral-registry-v4 multi-asset", () => {
 // Multi-Asset Vault Engine Tests
 // ============================================
 
-describe("multi-asset-vault-engine-v5", () => {
+describe("multi-asset-vault-engine-v6", () => {
   describe("vault lifecycle", () => {
     it("allows users to open vaults", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
 
       addCollateralType(deployer, sbtcAsset);
       registerOracleForAsset(deployer, sbtcAsset);
@@ -621,7 +621,7 @@ describe("multi-asset-vault-engine-v5", () => {
       configureCollateralForStablecoin(deployer, wallet1, sbtcAsset);
 
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "open-vault-for-stablecoin",
         [Cl.uint(0)],
         wallet1
@@ -631,7 +631,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
     it("rejects duplicate vault creation", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
 
       addCollateralType(deployer, sbtcAsset);
       registerOracleForAsset(deployer, sbtcAsset);
@@ -640,7 +640,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // First vault
       let result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "open-vault-for-stablecoin",
         [Cl.uint(0)],
         wallet1
@@ -649,7 +649,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Duplicate should fail
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "open-vault-for-stablecoin",
         [Cl.uint(0)],
         wallet1
@@ -661,7 +661,7 @@ describe("multi-asset-vault-engine-v5", () => {
   describe("multi-asset collateral deposits", () => {
     it("allows depositing collateral", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
 
       addCollateralType(deployer, sbtcAsset);
       registerOracleForAsset(deployer, sbtcAsset);
@@ -669,14 +669,14 @@ describe("multi-asset-vault-engine-v5", () => {
       configureCollateralForStablecoin(deployer, wallet1, sbtcAsset);
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       // Open vault
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
 
       // Deposit
       let result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1000)],
         wallet1
@@ -685,7 +685,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Deposit more
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(500)],
         wallet1
@@ -697,8 +697,8 @@ describe("multi-asset-vault-engine-v5", () => {
   describe("minting against specific assets", () => {
     it("allows minting against deposited collateral", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Setup
       addCollateralType(deployer, sbtcAsset);
@@ -708,12 +708,12 @@ describe("multi-asset-vault-engine-v5", () => {
       configureCollateralForStablecoin(deployer, wallet1, sbtcAsset);
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       // Open vault and deposit
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
@@ -721,7 +721,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Mint
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
         wallet1
@@ -730,7 +730,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Verify token balance
       const balance = simnet.callReadOnlyFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "get-balance",
         [Cl.principal(wallet1)],
         wallet1
@@ -740,8 +740,8 @@ describe("multi-asset-vault-engine-v5", () => {
 
     it("rejects minting that would break health factor", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Setup with controlled price
       addCollateralType(deployer, sbtcAsset);
@@ -758,12 +758,12 @@ describe("multi-asset-vault-engine-v5", () => {
       );
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(1000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(1000), Cl.principal(wallet1)], wallet1);
 
       // Open vault and deposit
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1000)],
         wallet1
@@ -771,7 +771,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Try to mint too much (would break 150% ratio)
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(800)],
         wallet1
@@ -783,8 +783,8 @@ describe("multi-asset-vault-engine-v5", () => {
   describe("repaying debt", () => {
     it("allows repaying debt against specific assets", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Setup
       addCollateralType(deployer, sbtcAsset);
@@ -794,18 +794,18 @@ describe("multi-asset-vault-engine-v5", () => {
       configureCollateralForStablecoin(deployer, wallet1, sbtcAsset);
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       // Open vault, deposit, and mint
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
         wallet1
@@ -813,7 +813,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Repay partial debt
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "repay-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(200)],
         wallet1
@@ -825,8 +825,8 @@ describe("multi-asset-vault-engine-v5", () => {
   describe("withdrawing collateral", () => {
     it("allows withdrawing excess collateral", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Setup
       addCollateralType(deployer, sbtcAsset);
@@ -836,18 +836,18 @@ describe("multi-asset-vault-engine-v5", () => {
       configureCollateralForStablecoin(deployer, wallet1, sbtcAsset);
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       // Open vault, deposit, and mint
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(2000)],
         wallet1
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
         wallet1
@@ -855,7 +855,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Withdraw some collateral (keeping healthy ratio)
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "withdraw-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(500)],
         wallet1
@@ -865,8 +865,8 @@ describe("multi-asset-vault-engine-v5", () => {
 
     it("rejects withdrawal that would break health factor", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Setup with controlled price
       addCollateralType(deployer, sbtcAsset);
@@ -883,18 +883,18 @@ describe("multi-asset-vault-engine-v5", () => {
       );
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       // Open vault, deposit, and mint near limit
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
         wallet1
@@ -902,7 +902,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Try to withdraw too much
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "withdraw-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(800)],
         wallet1
@@ -914,8 +914,8 @@ describe("multi-asset-vault-engine-v5", () => {
   describe("health factor calculations", () => {
     it("calculates per-asset health factors", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Setup with controlled price
       addCollateralType(deployer, sbtcAsset);
@@ -932,18 +932,18 @@ describe("multi-asset-vault-engine-v5", () => {
       );
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       // Open vault, deposit, and mint
-      simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
         wallet1
@@ -951,7 +951,7 @@ describe("multi-asset-vault-engine-v5", () => {
 
       // Check health factor
       const healthFactor = simnet.callReadOnlyFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "get-position-health-factor-for-stablecoin",
         [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
         wallet1
@@ -965,8 +965,8 @@ describe("multi-asset-vault-engine-v5", () => {
   describe("stablecoin-scoped vaults", () => {
     it("opens, deposits, and mints against a specific stablecoin id", () => {
       const { deployer, wallet1 } = getTestAccounts();
-      const sbtcAsset = `${deployer}.sbtc-token-v3`;
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const sbtcAsset = `${deployer}.sbtc-token-v4`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       addCollateralType(deployer, sbtcAsset);
       registerOracleForAsset(deployer, sbtcAsset);
@@ -975,10 +975,10 @@ describe("multi-asset-vault-engine-v5", () => {
       configureCollateralForStablecoin(deployer, wallet1, sbtcAsset);
 
       // Faucet sBTC
-      simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
+      simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(5000), Cl.principal(wallet1)], wallet1);
 
       let result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "open-vault-for-stablecoin",
         [Cl.uint(0)],
         wallet1
@@ -986,7 +986,7 @@ describe("multi-asset-vault-engine-v5", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1500)],
         wallet1
@@ -994,7 +994,7 @@ describe("multi-asset-vault-engine-v5", () => {
       expect(result.result).toBeOk(Cl.uint(1500));
 
       result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(500)],
         wallet1
@@ -1002,7 +1002,7 @@ describe("multi-asset-vault-engine-v5", () => {
       expect(result.result).toBeOk(Cl.uint(500));
 
       const balance = simnet.callReadOnlyFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "get-balance",
         [Cl.principal(wallet1)],
         wallet1
@@ -1023,7 +1023,7 @@ describe("multi-asset-vault-engine-v5", () => {
       expect(registerResult.result).toBeOk(Cl.uint(0));
 
       const result = simnet.callPublicFn(
-        "multi-asset-vault-engine-v5",
+        "multi-asset-vault-engine-v6",
         "open-vault-for-stablecoin",
         [Cl.uint(0)],
         wallet1

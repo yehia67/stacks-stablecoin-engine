@@ -109,7 +109,7 @@ describe("bridge-registry-v3", () => {
   describe("token registration", () => {
     it("allows owner to register tokens for bridging", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`; // Using another contract as mock adapter
 
       const result = simnet.callPublicFn(
@@ -131,7 +131,7 @@ describe("bridge-registry-v3", () => {
 
     it("rejects duplicate token registration", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`;
 
       // First registration
@@ -155,9 +155,9 @@ describe("bridge-registry-v3", () => {
 
     it("allows owner to update token adapter", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`;
-      const newAdapterPrincipal = `${deployer}.stability-pool-v4`; // Using another contract as mock
+      const newAdapterPrincipal = `${deployer}.stability-pool-v5`; // Using another contract as mock
 
       // Register token
       let result = simnet.callPublicFn(
@@ -189,7 +189,7 @@ describe("bridge-registry-v3", () => {
 
     it("allows owner to enable/disable tokens", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`;
 
       // Register token
@@ -233,7 +233,7 @@ describe("bridge-registry-v3", () => {
   describe("token chain configuration", () => {
     it("allows configuring token for specific chains", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`;
       const remoteAddress = createTestBuffer32(1);
 
@@ -282,7 +282,7 @@ describe("bridge-registry-v3", () => {
 
     it("rejects chain config for unregistered tokens", () => {
       const { deployer } = getTestAccounts();
-      const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+      const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
       const remoteAddress = createTestBuffer32(1);
 
       // Add chain
@@ -316,14 +316,14 @@ describe("bridge-registry-v3", () => {
 // Stablecoin Token Bridge Functions Tests
 // ============================================
 
-describe("stablecoin-token-v3 bridge functions", () => {
+describe("stablecoin-token-v4 bridge functions", () => {
   describe("bridge adapter authorization", () => {
     it("allows owner to set bridge adapter", () => {
       const { deployer } = getTestAccounts();
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`; // Using as mock adapter
 
       const result = simnet.callPublicFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "set-bridge-adapter",
         [Cl.principal(adapterPrincipal)],
         deployer
@@ -331,7 +331,7 @@ describe("stablecoin-token-v3 bridge functions", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       const adapter = simnet.callReadOnlyFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "get-bridge-adapter",
         [],
         deployer
@@ -344,7 +344,7 @@ describe("stablecoin-token-v3 bridge functions", () => {
       const adapterPrincipal = `${deployer}.stablecoin-factory-v3`;
 
       const result = simnet.callPublicFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "set-bridge-adapter",
         [Cl.principal(adapterPrincipal)],
         wallet1
@@ -359,7 +359,7 @@ describe("stablecoin-token-v3 bridge functions", () => {
 
       // Try to mint without being the adapter
       const result = simnet.callPublicFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "mint-from-bridge",
         [Cl.uint(1000000), Cl.principal(wallet1)],
         wallet1
@@ -375,7 +375,7 @@ describe("stablecoin-token-v3 bridge functions", () => {
 
       // Try to burn without being the adapter
       const result = simnet.callPublicFn(
-        "stablecoin-token-v3",
+        "stablecoin-token-v4",
         "burn-to-remote",
         [
           Cl.uint(1000000),

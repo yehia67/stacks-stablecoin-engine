@@ -318,7 +318,7 @@ describe("stablecoin-factory-v3 registration", () => {
 describe("stablecoin-factory-v3 token linking", () => {
   it("allows creator to link token contract", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const tokenContract = `${deployer}.stablecoin-token-v3`;
+    const tokenContract = `${deployer}.stablecoin-token-v4`;
 
     // Set fee to 0
     simnet.callPublicFn(
@@ -357,7 +357,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
   it("rejects non-creator linking token contract", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const tokenContract = `${deployer}.stablecoin-token-v3`;
+    const tokenContract = `${deployer}.stablecoin-token-v4`;
 
     // Set fee to 0
     simnet.callPublicFn(
@@ -387,7 +387,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
   it("rejects linking to non-existent stablecoin", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const tokenContract = `${deployer}.stablecoin-token-v3`;
+    const tokenContract = `${deployer}.stablecoin-token-v4`;
 
     const result = simnet.callPublicFn(
       "stablecoin-factory-v3",
@@ -654,9 +654,9 @@ describe("per-stablecoin collateral configuration", () => {
     expect(regResult.result).toBeOk(Cl.uint(0));
 
     // Add global collateral type
-    const asset = `${deployer}.stablecoin-token-v3`;
+    const asset = `${deployer}.stablecoin-token-v4`;
     const oracle = `${deployer}.price-oracle-dia-btc-v2`;
-    simnet.callPublicFn("collateral-registry-v4", "add-collateral-type", [
+    simnet.callPublicFn("collateral-registry-v5", "add-collateral-type", [
       Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10),
       Cl.uint(200), Cl.uint(10000000), Cl.uint(100), Cl.principal(oracle),
     ], deployer);
@@ -669,7 +669,7 @@ describe("per-stablecoin collateral configuration", () => {
     const { asset } = setupFactoryAndCollateral(deployer, wallet1);
 
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(170), Cl.uint(130), Cl.uint(15), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet1
     );
@@ -677,7 +677,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Verify config was stored
     const config = simnet.callReadOnlyFn(
-      "collateral-registry-v4", "get-stablecoin-collateral-config",
+      "collateral-registry-v5", "get-stablecoin-collateral-config",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -699,7 +699,7 @@ describe("per-stablecoin collateral configuration", () => {
     const { asset } = setupFactoryAndCollateral(deployer, wallet1);
 
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(170), Cl.uint(130), Cl.uint(15), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet2 // not the creator
     );
@@ -712,7 +712,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Try min-collateral-ratio below global 150
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(140), Cl.uint(130), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
@@ -725,7 +725,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Try liquidation-ratio below global 120
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(110), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
@@ -738,13 +738,13 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure with higher ratios
     simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(200), Cl.uint(150), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     const effective = simnet.callReadOnlyFn(
-      "collateral-registry-v4", "get-effective-min-collateral-ratio",
+      "collateral-registry-v5", "get-effective-min-collateral-ratio",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -758,7 +758,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // No per-stablecoin config set — v4 returns none (no fallback to global)
     const effective = simnet.callReadOnlyFn(
-      "collateral-registry-v4", "get-effective-min-collateral-ratio",
+      "collateral-registry-v5", "get-effective-min-collateral-ratio",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -771,7 +771,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // stablecoin id 1 doesn't exist, should return none
     const effective = simnet.callReadOnlyFn(
-      "collateral-registry-v4", "is-collateral-enabled-for-stablecoin",
+      "collateral-registry-v5", "is-collateral-enabled-for-stablecoin",
       [Cl.uint(1), Cl.principal(asset)],
       deployer
     );
@@ -784,14 +784,14 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure first
     simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     // Disable
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "disable-collateral-for-stablecoin",
+      "collateral-registry-v5", "disable-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset)],
       wallet1
     );
@@ -799,7 +799,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Verify disabled — v4 returns false when per-stablecoin config is disabled
     const enabled = simnet.callReadOnlyFn(
-      "collateral-registry-v4", "is-collateral-enabled-for-stablecoin",
+      "collateral-registry-v5", "is-collateral-enabled-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -812,13 +812,13 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure collateral
     simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     const count = simnet.callReadOnlyFn(
-      "collateral-registry-v4", "get-stablecoin-collateral-count-ro",
+      "collateral-registry-v5", "get-stablecoin-collateral-count-ro",
       [Cl.uint(0)],
       deployer
     );
@@ -861,7 +861,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // wallet2 tries to configure collateral for wallet1's stablecoin (id 0)
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(170), Cl.uint(130), Cl.uint(15), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet2
     );
@@ -874,7 +874,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Global liquidation-penalty is 10. Try setting to 5.
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(5), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
@@ -887,21 +887,21 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure first
     simnet.callPublicFn(
-      "collateral-registry-v4", "configure-collateral-for-stablecoin",
+      "collateral-registry-v5", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     // Admin disables the global collateral
     simnet.callPublicFn(
-      "collateral-registry-v4", "set-collateral-enabled",
+      "collateral-registry-v5", "set-collateral-enabled",
       [Cl.principal(asset), Cl.bool(false)],
       deployer
     );
 
     // Creator tries to update per-stablecoin config — should fail
     const result = simnet.callPublicFn(
-      "collateral-registry-v4", "update-collateral-for-stablecoin",
+      "collateral-registry-v5", "update-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(160), Cl.uint(130), Cl.uint(12), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet1
     );
