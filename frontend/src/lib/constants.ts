@@ -9,11 +9,11 @@ const DEPLOYER_ADDRESS = process.env.NEXT_PUBLIC_DEPLOYER_ADDRESS || DEFAULT_TES
 const STABLECOIN_FACTORY_CONTRACT =
   process.env.NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT || "stablecoin-factory-v3";
 const MULTI_ASSET_VAULT_ENGINE_CONTRACT =
-  process.env.NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT || "multi-asset-vault-engine-v5";
+  process.env.NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT || "multi-asset-vault-engine-v6";
 const COLLATERAL_REGISTRY_CONTRACT =
-  process.env.NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT || "collateral-registry-v4";
+  process.env.NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT || "collateral-registry-v5";
 const LIQUIDATION_ENGINE_CONTRACT =
-  process.env.NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT || "liquidation-engine-v5";
+  process.env.NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT || "liquidation-engine-v6";
 
 // Contract addresses
 export const CONTRACTS = {
@@ -21,11 +21,11 @@ export const CONTRACTS = {
 
   // Core contracts
   MULTI_ASSET_VAULT_ENGINE: MULTI_ASSET_VAULT_ENGINE_CONTRACT,
-  STABLECOIN_TOKEN: "stablecoin-token-v3",
+  STABLECOIN_TOKEN: "stablecoin-token-v4",
   STABLECOIN_FACTORY: STABLECOIN_FACTORY_CONTRACT,
   COLLATERAL_REGISTRY: COLLATERAL_REGISTRY_CONTRACT,
   LIQUIDATION_ENGINE: LIQUIDATION_ENGINE_CONTRACT,
-  STABILITY_POOL: "stability-pool-v4",
+  STABILITY_POOL: "stability-pool-v5",
   PRICE_ORACLE_DIA_BTC: "price-oracle-dia-btc-v2",
   PRICE_ORACLE_DIA_STX: "price-oracle-dia-stx-v2",
   DIA_ORACLE_ADAPTER: "dia-oracle-adapter",
@@ -37,6 +37,14 @@ export const CONTRACTS = {
 // Helper to get full contract identifier
 export const getContractId = (contractName: string) =>
   `${CONTRACTS.DEPLOYER}.${contractName}`;
+
+// Mapping from token contract name to native fungible token asset name
+// Used for building Pc.ft() post-conditions
+export const FT_ASSET_NAMES: Record<string, string> = {
+  "sbtc-token-v4": "sbtc-token",
+  "stx-token-v4": "stx-token",
+  "stablecoin-token-v4": "sse-stablecoin",
+};
 
 // App configuration
 export const APP_CONFIG = {
@@ -59,14 +67,14 @@ export const FAUCET_COLLATERALS = [
   {
     name: "Test sBTC",
     symbol: "sBTC",
-    contractName: "sbtc-token-v3",
+    contractName: "sbtc-token-v4",
     decimals: 8,
     mintAmount: 10_00000000, // 10 sBTC (8 decimals)
   },
   {
     name: "Test STX",
     symbol: "STX",
-    contractName: "stx-token-v3",
+    contractName: "stx-token-v4",
     decimals: 6,
     mintAmount: 10_000000, // 10 STX (6 decimals)
   },

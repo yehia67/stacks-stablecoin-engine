@@ -6,6 +6,7 @@ import { CONTRACTS } from "./constants";
  *
  * The deployed contract:
  *  - Implements both traits (referenced from the SSE deployer, not the user).
+ *  - Uses native define-fungible-token for post-condition support.
  *  - Pre-authorises the multi-asset vault engine so vaults can mint/burn
  *    immediately after deployment (no extra set-vault-engine tx needed).
  *  - Parametrises TOKEN-NAME and TOKEN-SYMBOL from the registration data.
@@ -13,10 +14,13 @@ import { CONTRACTS } from "./constants";
 export function generateTokenContract(name: string, symbol: string): string {
   const deployer = CONTRACTS.DEPLOYER;
   const vaultEngine = `${deployer}.${CONTRACTS.MULTI_ASSET_VAULT_ENGINE}`;
+  // Derive a stable fungible token identifier from the symbol
+  const ftName = `${symbol.toLowerCase()}-ft`;
 
   return `
 ;; Auto-generated SIP-010 token for "${name}" (${symbol})
 ;; Deployed via SSE Stablecoin Factory
+;; Uses native define-fungible-token for post-condition support
 
 (impl-trait '${deployer}.sip-010-trait.sip-010-trait)
 (impl-trait '${deployer}.stablecoin-engine-token-trait.stablecoin-engine-token-trait)
@@ -24,27 +28,15 @@ export function generateTokenContract(name: string, symbol: string): string {
 (define-constant CONTRACT-OWNER tx-sender)
 
 (define-constant ERR_UNAUTHORIZED u401)
-(define-constant ERR_INSUFFICIENT_BALANCE u402)
 
 (define-constant TOKEN-NAME "${name}")
 (define-constant TOKEN-SYMBOL "${symbol}")
 (define-constant TOKEN-DECIMALS u6)
 
-(define-data-var total-supply uint u0)
+(define-fungible-token ${ftName})
+
 ;; Pre-authorise the SSE vault engine so vaults work immediately
 (define-data-var vault-engine (optional principal) (some '${vaultEngine}))
-
-(define-map balances
-  {owner: principal}
-  {balance: uint}
-)
-
-(define-read-only (balance-of (owner principal))
-  (match (map-get? balances {owner: owner})
-    entry (get balance entry)
-    u0
-  )
-)
 
 (define-read-only (is-vault-engine (caller principal))
   (match (var-get vault-engine)
@@ -64,36 +56,21 @@ export function generateTokenContract(name: string, symbol: string): string {
 (define-public (transfer (amount uint) (sender principal) (recipient principal))
   (begin
     (asserts! (is-eq tx-sender sender) (err ERR_UNAUTHORIZED))
-    (let ((sender-balance (balance-of sender))
-          (recipient-balance (balance-of recipient)))
-      (asserts! (>= sender-balance amount) (err ERR_INSUFFICIENT_BALANCE))
-      (map-set balances {owner: sender} {balance: (- sender-balance amount)})
-      (map-set balances {owner: recipient} {balance: (+ recipient-balance amount)})
-      (ok true)
-    )
+    (ft-transfer? ${ftName} amount sender recipient)
   )
 )
 
 (define-public (mint (amount uint) (recipient principal))
   (begin
     (asserts! (is-vault-engine contract-caller) (err ERR_UNAUTHORIZED))
-    (let ((current (balance-of recipient)))
-      (map-set balances {owner: recipient} {balance: (+ current amount)})
-      (var-set total-supply (+ (var-get total-supply) amount))
-      (ok true)
-    )
+    (ft-mint? ${ftName} amount recipient)
   )
 )
 
 (define-public (burn (amount uint) (owner principal))
   (begin
     (asserts! (is-vault-engine contract-caller) (err ERR_UNAUTHORIZED))
-    (let ((current (balance-of owner)))
-      (asserts! (>= current amount) (err ERR_INSUFFICIENT_BALANCE))
-      (map-set balances {owner: owner} {balance: (- current amount)})
-      (var-set total-supply (- (var-get total-supply) amount))
-      (ok true)
-    )
+    (ft-burn? ${ftName} amount owner)
   )
 )
 
@@ -110,11 +87,11 @@ export function generateTokenContract(name: string, symbol: string): string {
 )
 
 (define-read-only (get-balance (who principal))
-  (ok (balance-of who))
+  (ok (ft-get-balance ${ftName} who))
 )
 
 (define-read-only (get-total-supply)
-  (ok (var-get total-supply))
+  (ok (ft-get-supply ${ftName}))
 )
 
 (define-read-only (get-token-uri)

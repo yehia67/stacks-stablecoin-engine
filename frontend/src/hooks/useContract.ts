@@ -1,36 +1,54 @@
 "use client";
 
 import { useCallback } from "react";
-import { useConnect, openContractDeploy, openContractCall } from "@stacks/connect-react";
+import { request } from "@stacks/connect";
 import {
-  PostConditionMode,
+  Pc,
   uintCV,
   stringAsciiCV,
   principalCV,
   standardPrincipalCV,
   contractPrincipalCV,
-  makeStandardSTXPostCondition,
-  FungibleConditionCode,
 } from "@stacks/transactions";
-import { CONTRACTS, APP_CONFIG, IS_MAINNET } from "@/lib/constants";
-import { StacksTestnet, StacksMainnet } from "@stacks/connect/node_modules/@stacks/network";
+import { CONTRACTS, APP_CONFIG, FT_ASSET_NAMES, getContractId } from "@/lib/constants";
+import { networkName, getUserAddress } from "@/lib/stacks";
 import { generateTokenContract, deriveTokenContractName } from "@/lib/tokenTemplate";
 
-const stacksNetwork = IS_MAINNET ? new StacksMainnet() : new StacksTestnet();
+/**
+ * Resolve the native fungible token asset name from a contract principal string.
+ * For known SSE tokens, looks up FT_ASSET_NAMES.
+ * For dynamically deployed tokens (e.g. "musd-token-1712345678"), derives from symbol convention.
+ */
+function getFtAssetName(contractPrincipal: string): string | null {
+  const parts = contractPrincipal.split(".");
+  const contractName = parts.length > 1 ? parts[parts.length - 1] : contractPrincipal;
+
+  // Check known tokens
+  if (FT_ASSET_NAMES[contractName]) {
+    return FT_ASSET_NAMES[contractName];
+  }
+
+  // Dynamic stablecoin tokens follow pattern: symbol-token-timestamp
+  // Their FT name is: symbol-ft (set in tokenTemplate.ts)
+  const match = contractName.match(/^([a-z]+)-token-\d+$/);
+  if (match) {
+    return `${match[1]}-ft`;
+  }
+
+  return null;
+}
 
 export interface ContractCallOptions {
   contractName: string;
   functionName: string;
   functionArgs: any[];
   postConditions?: any[];
-  postConditionMode?: PostConditionMode;
+  postConditionMode?: "allow" | "deny";
   onSuccess?: (txId: string) => void;
   onError?: (error: Error) => void;
 }
 
 export function useContract() {
-  const { doContractCall } = useConnect();
-
   const parseContractPrincipal = useCallback((contractId: string) => {
     const [address, ...nameParts] = contractId.split(".");
     if (!address || nameParts.length === 0) {
@@ -46,35 +64,34 @@ export function useContract() {
         functionName,
         functionArgs,
         postConditions = [],
-        postConditionMode = PostConditionMode.Deny,
+        postConditionMode = "deny",
         onSuccess,
         onError,
       } = options;
 
       try {
-        await doContractCall({
-          network: stacksNetwork,
-          contractAddress: CONTRACTS.DEPLOYER,
-          contractName,
+        const response: any = await request("stx_callContract", {
+          contract: `${CONTRACTS.DEPLOYER}.${contractName}`,
           functionName,
           functionArgs,
-          postConditionMode: postConditionMode as any,
+          postConditionMode,
           postConditions,
-          onFinish: (data: any) => {
-            console.log("Transaction submitted:", data.txId);
-            onSuccess?.(data.txId);
-          },
-          onCancel: () => {
-            console.log("Transaction cancelled");
-            onError?.(new Error("Transaction cancelled by user"));
-          },
+          network: networkName,
         });
-      } catch (error) {
-        console.error("Contract call error:", error);
-        onError?.(error as Error);
+        const txId = response.txid || response.result?.txid || "";
+        console.log("Transaction submitted:", txId);
+        onSuccess?.(txId);
+      } catch (error: any) {
+        if (error?.message?.includes("cancel") || error?.code === 4001) {
+          console.log("Transaction cancelled");
+          onError?.(new Error("Transaction cancelled by user"));
+        } else {
+          console.error("Contract call error:", error);
+          onError?.(error as Error);
+        }
       }
     },
-    [doContractCall]
+    []
   );
 
   // Multi-Asset Vault Engine functions
@@ -88,6 +105,8 @@ export function useContract() {
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "open-vault-for-stablecoin",
         functionArgs: [uintCV(stablecoinId)],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -103,6 +122,13 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      const sender = getUserAddress();
+      const ftName = getFtAssetName(collateralAsset);
+      const postConditions =
+        sender && ftName
+          ? [Pc.principal(sender).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
+          : [];
+
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "deposit-collateral-for-stablecoin",
@@ -112,6 +138,8 @@ export function useContract() {
           parseContractPrincipal(collateralAsset),
           uintCV(amount),
         ],
+        postConditions,
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -137,6 +165,8 @@ export function useContract() {
           parseContractPrincipal(tokenContract),
           uintCV(amount),
         ],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -153,6 +183,13 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      const sender = getUserAddress();
+      const ftName = getFtAssetName(tokenContract);
+      const postConditions =
+        sender && ftName
+          ? [Pc.principal(sender).willSendLte(amount).ft(tokenContract as `${string}.${string}`, ftName)]
+          : [];
+
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "repay-against-asset-for-stablecoin",
@@ -162,6 +199,8 @@ export function useContract() {
           parseContractPrincipal(tokenContract),
           uintCV(amount),
         ],
+        postConditions,
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -177,6 +216,13 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      const ftName = getFtAssetName(collateralAsset);
+      const vaultPrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE) as `${string}.${string}`;
+      const postConditions =
+        ftName
+          ? [Pc.principal(vaultPrincipal).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
+          : [];
+
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "withdraw-collateral-for-stablecoin",
@@ -186,6 +232,8 @@ export function useContract() {
           parseContractPrincipal(collateralAsset),
           uintCV(amount),
         ],
+        postConditions,
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -201,27 +249,20 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void,
       senderAddress?: string,
-      feeAmount?: number // Fee in microSTX (e.g., 500000 for 0.5 STX)
+      feeAmount?: number
     ) => {
-      // Create post condition to show STX transfer in wallet
-      const hasPostConditions = senderAddress && feeAmount && feeAmount > 0;
-      const postConditions = hasPostConditions
-        ? [
-            makeStandardSTXPostCondition(
-              senderAddress,
-              FungibleConditionCode.LessEqual,
-              feeAmount
-            ),
-          ]
-        : [];
+      // Build STX post-condition for registration fee
+      const sender = senderAddress || getUserAddress();
+      const postConditions =
+        sender && feeAmount && feeAmount > 0
+          ? [Pc.principal(sender).willSendLte(feeAmount).ustx()]
+          : [];
 
       return callContract({
         contractName: CONTRACTS.STABLECOIN_FACTORY,
         functionName: "register-stablecoin",
         functionArgs: [stringAsciiCV(name), stringAsciiCV(symbol)],
-        // Use Allow mode when we can't construct proper post-conditions,
-        // otherwise the wallet defaults to denying any STX transfer
-        postConditionMode: hasPostConditions ? PostConditionMode.Deny : PostConditionMode.Allow,
+        postConditionMode: "deny",
         postConditions,
         onSuccess,
         onError,
@@ -242,22 +283,21 @@ export function useContract() {
         const contractName = deriveTokenContractName(stablecoinSymbol);
         const codeBody = generateTokenContract(stablecoinName, stablecoinSymbol);
 
-        await openContractDeploy({
-          network: stacksNetwork,
-          contractName,
-          codeBody,
-          appDetails: APP_CONFIG,
-          onFinish: (data: any) => {
-            console.log("Token deploy tx submitted:", data.txId);
-            onSuccess?.(data.txId, contractName);
-          },
-          onCancel: () => {
-            onError?.(new Error("Contract deployment cancelled by user"));
-          },
+        const response: any = await request("stx_deployContract", {
+          name: contractName,
+          clarityCode: codeBody,
+          network: networkName,
         });
-      } catch (error) {
-        console.error("Deploy error:", error);
-        onError?.(error as Error);
+        const txId = response.txid || response.result?.txid || "";
+        console.log("Token deploy tx submitted:", txId);
+        onSuccess?.(txId, contractName);
+      } catch (error: any) {
+        if (error?.message?.includes("cancel") || error?.code === 4001) {
+          onError?.(new Error("Contract deployment cancelled by user"));
+        } else {
+          console.error("Deploy error:", error);
+          onError?.(error as Error);
+        }
       }
     },
     []
@@ -275,6 +315,8 @@ export function useContract() {
         contractName: CONTRACTS.STABLECOIN_FACTORY,
         functionName: "set-token-contract",
         functionArgs: [uintCV(stablecoinId), parseContractPrincipal(tokenContract)],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -311,6 +353,8 @@ export function useContract() {
           uintCV(params.debtCeiling),
           uintCV(params.debtFloor),
         ],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -346,6 +390,8 @@ export function useContract() {
           uintCV(params.debtCeiling),
           uintCV(params.debtFloor),
         ],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -364,6 +410,8 @@ export function useContract() {
         contractName: CONTRACTS.COLLATERAL_REGISTRY,
         functionName: "disable-collateral-for-stablecoin",
         functionArgs: [uintCV(stablecoinId), parseContractPrincipal(asset)],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -382,6 +430,8 @@ export function useContract() {
         contractName: CONTRACTS.COLLATERAL_REGISTRY,
         functionName: "enable-collateral-for-stablecoin",
         functionArgs: [uintCV(stablecoinId), parseContractPrincipal(asset)],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -398,6 +448,13 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      const sender = getUserAddress();
+      const ftName = getFtAssetName(stablecoinTokenPrincipal);
+      const postConditions =
+        sender && ftName
+          ? [Pc.principal(sender).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)]
+          : [];
+
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,
         functionName: "deposit",
@@ -406,6 +463,8 @@ export function useContract() {
           parseContractPrincipal(stablecoinTokenPrincipal),
           uintCV(amount),
         ],
+        postConditions,
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -421,6 +480,13 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      const ftName = getFtAssetName(stablecoinTokenPrincipal);
+      const poolPrincipal = getContractId(CONTRACTS.STABILITY_POOL) as `${string}.${string}`;
+      const postConditions =
+        ftName
+          ? [Pc.principal(poolPrincipal).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)]
+          : [];
+
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,
         functionName: "withdraw",
@@ -429,6 +495,8 @@ export function useContract() {
           parseContractPrincipal(stablecoinTokenPrincipal),
           uintCV(amount),
         ],
+        postConditions,
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -451,11 +519,13 @@ export function useContract() {
           uintCV(stablecoinId),
           uintCV(pct),
         ],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
     },
-    [callContract, parseContractPrincipal]
+    [callContract]
   );
 
   // Claim collateral rewards from stability pool
@@ -474,6 +544,8 @@ export function useContract() {
           parseContractPrincipal(assetPrincipal),
           parseContractPrincipal(assetPrincipal),
         ],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });
@@ -482,7 +554,6 @@ export function useContract() {
   );
 
   // Faucet mint for testnet collateral tokens
-  // Uses openContractCall directly to avoid wallet extension ABI parsing issues
   const faucetMint = useCallback(
     async (
       tokenContractName: string,
@@ -492,26 +563,25 @@ export function useContract() {
       onError?: (error: Error) => void
     ) => {
       try {
-        await openContractCall({
-          network: stacksNetwork,
-          contractAddress: CONTRACTS.DEPLOYER,
-          contractName: tokenContractName,
+        const response: any = await request("stx_callContract", {
+          contract: `${CONTRACTS.DEPLOYER}.${tokenContractName}`,
           functionName: "faucet-mint",
           functionArgs: [uintCV(amount), standardPrincipalCV(recipient)],
-          postConditionMode: PostConditionMode.Allow,
+          postConditionMode: "allow",
           postConditions: [],
-          onFinish: (data: any) => {
-            console.log("Faucet mint tx submitted:", data.txId);
-            onSuccess?.(data.txId);
-          },
-          onCancel: () => {
-            console.log("Faucet mint cancelled");
-            onError?.(new Error("Transaction cancelled by user"));
-          },
+          network: networkName,
         });
-      } catch (error) {
-        console.error("Faucet mint error:", error);
-        onError?.(error as Error);
+        const txId = response.txid || response.result?.txid || "";
+        console.log("Faucet mint tx submitted:", txId);
+        onSuccess?.(txId);
+      } catch (error: any) {
+        if (error?.message?.includes("cancel") || error?.code === 4001) {
+          console.log("Faucet mint cancelled");
+          onError?.(new Error("Transaction cancelled by user"));
+        } else {
+          console.error("Faucet mint error:", error);
+          onError?.(error as Error);
+        }
       }
     },
     []
@@ -537,6 +607,8 @@ export function useContract() {
           parseContractPrincipal(collateralAsset),
           parseContractPrincipal(stablecoinTokenPrincipal),
         ],
+        postConditions: [],
+        postConditionMode: "deny",
         onSuccess,
         onError,
       });

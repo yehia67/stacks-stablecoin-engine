@@ -1,16 +1,16 @@
 {
   "$schema": "./sse.config.schema.json",
-  "version": "4",
+  "version": "5",
   "network": "testnet",
   "deployer": "ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF",
-  
+
   "contracts": {
     "stablecoinFactory": "stablecoin-factory-v3",
-    "stablecoinToken": "stablecoin-token-v3",
-    "collateralRegistry": "collateral-registry-v4",
-    "multiAssetVaultEngine": "multi-asset-vault-engine-v5",
-    "stabilityPool": "stability-pool-v4",
-    "liquidationEngine": "liquidation-engine-v5",
+    "stablecoinToken": "stablecoin-token-v4",
+    "collateralRegistry": "collateral-registry-v5",
+    "multiAssetVaultEngine": "multi-asset-vault-engine-v6",
+    "stabilityPool": "stability-pool-v5",
+    "liquidationEngine": "liquidation-engine-v6",
     "diaOracleAdapter": "dia-oracle-adapter",
     "priceOracleDiaBtc": "price-oracle-dia-btc-v2",
     "priceOracleDiaStx": "price-oracle-dia-stx-v2"
@@ -30,17 +30,17 @@
     "dia-oracle-adapter": 12000,
     "price-oracle-dia-btc-v2": 12000,
     "price-oracle-dia-stx-v2": 12000,
-    "collateral-registry-v4": 60000,
-    "stability-pool-v4": 60000,
-    "multi-asset-vault-engine-v5": 200000,
-    "liquidation-engine-v5": 60000
+    "collateral-registry-v5": 60000,
+    "stability-pool-v5": 60000,
+    "multi-asset-vault-engine-v6": 200000,
+    "liquidation-engine-v6": 60000
   },
 
   "collaterals": [
     {
       "name": "Test sBTC",
       "symbol": "sBTC",
-      "contractName": "sbtc-token-v3",
+      "contractName": "sbtc-token-v4",
       "decimals": 8,
       "initialMint": 1000000000000,
       "diaOracleId": 3,
@@ -56,7 +56,7 @@
     {
       "name": "Test STX",
       "symbol": "STX",
-      "contractName": "stx-token-v3",
+      "contractName": "stx-token-v4",
       "decimals": 6,
       "initialMint": 5000000000000,
       "diaOracleId": 4,
