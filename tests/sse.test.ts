@@ -16,10 +16,10 @@ function getTestAccounts() {
 
 /** Full setup: register stablecoin, link token, add global collateral, configure per-stablecoin collateral, register oracle, authorize vault engine. */
 function fullSetup(deployer: string, creator: string) {
-  const sbtcAsset = `${deployer}.sbtc-token-v3`;
+  const sbtcAsset = `${deployer}.sbtc-token-v4`;
   const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
-  const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
-  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v5`;
+  const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
+  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v6`;
 
   // Seed DIA BTC price so oracle lookups work
   simnet.callPublicFn(
@@ -51,7 +51,7 @@ function fullSetup(deployer: string, creator: string) {
 
   // Add global collateral
   simnet.callPublicFn(
-    "collateral-registry-v4",
+    "collateral-registry-v5",
     "add-collateral-type",
     [
       Cl.principal(sbtcAsset),
@@ -64,7 +64,7 @@ function fullSetup(deployer: string, creator: string) {
 
   // Configure per-stablecoin collateral
   simnet.callPublicFn(
-    "collateral-registry-v4",
+    "collateral-registry-v5",
     "configure-collateral-for-stablecoin",
     [
       Cl.uint(0), Cl.principal(sbtcAsset),
@@ -76,7 +76,7 @@ function fullSetup(deployer: string, creator: string) {
 
   // Register oracle
   simnet.callPublicFn(
-    "multi-asset-vault-engine-v5",
+    "multi-asset-vault-engine-v6",
     "register-asset-oracle",
     [Cl.principal(sbtcAsset), Cl.uint(3)],
     deployer
@@ -84,36 +84,36 @@ function fullSetup(deployer: string, creator: string) {
 
   // Authorize vault engine on stablecoin token
   simnet.callPublicFn(
-    "stablecoin-token-v3",
+    "stablecoin-token-v4",
     "set-vault-engine",
     [Cl.principal(vaultEnginePrincipal)],
     deployer
   );
 }
 
-describe("stablecoin-token-v3 hardening", () => {
+describe("stablecoin-token-v4 hardening", () => {
   it("returns expected SIP-010 metadata responses", () => {
     const { deployer } = getTestAccounts();
 
-    const name = simnet.callReadOnlyFn("stablecoin-token-v3", "get-name", [], deployer);
+    const name = simnet.callReadOnlyFn("stablecoin-token-v4", "get-name", [], deployer);
     expect(name.result).toBeOk(Cl.stringAscii("SSE Stablecoin"));
 
-    const symbol = simnet.callReadOnlyFn("stablecoin-token-v3", "get-symbol", [], deployer);
+    const symbol = simnet.callReadOnlyFn("stablecoin-token-v4", "get-symbol", [], deployer);
     expect(symbol.result).toBeOk(Cl.stringAscii("SSEUSD"));
 
-    const decimals = simnet.callReadOnlyFn("stablecoin-token-v3", "get-decimals", [], deployer);
+    const decimals = simnet.callReadOnlyFn("stablecoin-token-v4", "get-decimals", [], deployer);
     expect(decimals.result).toBeOk(Cl.uint(6));
 
-    const tokenUri = simnet.callReadOnlyFn("stablecoin-token-v3", "get-token-uri", [], deployer);
+    const tokenUri = simnet.callReadOnlyFn("stablecoin-token-v4", "get-token-uri", [], deployer);
     expect(tokenUri.result).toBeOk(Cl.none());
   });
 
   it("only allows contract owner to set vault-engine", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v5`;
+    const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v6`;
 
     const unauthorized = simnet.callPublicFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "set-vault-engine",
       [Cl.principal(vaultEnginePrincipal)],
       wallet1
@@ -121,7 +121,7 @@ describe("stablecoin-token-v3 hardening", () => {
     expect(unauthorized.result).toBeErr(Cl.uint(401));
 
     const authorized = simnet.callPublicFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "set-vault-engine",
       [Cl.principal(vaultEnginePrincipal)],
       deployer
@@ -131,14 +131,14 @@ describe("stablecoin-token-v3 hardening", () => {
 
   it("runs vault lifecycle end-to-end and tracks total supply", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     fullSetup(deployer, wallet1);
 
     // Direct mint should fail (not vault engine caller)
     const directMint = simnet.callPublicFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "mint",
       [Cl.uint(100), Cl.principal(wallet1)],
       deployer
@@ -146,15 +146,15 @@ describe("stablecoin-token-v3 hardening", () => {
     expect(directMint.result).toBeErr(Cl.uint(401));
 
     // Faucet sBTC
-    simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(1200), Cl.principal(wallet1)], wallet1);
+    simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(1200), Cl.principal(wallet1)], wallet1);
 
     // Open vault
-    let result = simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    let result = simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     expect(result.result).toBeOk(Cl.bool(true));
 
     // Deposit collateral
     result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1200)],
       wallet1
@@ -163,7 +163,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Mint stablecoins
     result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
       wallet1
@@ -172,7 +172,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Check total supply
     const totalSupplyAfterMint = simnet.callReadOnlyFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "get-total-supply",
       [],
       wallet1
@@ -181,7 +181,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Direct burn should fail
     const directBurn = simnet.callPublicFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "burn",
       [Cl.uint(50), Cl.principal(wallet1)],
       deployer
@@ -190,7 +190,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Repay (burn) via vault engine
     result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "repay-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(200)],
       wallet1
@@ -199,7 +199,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Withdraw some collateral
     result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "withdraw-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(300)],
       wallet1
@@ -208,7 +208,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Check balance
     const balance = simnet.callReadOnlyFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "get-balance",
       [Cl.principal(wallet1)],
       wallet1
@@ -217,7 +217,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Check total supply after burn
     const totalSupplyAfterBurn = simnet.callReadOnlyFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "get-total-supply",
       [],
       wallet1
@@ -226,7 +226,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Check health factor
     const health = simnet.callReadOnlyFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "get-position-health-factor-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       wallet1
@@ -238,8 +238,8 @@ describe("stablecoin-token-v3 hardening", () => {
 
   it("rejects minting that would break minimum health factor", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     fullSetup(deployer, wallet1);
 
@@ -252,12 +252,12 @@ describe("stablecoin-token-v3 hardening", () => {
     );
 
     // Faucet sBTC
-    simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(1000), Cl.principal(wallet1)], wallet1);
+    simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(1000), Cl.principal(wallet1)], wallet1);
 
     // Open vault and deposit
-    simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1000)],
       wallet1
@@ -265,7 +265,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Try to mint too much (700 would break 150% ratio with 1000 collateral at $1)
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(700)],
       wallet1
@@ -274,7 +274,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Balance should be 0 (mint failed)
     const balance = simnet.callReadOnlyFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "get-balance",
       [Cl.principal(wallet1)],
       wallet1
@@ -283,7 +283,7 @@ describe("stablecoin-token-v3 hardening", () => {
 
     // Total supply should be 0
     const totalSupply = simnet.callReadOnlyFn(
-      "stablecoin-token-v3",
+      "stablecoin-token-v4",
       "get-total-supply",
       [],
       wallet1
@@ -323,8 +323,8 @@ describe("oracle integration", () => {
 
   it("updates vault health factor when oracle price changes", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     fullSetup(deployer, wallet1);
 
@@ -337,16 +337,16 @@ describe("oracle integration", () => {
     );
 
     // Faucet, open vault, deposit, mint
-    simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(1200), Cl.principal(wallet1)], wallet1);
-    simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(1200), Cl.principal(wallet1)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1200)],
       wallet1
     );
     const mintResult = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
       wallet1
@@ -355,7 +355,7 @@ describe("oracle integration", () => {
 
     // Health before price change
     const healthBefore = simnet.callReadOnlyFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "get-position-health-factor-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       wallet1
@@ -373,7 +373,7 @@ describe("oracle integration", () => {
 
     // Health after price drop
     const healthAfter = simnet.callReadOnlyFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "get-position-health-factor-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       wallet1
@@ -383,7 +383,7 @@ describe("oracle integration", () => {
 
     // Should reject further minting
     const unsafeMint = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(1)],
       wallet1
@@ -392,7 +392,7 @@ describe("oracle integration", () => {
 
     // Should reject collateral withdrawal
     const unsafeWithdraw = simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "withdraw-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1)],
       wallet1
@@ -401,25 +401,25 @@ describe("oracle integration", () => {
   });
 });
 
-describe("stability-pool-v4 ledger", () => {
+describe("stability-pool-v5 ledger", () => {
   it("tracks deposit and withdraw balances with insufficient-balance guard", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     fullSetup(deployer, wallet1);
 
     // Mint stablecoins to wallet1 via vault
-    simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(10000), Cl.principal(wallet1)], wallet1);
-    simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(10000), Cl.principal(wallet1)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(10000)],
       wallet1
     );
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(1000)],
       wallet1
@@ -427,7 +427,7 @@ describe("stability-pool-v4 ledger", () => {
 
     // Deposit to stability pool
     let result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "deposit",
       [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(500)],
       wallet1
@@ -435,7 +435,7 @@ describe("stability-pool-v4 ledger", () => {
     expect(result.result).toBeOk(Cl.bool(true));
 
     let balance = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "balance-of-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0)],
       wallet1
@@ -444,7 +444,7 @@ describe("stability-pool-v4 ledger", () => {
 
     // Withdraw
     result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "withdraw",
       [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(200)],
       wallet1
@@ -452,7 +452,7 @@ describe("stability-pool-v4 ledger", () => {
     expect(result.result).toBeOk(Cl.bool(true));
 
     balance = simnet.callReadOnlyFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "balance-of-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0)],
       wallet1
@@ -461,7 +461,7 @@ describe("stability-pool-v4 ledger", () => {
 
     // Over-withdraw should fail
     result = simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "withdraw",
       [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(400)],
       wallet1
@@ -470,25 +470,25 @@ describe("stability-pool-v4 ledger", () => {
   });
 });
 
-describe("liquidation-engine-v5 stub", () => {
+describe("liquidation-engine-v6 stub", () => {
   it("returns explicit error for healthy vaults", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     fullSetup(deployer, wallet1);
 
     // Faucet, open vault, deposit, mint
-    simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(1200), Cl.principal(wallet1)], wallet1);
-    simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(1200), Cl.principal(wallet1)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1200)],
       wallet1
     );
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(600)],
       wallet1
@@ -496,14 +496,14 @@ describe("liquidation-engine-v5 stub", () => {
 
     // Deposit to pool so liquidation doesn't fail with empty pool
     simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "deposit",
       [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(600)],
       wallet1
     );
 
     const liquidation = simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet1),
@@ -519,22 +519,22 @@ describe("liquidation-engine-v5 stub", () => {
 
   it("returns ok for undercollateralized vaults after price drop", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
-    const sbtcAsset = `${deployer}.sbtc-token-v3`;
-    const tokenPrincipal = `${deployer}.stablecoin-token-v3`;
+    const sbtcAsset = `${deployer}.sbtc-token-v4`;
+    const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
     fullSetup(deployer, wallet1);
 
     // Faucet, open vault, deposit, mint
-    simnet.callPublicFn("sbtc-token-v3", "faucet-mint", [Cl.uint(10000), Cl.principal(wallet1)], wallet1);
-    simnet.callPublicFn("multi-asset-vault-engine-v5", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(10000), Cl.principal(wallet1)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(1)],
       wallet1
     );
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v5",
+      "multi-asset-vault-engine-v6",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(4000)],
       wallet1
@@ -542,7 +542,7 @@ describe("liquidation-engine-v5 stub", () => {
 
     // Deposit to pool
     simnet.callPublicFn(
-      "stability-pool-v4",
+      "stability-pool-v5",
       "deposit",
       [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(4000)],
       wallet1
@@ -557,7 +557,7 @@ describe("liquidation-engine-v5 stub", () => {
     );
 
     const liquidation = simnet.callPublicFn(
-      "liquidation-engine-v5",
+      "liquidation-engine-v6",
       "liquidate",
       [
         Cl.principal(wallet1),
@@ -572,14 +572,14 @@ describe("liquidation-engine-v5 stub", () => {
   });
 });
 
-describe("collateral-registry-v4 config flow", () => {
+describe("collateral-registry-v5 config flow", () => {
   it("supports owner add/get and rejects non-owner writes", () => {
     const { deployer, wallet1 } = getTestAccounts();
-    const assetPrincipal = `${deployer}.stablecoin-token-v3`;
+    const assetPrincipal = `${deployer}.stablecoin-token-v4`;
     const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
 
     const unauthorized = simnet.callPublicFn(
-      "collateral-registry-v4",
+      "collateral-registry-v5",
       "add-collateral-type",
       [
         Cl.principal(assetPrincipal),
@@ -596,7 +596,7 @@ describe("collateral-registry-v4 config flow", () => {
     expect(unauthorized.result).toBeErr(Cl.uint(100));
 
     const authorized = simnet.callPublicFn(
-      "collateral-registry-v4",
+      "collateral-registry-v5",
       "add-collateral-type",
       [
         Cl.principal(assetPrincipal),
@@ -613,7 +613,7 @@ describe("collateral-registry-v4 config flow", () => {
     expect(authorized.result).toBeOk(Cl.bool(true));
 
     const config = simnet.callReadOnlyFn(
-      "collateral-registry-v4",
+      "collateral-registry-v5",
       "get-collateral-config",
       [Cl.principal(assetPrincipal)],
       deployer
