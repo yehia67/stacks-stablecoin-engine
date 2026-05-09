@@ -1000,7 +1000,7 @@ async function loadVaultForStablecoin(
 
 export function useUserVaults(userAddress: string | null) {
   const [vaults, setVaults] = useState<UserVault[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!!userAddress);
   const [error, setError] = useState<Error | null>(null);
 
   const { stablecoins } = useRegisteredStablecoins();
