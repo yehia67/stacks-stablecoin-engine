@@ -17,7 +17,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
-import { formatNumber, formatSTX, getHealthFactorColor, getHealthFactorStatus } from "@/lib/utils";
+import { formatNumber, formatTokenAmount, getHealthFactorColor, getHealthFactorStatus } from "@/lib/utils";
+import { STABLECOIN_DECIMALS } from "@/lib/constants";
 
 interface VaultData {
   id: number;
@@ -284,11 +285,11 @@ export default function DashboardPage() {
                   <div className="grid grid-cols-3 gap-4 text-sm sm:gap-8">
                     <div>
                       <p className="text-muted-foreground">Collateral</p>
-                      <p className="font-medium">{formatSTX(vault.collateralAmount)} {vault.collateralType}</p>
+                      <p className="font-medium">{formatTokenAmount(vault.collateralAmount, STABLECOIN_DECIMALS)} {vault.collateralType}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Debt</p>
-                      <p className="font-medium">{formatSTX(vault.debtAmount)} stablecoins</p>
+                      <p className="font-medium">{formatTokenAmount(vault.debtAmount, STABLECOIN_DECIMALS)} stablecoins</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Health</p>

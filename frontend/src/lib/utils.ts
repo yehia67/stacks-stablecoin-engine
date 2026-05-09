@@ -46,6 +46,15 @@ export function toHumanReadable(smallestUnits: number, decimals: number): number
   return smallestUnits / 10 ** decimals;
 }
 
+/** Format an on-chain token amount for display, converting from smallest units. */
+export function formatTokenAmount(
+  smallestUnits: number,
+  tokenDecimals: number,
+  displayDecimals: number = 2
+): string {
+  return formatNumber(toHumanReadable(smallestUnits, tokenDecimals), displayDecimals);
+}
+
 export function calculateHealthFactor(
   collateralValue: number,
   debtValue: number,

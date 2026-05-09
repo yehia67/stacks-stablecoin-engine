@@ -19,8 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useRegisteredStablecoins, useUserVault } from "@/hooks/useContractRead";
-import { formatNumber } from "@/lib/utils";
-import { IS_MAINNET, getExplorerTxUrl } from "@/lib/constants";
+import { formatTokenAmount } from "@/lib/utils";
+import { IS_MAINNET, getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
 const ZERO_DEBT_SENTINEL = 1000000;
 const API_BASE = IS_MAINNET ? "https://api.mainnet.hiro.so" : "https://api.testnet.hiro.so";
@@ -338,7 +338,7 @@ export default function VaultManagePage({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatNumber(vault.totalDebt)} {stablecoin.symbol}
+              {formatTokenAmount(vault.totalDebt, STABLECOIN_DECIMALS)} {stablecoin.symbol}
             </div>
           </CardContent>
         </Card>
@@ -389,11 +389,11 @@ export default function VaultManagePage({
                   <div className="text-right text-sm">
                     <p>
                       <span className="text-muted-foreground">Deposited:</span>{" "}
-                      <span className="font-medium">{formatNumber(position.amount)}</span>
+                      <span className="font-medium">{formatTokenAmount(position.amount, getCollateralDecimals(position.asset))}</span>
                     </p>
                     <p>
                       <span className="text-muted-foreground">Debt Share:</span>{" "}
-                      <span className="font-medium">{formatNumber(position.debtShare)}</span>
+                      <span className="font-medium">{formatTokenAmount(position.debtShare, STABLECOIN_DECIMALS)}</span>
                     </p>
                     <p>
                       <span className="text-muted-foreground">Health:</span>{" "}
@@ -423,12 +423,12 @@ export default function VaultManagePage({
                 <>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Collateral Deposited</span>
-                    <span className="font-medium">{formatNumber(selectedPosition.amount)}</span>
+                    <span className="font-medium">{formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset))}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Debt Share</span>
                     <span className="font-medium">
-                      {formatNumber(selectedPosition.debtShare)} {stablecoin.symbol}
+                      {formatTokenAmount(selectedPosition.debtShare, STABLECOIN_DECIMALS)} {stablecoin.symbol}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -477,7 +477,7 @@ export default function VaultManagePage({
                     />
                     <p className="mt-2 text-sm text-muted-foreground">
                       Outstanding debt for this asset:{" "}
-                      {selectedPosition ? formatNumber(selectedPosition.debtShare) : "0"} {stablecoin.symbol}
+                      {selectedPosition ? formatTokenAmount(selectedPosition.debtShare, STABLECOIN_DECIMALS) : "0"} {stablecoin.symbol}
                     </p>
                     <div className="mt-2 flex gap-2">
                       {[25, 50, 100].map((pct) => (
@@ -519,7 +519,7 @@ export default function VaultManagePage({
                     />
                     <p className="mt-2 text-sm text-muted-foreground">
                       Available deposited collateral:{" "}
-                      {selectedPosition ? formatNumber(selectedPosition.amount) : "0"}
+                      {selectedPosition ? formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset)) : "0"}
                     </p>
                     <div className="mt-2 flex gap-2">
                       {[25, 50, 100].map((pct) => (
