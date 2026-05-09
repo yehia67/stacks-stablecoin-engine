@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useRegisteredStablecoins, useUserVault } from "@/hooks/useContractRead";
-import { formatTokenAmount } from "@/lib/utils";
+import { formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
 import { IS_MAINNET, getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
 const ZERO_DEBT_SENTINEL = 1000000;
@@ -101,8 +101,14 @@ export default function VaultManagePage({
     [selectedAsset, vault]
   );
 
-  const repayUnits = Math.floor(Number(repayAmount || "0"));
-  const withdrawUnits = Math.floor(Number(withdrawAmount || "0"));
+  // Human-readable input (e.g. user types "1000" meaning 1000 tokens)
+  const repayHuman = parseFloat(repayAmount || "0");
+  const withdrawHuman = parseFloat(withdrawAmount || "0");
+
+  // Convert to on-chain smallest units for contract calls
+  const collateralDecimals = selectedPosition ? getCollateralDecimals(selectedPosition.asset) : 6;
+  const repayUnits = toSmallestUnits(repayHuman, STABLECOIN_DECIMALS);
+  const withdrawUnits = toSmallestUnits(withdrawHuman, collateralDecimals);
 
   const canRepay =
     !!selectedPosition &&
@@ -488,7 +494,7 @@ export default function VaultManagePage({
                           disabled={!selectedPosition || selectedPosition.debtShare === 0}
                           onClick={() =>
                             selectedPosition &&
-                            setRepayAmount(Math.floor((selectedPosition.debtShare * pct) / 100).toString())
+                            setRepayAmount(toHumanReadable(Math.floor((selectedPosition.debtShare * pct) / 100), STABLECOIN_DECIMALS).toString())
                           }
                         >
                           {pct}%
@@ -530,7 +536,7 @@ export default function VaultManagePage({
                           disabled={!selectedPosition}
                           onClick={() =>
                             selectedPosition &&
-                            setWithdrawAmount(Math.floor((selectedPosition.amount * pct) / 100).toString())
+                            setWithdrawAmount(toHumanReadable(Math.floor((selectedPosition.amount * pct) / 100), collateralDecimals).toString())
                           }
                         >
                           {pct}%

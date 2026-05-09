@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useRegisteredStablecoins, useStabilityPoolState } from "@/hooks/useContractRead";
-import { formatNumber, formatTokenAmount } from "@/lib/utils";
+import { formatNumber, formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
 import { getExplorerTxUrl, IS_MAINNET, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
 const API_BASE = IS_MAINNET ? "https://api.mainnet.hiro.so" : "https://api.testnet.hiro.so";
@@ -67,8 +67,11 @@ export default function PoolPage() {
     refetch: refetchPoolState,
   } = useStabilityPoolState(address, selectedStablecoinId);
 
-  const depositUnits = Math.floor(Number(depositAmount || "0"));
-  const withdrawUnits = Math.floor(Number(withdrawAmount || "0"));
+  // Human-readable input → on-chain smallest units
+  const depositHuman = parseFloat(depositAmount || "0");
+  const withdrawHuman = parseFloat(withdrawAmount || "0");
+  const depositUnits = toSmallestUnits(depositHuman, STABLECOIN_DECIMALS);
+  const withdrawUnits = toSmallestUnits(withdrawHuman, STABLECOIN_DECIMALS);
 
   const callAsPromise = useCallback(
     (fn: (...args: any[]) => void, ...args: any[]) =>
@@ -350,7 +353,7 @@ export default function PoolPage() {
                         disabled={!poolState}
                         onClick={() =>
                           poolState &&
-                          setWithdrawAmount(Math.floor((poolState.userDeposit * pct) / 100).toString())
+                          setWithdrawAmount(toHumanReadable(Math.floor((poolState.userDeposit * pct) / 100), STABLECOIN_DECIMALS).toString())
                         }
                       >
                         {pct}%

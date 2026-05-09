@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
+import { useProtocolStats } from "@/hooks/useContractRead";
+import { formatNumber } from "@/lib/utils";
 import { FAUCET_COLLATERALS, IS_MAINNET, getExplorerTxUrl } from "@/lib/constants";
 
 const features = [
@@ -37,6 +39,7 @@ export default function Home() {
   const { faucetMint } = useContract();
   const [mintingToken, setMintingToken] = useState<string | null>(null);
   const [mintSuccess, setMintSuccess] = useState<{ token: string; txId: string } | null>(null);
+  const { stats, isLoading: statsLoading } = useProtocolStats();
 
   // Wait for client-side hydration to check wallet state
   const showDashboardButton = mounted && isConnected;
@@ -101,20 +104,44 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Stats Section - Will be populated from contracts */}
+      {/* Stats Section */}
       <section className="border-y bg-muted/50">
         <div className="container px-4 py-12">
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary md:text-4xl">—</div>
+              <div className="text-3xl font-bold text-primary md:text-4xl">
+                {statsLoading ? (
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin" />
+                ) : stats?.tvlUsd !== null && stats?.tvlUsd !== undefined ? (
+                  `$${formatNumber(stats.tvlUsd, 2)}`
+                ) : (
+                  "—"
+                )}
+              </div>
               <div className="mt-1 text-sm text-muted-foreground">Total Value Locked</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary md:text-4xl">—</div>
-              <div className="mt-1 text-sm text-muted-foreground">Active Vaults</div>
+              <div className="text-3xl font-bold text-primary md:text-4xl">
+                {statsLoading ? (
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin" />
+                ) : stats ? (
+                  `$${formatNumber(stats.totalDebtUsd, 2)}`
+                ) : (
+                  "—"
+                )}
+              </div>
+              <div className="mt-1 text-sm text-muted-foreground">Total Debt Issued</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary md:text-4xl">—</div>
+              <div className="text-3xl font-bold text-primary md:text-4xl">
+                {statsLoading ? (
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin" />
+                ) : stats ? (
+                  stats.stablecoinCount.toLocaleString()
+                ) : (
+                  "—"
+                )}
+              </div>
               <div className="mt-1 text-sm text-muted-foreground">Stablecoins Created</div>
             </div>
           </div>
@@ -252,8 +279,9 @@ export default function Home() {
               Ready to Get Started?
             </h2>
             <p className="mt-4 max-w-md text-primary-foreground/80">
-              Join thousands of users already using SSE to create and manage 
-              Bitcoin-backed stablecoins.
+              {IS_MAINNET
+                ? "Create, manage, and bridge overcollateralized stablecoins powered by Bitcoin security on Stacks."
+                : "SSE is live on testnet. Explore the protocol, open a vault, and help shape the future of Bitcoin-backed stablecoins on Stacks."}
             </p>
             <Button
               size="lg"

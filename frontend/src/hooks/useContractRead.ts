@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { CONTRACTS, IS_MAINNET, DEFAULTS } from "@/lib/constants";
+import { CONTRACTS, IS_MAINNET, getContractId, COLLATERAL_DECIMALS, STABLECOIN_DECIMALS } from "@/lib/constants";
 import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
 
 const API_BASE = IS_MAINNET 
@@ -1691,4 +1691,216 @@ export function useStablecoinMetrics(
   }, [fetchMetrics]);
 
   return { metrics, isLoading, error, refetch: fetchMetrics };
+}
+
+// ========================================
+// Protocol-wide Stats (Landing Page)
+// ========================================
+
+export interface ProtocolStats {
+  stablecoinCount: number;
+  totalDebtUsd: number;
+  tvlUsd: number | null;
+  tvlPartial: boolean; // true when some oracle prices were unavailable
+}
+
+export function useProtocolStats() {
+  const [stats, setStats] = useState<ProtocolStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchStats = useCallback(async (signal: AbortSignal) => {
+    // Only show loading spinner on initial fetch, not on background refresh
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (API_KEY) headers["x-api-key"] = API_KEY;
+
+      // Helper: fetch oracle price with caching per asset within this call
+      const oraclePriceCache = new Map<string, number | null>();
+      const fetchOraclePrice = async (oraclePrincipal: string): Promise<number | null> => {
+        if (oraclePriceCache.has(oraclePrincipal)) return oraclePriceCache.get(oraclePrincipal)!;
+        const [addr, name] = oraclePrincipal.split(".");
+        if (!addr || !name) return null;
+        try {
+          const resp = await fetch(
+            `${API_BASE}/v2/contracts/call-read/${addr}/${name}/get-price`,
+            {
+              method: "POST",
+              headers,
+              signal,
+              body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+            }
+          );
+          if (!resp.ok) { oraclePriceCache.set(oraclePrincipal, null); return null; }
+          const result = await resp.json();
+          if (!result.okay || !result.result) { oraclePriceCache.set(oraclePrincipal, null); return null; }
+          const val = parseOkUint(result.result);
+          const price = val !== null ? val / 1e8 : null;
+          oraclePriceCache.set(oraclePrincipal, price);
+          return price;
+        } catch {
+          oraclePriceCache.set(oraclePrincipal, null);
+          return null;
+        }
+      };
+
+      // 1. Stablecoin count
+      const countHex = await readContract(
+        CONTRACTS.STABLECOIN_FACTORY,
+        "get-stablecoin-count",
+        [],
+        CONTRACTS.DEPLOYER
+      );
+      if (!countHex) {
+        console.error("[SSE] useProtocolStats: failed to read stablecoin count from factory");
+        throw new Error("Failed to read stablecoin count");
+      }
+      const stablecoinCount = parseRequiredUint(countHex, "stablecoin-count");
+
+      // 2. Aggregate debt across all stablecoins (parallelized per-stablecoin)
+      // Assumes factory IDs are monotonic starting at 1 (consistent with all other hooks)
+      const debtPerStablecoin = await Promise.all(
+        Array.from({ length: stablecoinCount }, (_, i) => i + 1).map(async (sid) => {
+          const colCountHex = await readContract(
+            CONTRACTS.COLLATERAL_REGISTRY,
+            "get-stablecoin-collateral-count-ro",
+            [cvToHex(uintCV(sid))],
+            CONTRACTS.DEPLOYER
+          );
+          if (!colCountHex) {
+            console.warn(`[SSE] useProtocolStats: missing collateral count for stablecoin ${sid}, skipping`);
+            return 0;
+          }
+          const colCount = parseRequiredUint(colCountHex, `col-count-${sid}`);
+
+          // Parallelize per-asset within each stablecoin
+          const assetDebts = await Promise.all(
+            Array.from({ length: colCount }, (_, ci) => ci).map(async (ci) => {
+              const indexHex = await readContract(
+                CONTRACTS.COLLATERAL_REGISTRY,
+                "get-stablecoin-collateral-at-index",
+                [cvToHex(uintCV(sid)), cvToHex(uintCV(ci))],
+                CONTRACTS.DEPLOYER
+              );
+              const decoded = indexHex ? decodeClarityTuple(indexHex) : null;
+              const asset = decoded?.asset;
+              if (typeof asset !== "string") return 0;
+
+              const debtHex = await readContract(
+                CONTRACTS.COLLATERAL_REGISTRY,
+                "get-stablecoin-collateral-debt-ro",
+                [cvToHex(uintCV(sid)), cvToHex(principalCV(asset))],
+                CONTRACTS.DEPLOYER
+              );
+              if (!debtHex) {
+                console.warn(`[SSE] useProtocolStats: missing debt for stablecoin=${sid} asset=${asset}`);
+                return 0;
+              }
+              return parseRequiredUint(debtHex, `debt-${sid}-${asset}`);
+            })
+          );
+          return assetDebts.reduce((sum, d) => sum + d, 0);
+        })
+      );
+      const totalDebtRaw = debtPerStablecoin.reduce((sum, d) => sum + d, 0);
+      const totalDebtUsd = totalDebtRaw / Math.pow(10, STABLECOIN_DECIMALS);
+
+      // 3. TVL: direct get-balance reads on each known collateral token × oracle prices
+      //    Uses COLLATERAL_DECIMALS keys as the set of known collateral tokens.
+      //    Oracle principal is read from get-collateral-config per asset (not hardcoded).
+      let tvlUsd: number | null = null;
+      let tvlPartial = false;
+      try {
+        const vaultEnginePrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE);
+        const collateralTokens = Object.entries(COLLATERAL_DECIMALS);
+
+        if (collateralTokens.length === 0) {
+          tvlUsd = 0;
+        } else {
+          let total = 0;
+          let allPriced = true;
+
+          const results = await Promise.all(
+            collateralTokens.map(async ([contractName, decimals]) => {
+              // Read balance of vault engine in this token via get-balance
+              const balHex = await readContract(
+                contractName,
+                "get-balance",
+                [cvToHex(principalCV(vaultEnginePrincipal))],
+                CONTRACTS.DEPLOYER
+              );
+              if (!balHex) return { priced: false, value: 0 };
+              const balRaw = parseOkUint(balHex);
+              if (balRaw === null || balRaw === 0) return { priced: true, value: 0 };
+
+              const balHuman = balRaw / Math.pow(10, decimals);
+
+              // Look up oracle from on-chain collateral config
+              const assetPrincipal = getContractId(contractName);
+              const configHex = await readContract(
+                CONTRACTS.COLLATERAL_REGISTRY,
+                "get-collateral-config",
+                [cvToHex(principalCV(assetPrincipal))],
+                CONTRACTS.DEPLOYER
+              );
+              const config = configHex ? decodeClarityTuple(configHex) : null;
+              const oraclePrincipal = config?.oracle;
+              if (typeof oraclePrincipal !== "string") {
+                console.warn(`[SSE] useProtocolStats: no oracle found for collateral ${contractName}`);
+                return { priced: false, value: 0 };
+              }
+
+              const price = await fetchOraclePrice(oraclePrincipal);
+              if (price !== null) {
+                return { priced: true, value: balHuman * price };
+              }
+              return { priced: false, value: 0 };
+            })
+          );
+
+          for (const r of results) {
+            if (r.priced) {
+              total += r.value;
+            } else {
+              allPriced = false;
+            }
+          }
+
+          tvlPartial = !allPriced;
+          tvlUsd = total;
+        }
+      } catch (e) {
+        console.error("[SSE] useProtocolStats TVL fetch error:", e);
+      }
+
+      if (!signal.aborted) {
+        setStats({ stablecoinCount, totalDebtUsd, tvlUsd, tvlPartial });
+      }
+    } catch (err) {
+      if (!signal.aborted) {
+        console.error("[SSE] useProtocolStats error:", err);
+        setError(err as Error);
+      }
+    } finally {
+      if (!signal.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchStats(controller.signal);
+    const interval = setInterval(() => {
+      fetchStats(controller.signal);
+    }, 60000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, [fetchStats]);
+
+  return { stats, isLoading, error, refetch: () => fetchStats(new AbortController().signal) };
 }
