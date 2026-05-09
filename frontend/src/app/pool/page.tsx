@@ -9,8 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useRegisteredStablecoins, useStabilityPoolState } from "@/hooks/useContractRead";
-import { formatNumber } from "@/lib/utils";
-import { getExplorerTxUrl, IS_MAINNET } from "@/lib/constants";
+import { formatNumber, formatTokenAmount } from "@/lib/utils";
+import { getExplorerTxUrl, IS_MAINNET, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
 const API_BASE = IS_MAINNET ? "https://api.mainnet.hiro.so" : "https://api.testnet.hiro.so";
 
@@ -237,7 +237,7 @@ export default function PoolPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {poolStateLoading ? "..." : poolState ? formatNumber(poolState.totalDeposits) : "—"}
+              {poolStateLoading ? "..." : poolState ? formatTokenAmount(poolState.totalDeposits, STABLECOIN_DECIMALS) : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
               {selectedStablecoin ? selectedStablecoin.symbol : "Stablecoin"} deposited
@@ -251,7 +251,7 @@ export default function PoolPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {poolStateLoading ? "..." : poolState ? formatNumber(poolState.userDeposit) : "—"}
+              {poolStateLoading ? "..." : poolState ? formatTokenAmount(poolState.userDeposit, STABLECOIN_DECIMALS) : "—"}
             </div>
             <p className="text-xs text-muted-foreground">Effective balance after liquidations</p>
           </CardContent>
@@ -339,7 +339,7 @@ export default function PoolPage() {
                     disabled={!selectedStablecoin}
                   />
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Available effective balance: {poolState ? formatNumber(poolState.userDeposit) : "—"}
+                    Available effective balance: {poolState ? formatTokenAmount(poolState.userDeposit, STABLECOIN_DECIMALS) : "—"}
                   </p>
                   <div className="mt-2 flex gap-2">
                     {[25, 50, 100].map((pct) => (
@@ -410,7 +410,7 @@ export default function PoolPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="font-medium">{formatNumber(reward.claimableAmount)}</p>
+                      <p className="font-medium">{formatTokenAmount(reward.claimableAmount, getCollateralDecimals(reward.asset))}</p>
                       <Button
                         size="sm"
                         variant="outline"

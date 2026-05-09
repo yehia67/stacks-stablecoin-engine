@@ -80,6 +80,23 @@ export const FAUCET_COLLATERALS = [
   },
 ];
 
+/** Known decimal counts for collateral tokens, keyed by contract name. */
+export const COLLATERAL_DECIMALS: Record<string, number> = {
+  "sbtc-token-v4": 8,
+  "stx-token-v4": 6,
+};
+
+/** All factory-created stablecoins use 6 decimals. */
+export const STABLECOIN_DECIMALS = 6;
+
+/** Resolve the decimal count for a collateral asset principal or contract name. */
+export function getCollateralDecimals(assetOrPrincipal: string): number {
+  const contractName = assetOrPrincipal.includes(".")
+    ? assetOrPrincipal.split(".").pop()!
+    : assetOrPrincipal;
+  return COLLATERAL_DECIMALS[contractName] ?? STABLECOIN_DECIMALS;
+}
+
 // Default values (used when contracts aren't deployed or data can't be fetched)
 export const DEFAULTS = {
   REGISTRATION_FEE_STX: 100, // 100 STX registration fee

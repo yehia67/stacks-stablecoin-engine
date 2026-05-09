@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useUserVaults, UserVault, CollateralPosition } from "@/hooks/useContractRead";
-import { formatNumber } from "@/lib/utils";
+import { formatTokenAmount } from "@/lib/utils";
+import { STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
 const ZERO_DEBT_SENTINEL = 1000000;
 
@@ -200,7 +201,7 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
               <div className="text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Debt</span>
-                  <span className="font-medium">{formatNumber(vault.totalDebt)} {vault.stablecoinSymbol}</span>
+                  <span className="font-medium">{formatTokenAmount(vault.totalDebt, STABLECOIN_DECIMALS)} {vault.stablecoinSymbol}</span>
                 </div>
               </div>
 
@@ -214,7 +215,7 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
                         <div>
                           <p className="font-medium">{formatAssetName(pos.asset)}</p>
                           <p className="text-xs text-muted-foreground">
-                            {formatNumber(pos.amount)} deposited · {formatNumber(pos.debtShare)} debt
+                            {formatTokenAmount(pos.amount, getCollateralDecimals(pos.asset))} deposited · {formatTokenAmount(pos.debtShare, STABLECOIN_DECIMALS)} debt
                           </p>
                         </div>
                         <span className={`text-xs font-medium ${

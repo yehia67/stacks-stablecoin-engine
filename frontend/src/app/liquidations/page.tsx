@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { formatNumber, formatSTX, formatAddress } from "@/lib/utils";
+import { formatNumber, formatTokenAmount, formatAddress, toHumanReadable } from "@/lib/utils";
+import { STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
 interface LiquidatableVault {
   id: number;
@@ -122,7 +123,7 @@ export default function LiquidationsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${formatNumber(stats.totalCollateralAtRisk / 1000000 * 0.5)}
+              ${formatNumber(toHumanReadable(stats.totalCollateralAtRisk, STABLECOIN_DECIMALS) * 0.5)}
             </div>
           </CardContent>
         </Card>
@@ -135,7 +136,7 @@ export default function LiquidationsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${formatNumber(stats.totalDebtAtRisk / 1000000)}
+              ${formatTokenAmount(stats.totalDebtAtRisk, STABLECOIN_DECIMALS)}
             </div>
           </CardContent>
         </Card>
@@ -210,12 +211,12 @@ export default function LiquidationsPage() {
                     <div>
                       <p className="text-muted-foreground">Collateral</p>
                       <p className="font-medium">
-                        {formatSTX(vault.collateralAmount)} {vault.collateralType}
+                        {formatTokenAmount(vault.collateralAmount, getCollateralDecimals(vault.collateralAsset))} {vault.collateralType}
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Debt</p>
-                      <p className="font-medium">{formatSTX(vault.debtAmount)} stablecoins</p>
+                      <p className="font-medium">{formatTokenAmount(vault.debtAmount, STABLECOIN_DECIMALS)} stablecoins</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Bonus</p>
