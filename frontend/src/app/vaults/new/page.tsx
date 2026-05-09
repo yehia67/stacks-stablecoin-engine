@@ -157,25 +157,21 @@ export default function NewVaultPage() {
   const minRatio = selectedCollateral?.minCollateralRatio || 150;
   const debtFloorRaw = selectedCollateral?.debtFloor ?? 0; // in smallest units on-chain
 
-  // Convert human inputs to on-chain smallest units
+  // Convert human inputs to on-chain smallest units (for contract calls only)
   const collateralUnits = collateralDecimals !== null ? toSmallestUnits(collateralHuman, collateralDecimals) : 0;
   const borrowUnits = stablecoinDecimals !== null ? toSmallestUnits(borrowHuman, stablecoinDecimals) : 0;
 
-  // On-chain collateral value: units * oraclePrice (oraclePrice is already rawPrice / 1e8)
-  const collateralValue = oraclePrice !== null ? collateralUnits * oraclePrice : 0;
+  // USD value of collateral deposit (human-readable: whole tokens × USD per token)
+  const collateralUsd = oraclePrice !== null ? collateralHuman * oraclePrice : 0;
 
-  // Health factor preview: matches on-chain formula — (collateralValue / borrowUnits) * 100
-  const previewHealthFactor = calculateHealthFactor(collateralValue, borrowUnits, minRatio);
+  // Preview health factor in human-readable terms (collateralUSD vs borrowHuman stablecoins)
+  const previewHealthFactor = calculateHealthFactor(collateralUsd, borrowHuman, minRatio);
 
-  // Max borrowable in smallest units, converted to human-readable
-  const maxBorrowUnits = minRatio > 0 ? (collateralValue / minRatio) * 100 : 0;
-  const maxBorrow = stablecoinDecimals !== null ? toHumanReadable(maxBorrowUnits, stablecoinDecimals) : 0;
+  // Max borrowable in human-readable stablecoins (assuming $1 peg)
+  const maxBorrow = minRatio > 0 ? (collateralUsd * 100) / minRatio : 0;
 
   // Debt floor in human-readable
   const debtFloorHuman = stablecoinDecimals !== null ? toHumanReadable(debtFloorRaw, stablecoinDecimals) : 0;
-
-  // USD value of collateral deposit (human-readable amount * price per whole token)
-  const collateralUsd = oraclePrice !== null ? collateralHuman * oraclePrice : 0;
 
   const isBelowDebtFloor = borrowUnits > 0 && borrowUnits < debtFloorRaw;
 
@@ -185,11 +181,13 @@ export default function NewVaultPage() {
     : stablecoinDecimals !== null ? "e.g. 1" : "Loading...";
   const minCollateralPlaceholder = useMemo(() => {
     if (collateralDecimals === null || oraclePrice === null || oraclePrice === 0) return "Loading...";
-    // Min collateral to cover debt floor at min ratio
-    const minDebt = debtFloorRaw > 0 ? debtFloorRaw : (stablecoinDecimals !== null ? 10 ** stablecoinDecimals : 1);
-    const minCollateralUnits = (minDebt * minRatio) / (100 * oraclePrice);
-    const minHuman = toHumanReadable(Math.ceil(minCollateralUnits), collateralDecimals);
-    return `e.g. ${Number(minHuman.toPrecision(3))}`;
+    // Min collateral (human-readable) to cover debt floor at min ratio
+    const minDebtHuman = debtFloorRaw > 0
+      ? toHumanReadable(debtFloorRaw, stablecoinDecimals ?? 6)
+      : 1;
+    // minCollateral (in whole tokens) = minDebt * minRatio% / pricePerToken
+    const minCollateralHuman = (minDebtHuman * minRatio) / (100 * oraclePrice);
+    return `e.g. ${Number(minCollateralHuman.toPrecision(3))}`;
   }, [collateralDecimals, stablecoinDecimals, oraclePrice, debtFloorRaw, minRatio]);
 
   const isValidPosition =
