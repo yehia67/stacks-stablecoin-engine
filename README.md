@@ -11,6 +11,7 @@
 | [`docs/roadmap.md`](./docs/roadmap.md) | Feature coverage status and roadmap (contract vs frontend) |
 | [`docs/adl/user_flows.md`](./docs/adl/user_flows.md) | Long-form user-flow specifications |
 | [`docs/adl/crosschain.md`](./docs/adl/crosschain.md) | Cross-chain bridge design notes |
+| [`docs/adl/governance.md`](./docs/adl/governance.md) | Asigna multisig + timelock governance: architecture and operator runbook |
 | [`AGENTS.md`](./AGENTS.md) | Repository rules for coding agents |
 | [`sse.config.json`](./sse.config.json) | Source of truth for deployed contract names |
 
@@ -22,7 +23,7 @@ Developers who want to explore sBTC-backed CDP systems on Stacks need a clean, m
 
 ## Grant Scope
 This project is scoped to an 8–12 week grant timeline and focuses on core infrastructure:
-- No governance
+- Asigna multisig + 24h timelock for global admin (see [`docs/adl/governance.md`](./docs/adl/governance.md))
 - No tokenomics
 - No emissions model
 - No AI components
@@ -43,14 +44,18 @@ User → VaultEngine → StablecoinToken
 
 ## Contract Breakdown
 
+### Governance Contracts (new)
+- `sse-governance-v1.clar`: Stores admin (Asigna multisig), guardian, and timelock principals. One-shot deployer bootstrap, then permanently locked.
+- `sse-timelock-v1.clar`: Compound-style timelock. 144-block (~24h) default delay, per-(target, fn) hash-checked execute wrappers, admin/guardian roles, no-delay emergency whitelist.
+
 ### Core Contracts (deployed versions)
-- `stablecoin-factory-v3.clar`: **Stablecoin registration factory** with configurable STX fees and treasury address.
+- `stablecoin-factory-v4.clar`: **Stablecoin registration factory** with configurable STX fees and treasury address. Admin functions governance-gated.
 - `stablecoin-token-v4.clar`: SIP-010 token using native `define-fungible-token` with mint/burn restricted to vault engines and cross-chain bridge hooks. Enables proper Stacks post-condition enforcement.
 - `sbtc-token-v4.clar` / `stx-token-v4.clar`: Collateral tokens using native `define-fungible-token` for post-condition support.
-- `collateral-registry-v5.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, per-asset oracles, and per-stablecoin overrides.
-- `multi-asset-vault-engine-v6.clar`: **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers.
-- `stability-pool-v5.clar`: Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution.
-- `liquidation-engine-v6.clar`: Full liquidation orchestrator (health check → vault-engine seize → pool distribute).
+- `collateral-registry-v6.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, per-asset oracles, and per-stablecoin overrides. Admin functions governance-gated.
+- `multi-asset-vault-engine-v7.clar`: **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers. `register-asset-oracle` governance-gated.
+- `stability-pool-v6.clar`: Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution.
+- `liquidation-engine-v7.clar`: Full liquidation orchestrator (health check → vault-engine seize → pool distribute).
 
 ### Oracle Contracts
 - `oracle-trait.clar`: Trait defining `get-price`.
@@ -60,8 +65,8 @@ User → VaultEngine → StablecoinToken
 
 ### Cross-Chain Bridge Contracts
 - `bridge-adapter-trait.clar`: Trait defining the interface for cross-chain bridge adapters (`mint-from-remote`, `burn-to-remote`).
-- `xreserve-adapter.clar`: Adapter implementing the bridge trait for Circle's xReserve protocol (USDCx-style bridging).
-- `bridge-registry.clar`: Registry mapping tokens to their bridge adapters and remote chain configurations.
+- `xreserve-adapter-v5.clar`: Adapter implementing the bridge trait for Circle's xReserve protocol (USDCx-style bridging). Admin functions governance-gated; `set-paused` on emergency whitelist.
+- `bridge-registry-v4.clar`: Registry mapping tokens to their bridge adapters and remote chain configurations. Admin functions governance-gated; `set-token-enabled` on emergency whitelist.
 
 ## Multi-Asset Collateral System
 
@@ -204,33 +209,40 @@ This reads from `sse.config.json` to determine which contracts to deploy and whi
 
 Configure your deployer mnemonic/key in `settings/Testnet.toml` before running.
 
-## Testnet Deployment (v6 — current)
-Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
+## Testnet Deployment (current)
+Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF` · Deployed 2026-05-12.
 
-Deployed 2026-05-08.
+**Governance**: pinned to Asigna multisig vault [`SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF`](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) (admin and guardian). Mainnet vault (when deploying): [`SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX`](https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard). Timelock delay = 144 blocks (~24h). All five governed contracts are bootstrap-locked. Frontend inspector: `/governance`.
 
 ### Contracts on-chain:
 
 | Contract | Version | Notes |
 |---|---|---|
-| `stablecoin-factory` | v3 | Unchanged from v3 |
+| `sse-governance-v1` | new | Admin/guardian/timelock principals; bootstrap-locked |
+| `sse-timelock-v1` | new | 144-block delay; emergency whitelist (set-collateral-enabled, set-token-enabled, set-paused) |
+| `stablecoin-factory` | v4 | Governance-gated `set-registration-fee`, `set-treasury-address` |
 | `stablecoin-token` | v4 | Native `define-fungible-token` for post-condition support |
 | `sbtc-token` | v4 | Native `define-fungible-token` for post-condition support |
 | `stx-token` | v4 | Native `define-fungible-token` for post-condition support |
-| `collateral-registry` | v5 | Updated refs to vault-engine-v6 |
-| `multi-asset-vault-engine` | v6 | Updated refs to token-v4, registry-v5, pool-v5, liquidation-v6 |
-| `stability-pool` | v5 | Updated refs to liquidation-engine-v6 |
-| `liquidation-engine` | v6 | Full orchestration with vault-engine-v6 reference |
+| `collateral-registry` | v6 | Governance-gated admin functions; updated refs to vault-engine-v7 |
+| `multi-asset-vault-engine` | v7 | Governance-gated `register-asset-oracle`; updated refs to token-v4, registry-v6, pool-v6, liquidation-v7 |
+| `stability-pool` | v6 | Updated refs to liquidation-engine-v7, factory-v4 |
+| `liquidation-engine` | v7 | Full orchestration with vault-engine-v7, pool-v6 references |
+| `bridge-registry` | v4 | Governance-gated chain/token management |
+| `xreserve-adapter` | v5 | Governance-gated; `set-paused` on emergency whitelist |
 | `dia-oracle-adapter` | — | Forwards to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` |
 | `price-oracle-dia-btc` | v2 | DIA-backed BTC price with staleness guard |
 | `price-oracle-dia-stx` | v2 | DIA-backed STX price with staleness guard |
 
 ### Bootstrap steps (run automatically by `npm run deploy`):
-- Authorizing `multi-asset-vault-engine-v6` in `stablecoin-token-v4`
-- Authorizing `multi-asset-vault-engine-v6` in `collateral-registry-v5`
-- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v6`
-- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v5`
-- Updating oracle principals in `collateral-registry-v5` to point to v2 DIA oracles
+- Authorizing `multi-asset-vault-engine-v7` in `stablecoin-token-v4`
+- Authorizing `multi-asset-vault-engine-v7` in `collateral-registry-v6`
+- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v7`
+- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v6`
+- Updating oracle principals in `collateral-registry-v6` to point to v2 DIA oracles
+- Wiring governance: `bootstrap-set-governance(sse-timelock-v1)` + `lock-bootstrap()` on each of factory-v4, bridge-registry-v4, collateral-registry-v6, multi-asset-vault-engine-v7, xreserve-adapter-v5
+- Pinning admin/guardian/timelock in `sse-governance-v1` and locking it
+- Seeding emergency whitelist (set-collateral-enabled, set-token-enabled, set-paused) in `sse-timelock-v1` and locking it
 
 ## How to Test on Testnet
 
@@ -251,8 +263,8 @@ Then verify:
 ### 2) Oracle sensitivity check
 On testnet, prices come from DIA oracles (`price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`). To test health factor changes, observe the live DIA price feed and check:
 
-1. Re-check `multi-asset-vault-engine-v6::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
-2. If health factor is below the liquidation ratio, call `liquidation-engine-v6::liquidate`.
+1. Re-check `multi-asset-vault-engine-v7::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
+2. If health factor is below the liquidation ratio, call `liquidation-engine-v7::liquidate`.
 
 Expected behavior:
 - Healthy vault: `liquidate` returns `(err u300)`
@@ -262,7 +274,7 @@ Expected behavior:
 As deployer:
 
 ```clarity
-(contract-call? .collateral-registry-v5 add-collateral-type
+(contract-call? .collateral-registry-v6 add-collateral-type
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   u150
   u120
@@ -273,7 +285,7 @@ As deployer:
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.price-oracle-dia-btc-v2
 )
 
-(contract-call? .collateral-registry-v5 get-collateral-config
+(contract-call? .collateral-registry-v6 get-collateral-config
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
 )
 ```
@@ -282,31 +294,31 @@ As deployer:
 
 ```clarity
 ;; 1. Register a stablecoin (pays STX fee)
-(contract-call? .stablecoin-factory-v3 register-stablecoin "MyUSD" "mUSD")
+(contract-call? .stablecoin-factory-v4 register-stablecoin "MyUSD" "mUSD")
 ;; -> (ok u0)   ; stablecoin-id
 
 ;; 2. After deploying & linking a token contract, configure collateral
-(contract-call? .collateral-registry-v5 configure-collateral-for-stablecoin
+(contract-call? .collateral-registry-v6 configure-collateral-for-stablecoin
   u0                                                            ;; stablecoin-id
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4      ;; asset
   u150 u120 u10 u200 u1000000 u100)                             ;; min-cr / liq-ratio / penalty / fee / ceiling / floor
 
 ;; 3. Open vault and deposit
-(contract-call? .multi-asset-vault-engine-v6 open-vault-for-stablecoin u0)
-(contract-call? .multi-asset-vault-engine-v6 deposit-collateral-for-stablecoin
+(contract-call? .multi-asset-vault-engine-v7 open-vault-for-stablecoin u0)
+(contract-call? .multi-asset-vault-engine-v7 deposit-collateral-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .sbtc-token-v4 u1000000)
 
 ;; 4. Mint against the position (validates health factor)
-(contract-call? .multi-asset-vault-engine-v6 mint-against-asset-for-stablecoin
+(contract-call? .multi-asset-vault-engine-v7 mint-against-asset-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .<your-linked-token> u500)
 
 ;; 5. Repay and withdraw
-(contract-call? .multi-asset-vault-engine-v6 repay-against-asset-for-stablecoin
+(contract-call? .multi-asset-vault-engine-v7 repay-against-asset-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .<your-linked-token> u200)
-(contract-call? .multi-asset-vault-engine-v6 withdraw-collateral-for-stablecoin
+(contract-call? .multi-asset-vault-engine-v7 withdraw-collateral-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .sbtc-token-v4 u300)
 ```

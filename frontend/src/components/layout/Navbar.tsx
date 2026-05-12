@@ -18,6 +18,7 @@ const navItems = [
   { href: "/my-stablecoins", label: "My Stablecoins" },
   { href: "/pool", label: "Stability Pool" },
   { href: "/liquidations", label: "Liquidations" },
+  { href: "/governance", label: "Governance" },
 ];
 
 export function Navbar() {

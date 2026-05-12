@@ -1,39 +1,62 @@
 {
   "$schema": "./sse.config.schema.json",
-  "version": "5",
+  "version": "6",
   "network": "testnet",
   "deployer": "ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF",
 
+  "governance": {
+    "_comment": "Asigna multisig principal (admin) and a separate guardian principal. Set these before deploying. Defaults to the deployer for bootstrap; rotate via timelock after lock-bootstrap.",
+    "admin": "SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF",
+    "guardian": "SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF",
+    "timelockDelayBlocks": 144
+  },
+
   "contracts": {
-    "stablecoinFactory": "stablecoin-factory-v3",
+    "sseGovernance": "sse-governance-v1",
+    "sseTimelock": "sse-timelock-v1",
+    "stablecoinFactory": "stablecoin-factory-v4",
     "stablecoinToken": "stablecoin-token-v4",
-    "collateralRegistry": "collateral-registry-v5",
-    "multiAssetVaultEngine": "multi-asset-vault-engine-v6",
-    "stabilityPool": "stability-pool-v5",
-    "liquidationEngine": "liquidation-engine-v6",
+    "sbtcToken": "sbtc-token-v4",
+    "stxToken": "stx-token-v4",
+    "collateralRegistry": "collateral-registry-v6",
+    "multiAssetVaultEngine": "multi-asset-vault-engine-v7",
+    "stabilityPool": "stability-pool-v6",
+    "liquidationEngine": "liquidation-engine-v7",
+    "bridgeRegistry": "bridge-registry-v4",
+    "xreserveAdapter": "xreserve-adapter-v5",
     "diaOracleAdapter": "dia-oracle-adapter",
     "priceOracleDiaBtc": "price-oracle-dia-btc-v2",
     "priceOracleDiaStx": "price-oracle-dia-stx-v2"
   },
 
   "deployContracts": [
-    "diaOracleAdapter",
-    "priceOracleDiaBtc",
-    "priceOracleDiaStx",
+    "sseGovernance",
+    "sbtcToken",
+    "stxToken",
+    "stablecoinToken",
+    "stablecoinFactory",
+    "bridgeRegistry",
     "collateralRegistry",
     "stabilityPool",
     "multiAssetVaultEngine",
-    "liquidationEngine"
+    "liquidationEngine",
+    "xreserveAdapter",
+    "sseTimelock"
   ],
 
   "contractCosts": {
-    "dia-oracle-adapter": 12000,
-    "price-oracle-dia-btc-v2": 12000,
-    "price-oracle-dia-stx-v2": 12000,
-    "collateral-registry-v5": 60000,
-    "stability-pool-v5": 60000,
-    "multi-asset-vault-engine-v6": 200000,
-    "liquidation-engine-v6": 60000
+    "sse-governance-v1": 30000,
+    "sse-timelock-v1": 150000,
+    "stablecoin-factory-v4": 80000,
+    "stablecoin-token-v4": 40000,
+    "sbtc-token-v4": 25000,
+    "stx-token-v4": 25000,
+    "bridge-registry-v4": 50000,
+    "collateral-registry-v6": 60000,
+    "stability-pool-v6": 60000,
+    "multi-asset-vault-engine-v7": 200000,
+    "liquidation-engine-v7": 60000,
+    "xreserve-adapter-v5": 50000
   },
 
   "collaterals": [

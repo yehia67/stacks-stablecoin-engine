@@ -41,11 +41,11 @@ SSE is multi-sided. Five roles interact with the protocol:
 
 | Persona | What they do | Primary frontend | Primary contracts |
 |---|---|---|---|
-| **Vault Owner** | Deposit collateral, mint stablecoins, repay, withdraw | `/vaults`, `/vaults/new`, `/vaults/[id]` | `multi-asset-vault-engine-v5` |
-| **Stablecoin Creator** | Register stablecoin, deploy & link token, configure per-stablecoin collateral, set stability-pool reward % | `/factory` | `stablecoin-factory-v3`, `collateral-registry-v4`, `stability-pool-v4` |
-| **Pool Depositor** | Deposit stablecoins into the stability pool, claim seized collateral from liquidations | `/pool` | `stability-pool-v4` |
-| **Liquidator** | Call `liquidate` on undercollateralized vaults; net profit comes from reward bonus to the pool they deposited in | `/liquidations` | `liquidation-engine-v5` |
-| **Protocol Admin** | Set registration fee, treasury, add global collateral types, register oracle mappings, authorize engines | none (scripts only) | `stablecoin-factory-v3`, `collateral-registry-v4`, `multi-asset-vault-engine-v5`, `stablecoin-token-v3` |
+| **Vault Owner** | Deposit collateral, mint stablecoins, repay, withdraw | `/vaults`, `/vaults/new`, `/vaults/[id]` | `multi-asset-vault-engine-v7` |
+| **Stablecoin Creator** | Register stablecoin, deploy & link token, configure per-stablecoin collateral, set stability-pool reward % | `/factory` | `stablecoin-factory-v4`, `collateral-registry-v6`, `stability-pool-v6` |
+| **Pool Depositor** | Deposit stablecoins into the stability pool, claim seized collateral from liquidations | `/pool` | `stability-pool-v6` |
+| **Liquidator** | Call `liquidate` on undercollateralized vaults; net profit comes from reward bonus to the pool they deposited in | `/liquidations` | `liquidation-engine-v7` |
+| **Protocol Admin** | Set registration fee, treasury, add global collateral types, register oracle mappings, authorize engines | none (scripts only) | `stablecoin-factory-v4`, `collateral-registry-v6`, `multi-asset-vault-engine-v7`, `stablecoin-token-v4` |
 
 ### Capability matrix
 
@@ -73,13 +73,13 @@ SSE is multi-sided. Five roles interact with the protocol:
 ```mermaid
 graph LR
   U[User Wallet] -->|connect| FE[Frontend Next.js app]
-  FE -->|read/write| F[stablecoin-factory-v3]
-  FE -->|read/write| CR[collateral-registry-v4]
-  FE -->|read/write| VE[multi-asset-vault-engine-v5]
-  FE -->|read/write| SP[stability-pool-v4]
-  FE -->|write| LE[liquidation-engine-v5]
-  VE -->|mint/burn| ST[stablecoin-token-v3 per-registration]
-  VE -->|SIP-010 transfers| COL[Collateral Tokens sBTC-v3 STX-v3]
+  FE -->|read/write| F[stablecoin-factory-v4]
+  FE -->|read/write| CR[collateral-registry-v6]
+  FE -->|read/write| VE[multi-asset-vault-engine-v7]
+  FE -->|read/write| SP[stability-pool-v6]
+  FE -->|write| LE[liquidation-engine-v7]
+  VE -->|mint/burn| ST[stablecoin-token-v4 per-registration]
+  VE -->|SIP-010 transfers| COL[Collateral Tokens sBTC-v4 STX-v4]
   VE -->|price| OW[price-oracle-dia-btc-v2 price-oracle-dia-stx-v2]
   OW -->|get-value| DA[dia-oracle-adapter]
   DA -->|forward| DIA[DIA Oracle ST1S5...dia-oracle]
@@ -109,7 +109,7 @@ graph LR
 ```mermaid
 sequenceDiagram
   participant C as Creator
-  participant F as stablecoin-factory-v3
+  participant F as stablecoin-factory-v4
   participant T as new stablecoin-token
 
   C->>F: register-stablecoin(name, symbol) + fee STX
@@ -125,7 +125,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant C as Creator
-  participant CR as collateral-registry-v4
+  participant CR as collateral-registry-v6
 
   C->>CR: configure-collateral-for-stablecoin(stablecoin-id, asset, min-cr, liq-ratio, penalty, fee, ceiling, floor)
   CR->>CR: validate global asset exists + enabled
@@ -138,7 +138,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant VE as multi-asset-vault-engine-v5
+  participant VE as multi-asset-vault-engine-v7
   participant CT as Collateral Token SIP-010
   participant OR as price-oracle-dia
   participant DIA as dia-oracle-adapter to DIA
@@ -165,7 +165,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant VE as multi-asset-vault-engine-v5
+  participant VE as multi-asset-vault-engine-v7
   participant ST as stablecoin-token
   participant CT as Collateral Token
   participant OR as price-oracle
@@ -186,9 +186,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant D as Depositor
-  participant SP as stability-pool-v4
+  participant SP as stability-pool-v6
   participant ST as stablecoin-token
-  participant LE as liquidation-engine-v5
+  participant LE as liquidation-engine-v7
   participant CT as Collateral Token
 
   D->>SP: deposit(id, stablecoin-token, amount)
@@ -207,9 +207,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant L as Liquidator
-  participant LE as liquidation-engine-v5
-  participant VE as multi-asset-vault-engine-v5
-  participant SP as stability-pool-v4
+  participant LE as liquidation-engine-v7
+  participant VE as multi-asset-vault-engine-v7
+  participant SP as stability-pool-v6
   participant ST as stablecoin-token
   participant CT as Collateral Token
 
@@ -250,7 +250,7 @@ sequenceDiagram
 
 Access legend: **public** = anyone can call; **read-only** = view function; **admin** = contract owner / deployer; **creator** = stablecoin creator (per-id); **engine** = authorized vault engine principal only.
 
-### `stablecoin-factory-v3`
+### `stablecoin-factory-v4`
 
 | Function | Access | Description |
 |---|---|---|
@@ -268,7 +268,7 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-creator-stablecoin-count(creator)` | read-only | Per-creator count. |
 | `get-creator-stablecoin-at-index(creator, index)` | read-only | Iterate creator's coins. |
 
-### `collateral-registry-v4`
+### `collateral-registry-v6`
 
 | Function | Access | Description |
 |---|---|---|
@@ -292,7 +292,7 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-collateral-count` / `get-collateral-at-index(index)` | read-only | Iterate global list. |
 | `get-stablecoin-collateral-count-ro(id)` / `get-stablecoin-collateral-at-index(id, index)` / `get-stablecoin-collateral-debt-ro(id, asset)` | read-only | Iterate per-stablecoin list. |
 
-### `multi-asset-vault-engine-v5`
+### `multi-asset-vault-engine-v7`
 
 | Function | Access | Description |
 |---|---|---|
@@ -316,7 +316,7 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-max-mintable(...)` / `get-max-mintable-for-stablecoin(...)` | read-only | Remaining mint capacity. |
 | `get-total-vault-value(...)` / `get-total-vault-value-for-stablecoin(...)` | read-only | Collateral value in stablecoin units. |
 
-### `stability-pool-v4`
+### `stability-pool-v6`
 
 | Function | Access | Description |
 |---|---|---|
@@ -331,7 +331,7 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-pool-product-value(id)` | read-only | Internal product accumulator. |
 | `get-claimable-collateral-reward(owner, id, asset)` | read-only | Claimable collateral for depositor. |
 
-### `liquidation-engine-v5`
+### `liquidation-engine-v7`
 
 | Function | Access | Description |
 |---|---|---|
@@ -350,11 +350,11 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 
 | Contract | Function | Access | Description |
 |---|---|---|---|
-| `stablecoin-token-v3` | `transfer`, `get-balance`, `get-name`, `get-symbol`, `get-decimals`, `get-total-supply`, `get-token-uri` | SIP-010 | Standard FT interface. |
+| `stablecoin-token-v4` | `transfer`, `get-balance`, `get-name`, `get-symbol`, `get-decimals`, `get-total-supply`, `get-token-uri` | SIP-010 | Standard FT interface. |
 | | `mint(amount, recipient)` / `burn(amount, owner)` | engine | Vault-engine-only. |
 | | `set-vault-engine(new)` / `set-bridge-adapter(new)` | admin | Rotate authorized principals. |
 | | `mint-from-bridge(amount, recipient)` / `burn-to-remote(...)` | bridge adapter | Cross-chain (out of MVP scope). |
-| `sbtc-token-v3` / `stx-token-v3` | `faucet-mint(amount, recipient)` | public | Testnet faucet. |
+| `sbtc-token-v4` / `stx-token-v4` | `faucet-mint(amount, recipient)` | public | Testnet faucet. |
 | | `transfer`, `get-balance`, etc. | SIP-010 | Standard FT interface. |
 
 ---
@@ -363,7 +363,7 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 
 ### A. Get test tokens
 
-Go to the home page at https://app.stablecoin-engine.com/, connect your wallet, and click **Mint 10 sBTC** and **Mint 10 STX** in the Testnet Faucet section. Each call invokes `faucet-mint` on `sbtc-token-v3` / `stx-token-v3`.
+Go to the home page at https://app.stablecoin-engine.com/, connect your wallet, and click **Mint 10 sBTC** and **Mint 10 STX** in the Testnet Faucet section. Each call invokes `faucet-mint` on `sbtc-token-v4` / `stx-token-v4`.
 
 ### B. Register a stablecoin and configure collateral
 
@@ -404,7 +404,7 @@ SSE uses a single config-driven deployment command. `sse.config.json` is the sou
 3. **Set network + contract names** in `sse.config.json`:
    - `network`: `testnet` or `mainnet`
    - `deployer`: your deployer principal
-   - `contracts.*`: name of each contract on-chain (bump versions here when re-deploying changed logic — e.g. `multi-asset-vault-engine-v5` → `v6`)
+   - `contracts.*`: name of each contract on-chain (bump versions here when re-deploying changed logic — e.g. `multi-asset-vault-engine-v7` → `multi-asset-vault-engine-v8`)
    - `deployContracts`: ordered list of which contracts to deploy this run (omit unchanged ones)
    - `contractCosts`: per-contract STX fee estimate
    - `collaterals`: bootstrap list (sBTC, STX) with risk parameters and DIA oracle IDs
@@ -421,9 +421,9 @@ This single command performs all steps in order:
 2. **Generate Clarinet deployment plan** from `sse.config.json`.
 3. **Deploy contracts** listed in `deployContracts` to the configured network.
 4. **Run bootstrap** on-chain:
-   - Authorize the vault engine in `stablecoin-token-v3` and `collateral-registry-v4`.
+   - Authorize the vault engine in `stablecoin-token-v4` and `collateral-registry-v6`.
    - Register DIA oracle ID mappings (sBTC → 3, STX → 4) in the vault engine.
-   - Add each bootstrap collateral type to `collateral-registry-v4` with its risk params.
+   - Add each bootstrap collateral type to `collateral-registry-v6` with its risk params.
    - Update oracle principals in the registry to the v2 DIA oracles.
 
 ### Deployment rules (from [`AGENTS.md`](../AGENTS.md))
@@ -465,11 +465,30 @@ Same flow, with:
 - **Liquidation threshold**: health factor < effective `liquidation-ratio` → liquidatable.
 - **DIA oracle (testnet)**: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` (IDs 3=BTC, 4=STX).
 - **Current deployed versions** (see [`sse.config.json`](../sse.config.json) for canonical list):
-  - `stablecoin-factory-v3`, `stablecoin-token-v3`
-  - `collateral-registry-v4`, `stability-pool-v4`
-  - `multi-asset-vault-engine-v5`, `liquidation-engine-v5`
+  - `stablecoin-factory-v4`, `stablecoin-token-v4`
+  - `collateral-registry-v6`, `stability-pool-v6`
+  - `multi-asset-vault-engine-v7`, `liquidation-engine-v7`
   - `price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`, `dia-oracle-adapter`
-  - `sbtc-token-v3`, `stx-token-v3`
+  - `sbtc-token-v4`, `stx-token-v4`
+  - `bridge-registry-v4`, `xreserve-adapter-v5`, `bridge-adapter-trait`
+  - `sse-governance-v1`, `sse-timelock-v1` (Asigna multisig + 24h timelock)
+
+---
+
+## Governance
+
+Global admin functions on every governed contract are owned by an Asigna multisig + 24h timelock, not the deployer. Deployer key is permanently bootstrap-locked.
+
+- **Admin (Asigna multisig)** — queues, executes, triggers emergency fast-paths.
+- **Guardian (Asigna multisig)** — cancel-only during the delay window.
+- **Timelock delay** — 144 blocks (~24h on Stacks).
+- **Emergency whitelist (no delay)** — `set-collateral-enabled`, `set-token-enabled` (bridge), `set-paused` (xReserve).
+
+Asigna vault dashboards:
+- Testnet: https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard
+- Mainnet: https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard
+
+Frontend inspector: `/governance` (read-only). Architecture + operator runbook: [`adl/governance.md`](./adl/governance.md).
 
 ---
 
@@ -478,6 +497,7 @@ Same flow, with:
 - Product intent and consistency rules: [`SSE_CONTEXT.md`](./SSE_CONTEXT.md)
 - Feature coverage status and roadmap: [`roadmap.md`](./roadmap.md)
 - User-flow specs: [`adl/user_flows.md`](./adl/user_flows.md)
+- Governance runbook: [`adl/governance.md`](./adl/governance.md)
 - Deployment workflow: [`AGENTS.md`](../AGENTS.md) (Deployment Rules section)
 
 ---
@@ -492,12 +512,12 @@ All contracts are deployed under the same principal. Click any link to view cont
 
 | Contract | Full address |
 |---|---|
-| `stablecoin-factory-v3` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v3](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v3?chain=testnet) |
-| `stablecoin-token-v3` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token-v3](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token-v3?chain=testnet) |
-| `collateral-registry-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry-v4?chain=testnet) |
-| `multi-asset-vault-engine-v5` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v5](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v5?chain=testnet) |
-| `stability-pool-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v4?chain=testnet) |
-| `liquidation-engine-v5` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v5](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v5?chain=testnet) |
+| `stablecoin-factory-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v4?chain=testnet) |
+| `stablecoin-token-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token-v4?chain=testnet) |
+| `collateral-registry-v6` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry-v6](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry-v6?chain=testnet) |
+| `multi-asset-vault-engine-v7` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v7?chain=testnet) |
+| `stability-pool-v6` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v6](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v6?chain=testnet) |
+| `liquidation-engine-v7` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v7?chain=testnet) |
 
 ### Oracles
 
@@ -512,5 +532,20 @@ All contracts are deployed under the same principal. Click any link to view cont
 
 | Contract | Full address |
 |---|---|
-| `sbtc-token-v3` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v3?chain=testnet) |
-| `stx-token-v3` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stx-token-v3](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stx-token-v3?chain=testnet) |
+| `sbtc-token-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4?chain=testnet) |
+| `stx-token-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stx-token-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stx-token-v4?chain=testnet) |
+
+### Governance
+
+| Contract | Full address |
+|---|---|
+| `sse-governance-v1` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sse-governance-v1](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sse-governance-v1?chain=testnet) |
+| `sse-timelock-v1` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sse-timelock-v1](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sse-timelock-v1?chain=testnet) |
+| Asigna multisig (admin + guardian) | [SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) |
+
+### Cross-chain bridge
+
+| Contract | Full address |
+|---|---|
+| `bridge-registry-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.bridge-registry-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.bridge-registry-v4?chain=testnet) |
+| `xreserve-adapter-v5` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.xreserve-adapter-v5](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.xreserve-adapter-v5?chain=testnet) |

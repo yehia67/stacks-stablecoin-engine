@@ -117,8 +117,12 @@ async function waitForConfirmation(txid, apiUrl) {
 }
 
 async function contractExists(apiUrl, contractName) {
+  // Use /source rather than /interface: the interface endpoint can 404
+  // briefly after a confirmed publish while the node finishes analysis,
+  // which would cause the deploy script to try to publish a contract
+  // that already exists (rejected as ContractAlreadyExists).
   const resp = await fetch(
-    `${apiUrl}/v2/contracts/interface/${DEPLOYER}/${contractName}`,
+    `${apiUrl}/v2/contracts/source/${DEPLOYER}/${contractName}?proof=0`,
     { headers: apiHeaders() }
   );
   return resp.ok;
@@ -394,6 +398,70 @@ async function bootstrap(config) {
       nonce++,
       { skipOnAbort: true }
     );
+  }
+
+  // 6. Wire governance: each governed contract points at the timelock, then locks.
+  //    sse-governance-v1 stores admin (Asigna multisig) + guardian + timelock principal.
+  //    sse-timelock-v1 seeds default emergency whitelist, then locks bootstrap.
+  //    Order matters: this MUST run last because once locked, no further admin calls
+  //    can come from the deployer — only from the timelock.
+  console.log("\n  Wiring governance...");
+
+  const governanceContract = config.contracts.sseGovernance;
+  const timelockContract = config.contracts.sseTimelock;
+  const bridgeRegistry = config.contracts.bridgeRegistry;
+  const xreserveAdapter = config.contracts.xreserveAdapter;
+
+  const governance = config.governance || {};
+  const adminPrincipal = governance.admin || DEPLOYER;
+  const guardianPrincipal = governance.guardian || DEPLOYER;
+
+  if (!governanceContract || !timelockContract) {
+    console.log("  ⊘ sseGovernance / sseTimelock not configured — skipping governance wiring");
+  } else {
+    const timelockFqn = `${DEPLOYER}.${timelockContract}`;
+
+    // 6a. Each governed contract: set governance var to the timelock principal, then lock.
+    const governedContracts = [
+      config.contracts.stablecoinFactory,
+      bridgeRegistry,
+      config.contracts.collateralRegistry,
+      config.contracts.multiAssetVaultEngine,
+      xreserveAdapter,
+    ].filter(Boolean);
+
+    for (const name of governedContracts) {
+      await callContract(apiUrl, network, name, "bootstrap-set-governance",
+        [principalCV(timelockFqn)], nonce++, { skipOnAbort: true });
+      await callContract(apiUrl, network, name, "lock-bootstrap",
+        [], nonce++, { skipOnAbort: true });
+    }
+
+    // 6b. Governance registry: store admin (Asigna multisig), guardian, timelock principal.
+    await callContract(apiUrl, network, governanceContract, "bootstrap-set-admin",
+      [principalCV(adminPrincipal)], nonce++, { skipOnAbort: true });
+    await callContract(apiUrl, network, governanceContract, "bootstrap-set-guardian",
+      [principalCV(guardianPrincipal)], nonce++, { skipOnAbort: true });
+    await callContract(apiUrl, network, governanceContract, "bootstrap-set-timelock",
+      [principalCV(timelockFqn)], nonce++, { skipOnAbort: true });
+    await callContract(apiUrl, network, governanceContract, "lock-bootstrap",
+      [], nonce++, { skipOnAbort: true });
+
+    // 6c. Timelock: seed default emergency whitelist (pause-style fns), then lock.
+    //     target=COLLATERAL(u2), fn=SET-ENABLED(u3); BRIDGE(u3) SET-TOKEN-ENABLED(u5); XRESERVE(u4) SET-PAUSED(u3)
+    const emergencyDefaults = [
+      { target: 2, fn: 3, label: "collateral.set-collateral-enabled" },
+      { target: 3, fn: 5, label: "bridge.set-token-enabled" },
+      { target: 4, fn: 3, label: "xreserve.set-paused" },
+    ];
+    for (const e of emergencyDefaults) {
+      await callContract(apiUrl, network, timelockContract, "bootstrap-set-emergency",
+        [uintCV(e.target), uintCV(e.fn), boolCV(true)], nonce++, { skipOnAbort: true });
+    }
+    await callContract(apiUrl, network, timelockContract, "lock-bootstrap",
+      [], nonce++, { skipOnAbort: true });
+
+    console.log(`  ✓ Governance wired — admin=${adminPrincipal} guardian=${guardianPrincipal} timelock=${timelockFqn}`);
   }
 }
 

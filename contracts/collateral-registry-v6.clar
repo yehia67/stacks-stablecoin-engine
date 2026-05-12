@@ -1,3 +1,9 @@
+;; collateral-registry-v6.clar
+;; Same product surface as v5. Changes:
+;;  - Global admin functions are now governance-gated (via sse-timelock-v1).
+;;  - References factory v4 and pre-authorizes vault-engine v7.
+;;  - Creator-only per-stablecoin functions are unchanged.
+
 (define-constant CONTRACT-OWNER tx-sender)
 
 ;; ============================================
@@ -14,44 +20,71 @@
 (define-constant ERR_BELOW_GLOBAL_MINIMUM u108)
 (define-constant ERR_ALREADY_CONFIGURED u109)
 (define-constant ERR_NOT_CONFIGURED u110)
+(define-constant ERR_BOOTSTRAP_LOCKED u111)
 
 ;; ============================================
-;; Data Variables
+;; Governance
 ;; ============================================
 
-;; Track total debt issued against each collateral type
+(define-data-var governance principal CONTRACT-OWNER)
+(define-data-var bootstrap-locked bool false)
+
+(define-read-only (get-governance) (var-get governance))
+(define-read-only (is-bootstrap-locked) (var-get bootstrap-locked))
+
+(define-public (bootstrap-set-governance (new-gov principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (not (var-get bootstrap-locked)) (err ERR_BOOTSTRAP_LOCKED))
+    (var-set governance new-gov)
+    (ok true)
+  )
+)
+
+(define-public (lock-bootstrap)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (var-set bootstrap-locked true)
+    (ok true)
+  )
+)
+
+(define-private (is-governance-caller)
+  (or
+    (is-eq contract-caller (var-get governance))
+    (and (not (var-get bootstrap-locked)) (is-eq tx-sender CONTRACT-OWNER))
+  )
+)
+
+;; ============================================
+;; Data Maps
+;; ============================================
+
 (define-map collateral-debt
   {asset: principal}
   {total-debt: uint}
 )
 
-;; Extended collateral configuration with more parameters
 (define-map collateral-configs
   {asset: principal}
   {
-    min-collateral-ratio: uint,      ;; Minimum collateral ratio (e.g., 150 = 150%)
-    liquidation-ratio: uint,          ;; Ratio at which liquidation can occur (e.g., 120 = 120%)
-    liquidation-penalty: uint,        ;; Penalty on liquidation (e.g., 10 = 10%)
-    stability-fee: uint,              ;; Annual stability fee in basis points (e.g., 200 = 2%)
-    debt-ceiling: uint,               ;; Maximum debt allowed for this collateral type
-    debt-floor: uint,                 ;; Minimum debt per vault (dust limit)
-    enabled: bool,                    ;; Whether this collateral type is active
-    oracle: principal                 ;; Oracle contract for this asset's price
+    min-collateral-ratio: uint,
+    liquidation-ratio: uint,
+    liquidation-penalty: uint,
+    stability-fee: uint,
+    debt-ceiling: uint,
+    debt-floor: uint,
+    enabled: bool,
+    oracle: principal
   }
 )
 
-;; List of registered collateral assets (for enumeration)
 (define-data-var collateral-count uint u0)
 (define-map collateral-list
   {index: uint}
   {asset: principal}
 )
 
-;; ============================================
-;; Per-Stablecoin Collateral Configuration
-;; ============================================
-
-;; Per-stablecoin collateral config overrides
 (define-map stablecoin-collateral-configs
   {stablecoin-id: uint, asset: principal}
   {
@@ -65,13 +98,11 @@
   }
 )
 
-;; Per-stablecoin debt tracking
 (define-map stablecoin-collateral-debt
   {stablecoin-id: uint, asset: principal}
   {total-debt: uint}
 )
 
-;; Enumeration of configured collaterals per stablecoin
 (define-map stablecoin-collateral-count
   {stablecoin-id: uint}
   {count: uint}
@@ -83,7 +114,7 @@
 )
 
 ;; ============================================
-;; Admin Functions
+;; Admin Functions (governance-gated)
 ;; ============================================
 
 (define-public (add-collateral-type
@@ -97,13 +128,12 @@
     (oracle principal)
   )
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (asserts! (is-none (map-get? collateral-configs {asset: asset})) (err ERR_ASSET_ALREADY_EXISTS))
     (asserts! (> min-collateral-ratio u100) (err ERR_INVALID_RATIO))
     (asserts! (> liquidation-ratio u100) (err ERR_INVALID_RATIO))
     (asserts! (<= liquidation-ratio min-collateral-ratio) (err ERR_INVALID_RATIO))
-    
-    ;; Store config
+
     (map-set collateral-configs
       {asset: asset}
       {
@@ -117,16 +147,14 @@
         oracle: oracle
       }
     )
-    
-    ;; Initialize debt tracking
+
     (map-set collateral-debt {asset: asset} {total-debt: u0})
-    
-    ;; Add to collateral list for enumeration
+
     (let ((current-count (var-get collateral-count)))
       (map-set collateral-list {index: current-count} {asset: asset})
       (var-set collateral-count (+ current-count u1))
     )
-    
+
     (print {event: "collateral-added", asset: asset, min-ratio: min-collateral-ratio})
     (ok true)
   )
@@ -142,11 +170,11 @@
     (debt-floor uint)
   )
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (asserts! (> min-collateral-ratio u100) (err ERR_INVALID_RATIO))
     (asserts! (> liquidation-ratio u100) (err ERR_INVALID_RATIO))
     (asserts! (<= liquidation-ratio min-collateral-ratio) (err ERR_INVALID_RATIO))
-    
+
     (match (map-get? collateral-configs {asset: asset})
       config
         (begin
@@ -173,7 +201,7 @@
 
 (define-public (set-collateral-enabled (asset principal) (is-enabled bool))
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (match (map-get? collateral-configs {asset: asset})
       config
         (begin
@@ -191,7 +219,7 @@
 
 (define-public (update-oracle (asset principal) (new-oracle principal))
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (match (map-get? collateral-configs {asset: asset})
       config
         (begin
@@ -208,19 +236,16 @@
 )
 
 ;; ============================================
-;; Per-Stablecoin Collateral Configuration Functions
+;; Per-Stablecoin Collateral Configuration (creator-gated, unchanged)
 ;; ============================================
 
 (define-private (is-stablecoin-creator (stablecoin-id uint))
-  (match (contract-call? .stablecoin-factory-v3 get-stablecoin-creator stablecoin-id)
+  (match (contract-call? .stablecoin-factory-v4 get-stablecoin-creator stablecoin-id)
     creator (is-eq tx-sender creator)
     false
   )
 )
 
-;; Configure a collateral type for a specific stablecoin.
-;; Only the stablecoin creator can call this.
-;; Per-stablecoin ratios must be >= global minimums for safety.
 (define-public (configure-collateral-for-stablecoin
     (stablecoin-id uint)
     (asset principal)
@@ -235,23 +260,19 @@
     (asserts! (is-stablecoin-creator stablecoin-id) (err ERR_NOT_CREATOR))
     (asserts! (is-none (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})) (err ERR_ALREADY_CONFIGURED))
 
-    ;; Validate global collateral exists and is enabled
     (match (map-get? collateral-configs {asset: asset})
       global-config
         (begin
           (asserts! (get enabled global-config) (err ERR_ASSET_DISABLED))
 
-          ;; Validate ratio constraints
           (asserts! (> min-collateral-ratio u100) (err ERR_INVALID_RATIO))
           (asserts! (> liquidation-ratio u100) (err ERR_INVALID_RATIO))
           (asserts! (<= liquidation-ratio min-collateral-ratio) (err ERR_INVALID_RATIO))
 
-          ;; Safety: per-stablecoin params must be >= global minimums
           (asserts! (>= min-collateral-ratio (get min-collateral-ratio global-config)) (err ERR_BELOW_GLOBAL_MINIMUM))
           (asserts! (>= liquidation-ratio (get liquidation-ratio global-config)) (err ERR_BELOW_GLOBAL_MINIMUM))
           (asserts! (>= liquidation-penalty (get liquidation-penalty global-config)) (err ERR_BELOW_GLOBAL_MINIMUM))
 
-          ;; Store per-stablecoin config
           (map-set stablecoin-collateral-configs
             {stablecoin-id: stablecoin-id, asset: asset}
             {
@@ -265,10 +286,8 @@
             }
           )
 
-          ;; Initialize per-stablecoin debt tracking
           (map-set stablecoin-collateral-debt {stablecoin-id: stablecoin-id, asset: asset} {total-debt: u0})
 
-          ;; Add to enumeration list
           (let ((current-count (default-to u0 (get count (map-get? stablecoin-collateral-count {stablecoin-id: stablecoin-id})))))
             (map-set stablecoin-collateral-list {stablecoin-id: stablecoin-id, index: current-count} {asset: asset})
             (map-set stablecoin-collateral-count {stablecoin-id: stablecoin-id} {count: (+ current-count u1)})
@@ -288,7 +307,6 @@
   )
 )
 
-;; Update an existing per-stablecoin collateral configuration
 (define-public (update-collateral-for-stablecoin
     (stablecoin-id uint)
     (asset principal)
@@ -302,7 +320,6 @@
   (begin
     (asserts! (is-stablecoin-creator stablecoin-id) (err ERR_NOT_CREATOR))
 
-    ;; Validate global collateral exists and is enabled
     (match (map-get? collateral-configs {asset: asset})
       global-config
         (begin
@@ -310,12 +327,10 @@
           (match (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
             existing-config
               (begin
-                ;; Validate ratio constraints
                 (asserts! (> min-collateral-ratio u100) (err ERR_INVALID_RATIO))
                 (asserts! (> liquidation-ratio u100) (err ERR_INVALID_RATIO))
                 (asserts! (<= liquidation-ratio min-collateral-ratio) (err ERR_INVALID_RATIO))
 
-                ;; Safety: per-stablecoin params must be >= global minimums
                 (asserts! (>= min-collateral-ratio (get min-collateral-ratio global-config)) (err ERR_BELOW_GLOBAL_MINIMUM))
                 (asserts! (>= liquidation-ratio (get liquidation-ratio global-config)) (err ERR_BELOW_GLOBAL_MINIMUM))
                 (asserts! (>= liquidation-penalty (get liquidation-penalty global-config)) (err ERR_BELOW_GLOBAL_MINIMUM))
@@ -348,7 +363,6 @@
   )
 )
 
-;; Disable a collateral type for a specific stablecoin
 (define-public (disable-collateral-for-stablecoin (stablecoin-id uint) (asset principal))
   (begin
     (asserts! (is-stablecoin-creator stablecoin-id) (err ERR_NOT_CREATOR))
@@ -367,11 +381,9 @@
   )
 )
 
-;; Re-enable a previously disabled collateral type for a specific stablecoin
 (define-public (enable-collateral-for-stablecoin (stablecoin-id uint) (asset principal))
   (begin
     (asserts! (is-stablecoin-creator stablecoin-id) (err ERR_NOT_CREATOR))
-    ;; Ensure global collateral is still enabled
     (match (map-get? collateral-configs {asset: asset})
       global-config
         (begin
@@ -400,8 +412,8 @@
 
 (define-map authorized-vault-engines principal bool)
 
-;; Pre-authorize the known vault engines at deploy time
-(map-set authorized-vault-engines .multi-asset-vault-engine-v6 true)
+;; Pre-authorize the v7 vault engine at deploy time
+(map-set authorized-vault-engines .multi-asset-vault-engine-v7 true)
 
 (define-private (is-authorized-caller)
   (default-to false (map-get? authorized-vault-engines contract-caller))
@@ -409,7 +421,7 @@
 
 (define-public (set-vault-engine-authorized (engine principal) (authorized bool))
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (map-set authorized-vault-engines engine authorized)
     (ok true)
   )
@@ -454,7 +466,7 @@
 )
 
 ;; ============================================
-;; Global Debt Tracking Functions (called by vault-engine)
+;; Global Debt Tracking (called by vault-engine)
 ;; ============================================
 
 (define-public (increase-debt (asset principal) (amount uint))
@@ -558,25 +570,16 @@
   )
 )
 
-(define-read-only (get-collateral-count)
-  (var-get collateral-count)
-)
+(define-read-only (get-collateral-count) (var-get collateral-count))
 
 (define-read-only (get-collateral-at-index (index uint))
   (map-get? collateral-list {index: index})
 )
 
-;; ============================================
-;; Per-Stablecoin Read-Only Functions
-;; ============================================
-
 (define-read-only (get-stablecoin-collateral-config (stablecoin-id uint) (asset principal))
   (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
 )
 
-;; Returns effective config for a stablecoin+asset pair.
-;; Requires explicit per-stablecoin configuration and enforces
-;; max(per-stablecoin, global) for safety-critical ratio fields.
 (define-read-only (get-effective-collateral-config (stablecoin-id uint) (asset principal))
   (match (map-get? stablecoin-collateral-configs {stablecoin-id: stablecoin-id, asset: asset})
     sc-config

@@ -1,3 +1,7 @@
+;; stability-pool-v6.clar
+;; Cross-reference bump from v5. References factory-v4 and liquidation-engine-v7.
+;; Admin functions remain creator-gated; no governance change.
+
 (use-trait sip-010-trait .sip-010-trait.sip-010-trait)
 
 ;; ============================================
@@ -16,57 +20,48 @@
 ;; ============================================
 ;; Constants
 ;; ============================================
-(define-constant SCALE_FACTOR u1000000000000) ;; 1e12
-(define-constant MAX_REWARD_PCT u5000) ;; 50% max in basis points (100 = 1%)
+(define-constant SCALE_FACTOR u1000000000000)
+(define-constant MAX_REWARD_PCT u5000)
 
 ;; ============================================
 ;; Data Maps
 ;; ============================================
 
-;; Per-stablecoin user balances (compacted to current product on each interaction)
 (define-map balances
   {owner: principal, stablecoin-id: uint}
   {balance: uint}
 )
 
-;; Per-stablecoin total deposits (decreases when liquidation offsets debt)
 (define-map total-deposits
   {stablecoin-id: uint}
   {amount: uint}
 )
 
-;; Running product for deposit scaling due to liquidation losses.
-;; Starts at SCALE_FACTOR. Decreases multiplicatively on each liquidation.
 (define-map pool-product
   {stablecoin-id: uint}
   {product: uint}
 )
 
-;; User's product snapshot at last deposit/withdraw
 (define-map user-product-snapshot
   {owner: principal, stablecoin-id: uint}
   {product: uint}
 )
 
-;; Creator-configurable liquidation reward percentage (basis points, 100 = 1%)
 (define-map reward-config
   {stablecoin-id: uint}
   {reward-pct: uint}
 )
 
-;; Cumulative collateral reward per token of deposit, per (stablecoin, collateral asset)
 (define-map cumulative-reward-per-token
   {stablecoin-id: uint, asset: principal}
   {reward-per-token: uint}
 )
 
-;; User's snapshot of reward-per-token at last claim
 (define-map user-reward-snapshot
   {owner: principal, stablecoin-id: uint, asset: principal}
   {reward-per-token: uint}
 )
 
-;; Accumulated pending collateral rewards (accrued but not yet claimed)
 (define-map pending-collateral-rewards
   {owner: principal, stablecoin-id: uint, asset: principal}
   {amount: uint}
@@ -77,14 +72,14 @@
 ;; ============================================
 
 (define-private (get-linked-token (stablecoin-id uint))
-  (match (contract-call? .stablecoin-factory-v3 get-stablecoin stablecoin-id)
+  (match (contract-call? .stablecoin-factory-v4 get-stablecoin stablecoin-id)
     stablecoin (get token-contract stablecoin)
     none
   )
 )
 
 (define-private (get-stablecoin-creator (stablecoin-id uint))
-  (contract-call? .stablecoin-factory-v3 get-stablecoin-creator stablecoin-id)
+  (contract-call? .stablecoin-factory-v4 get-stablecoin-creator stablecoin-id)
 )
 
 (define-private (get-current-product (stablecoin-id uint))
@@ -123,7 +118,6 @@
   )
 )
 
-;; Compute effective balance accounting for liquidation losses via the product
 (define-private (compute-effective-balance (owner principal) (stablecoin-id uint))
   (let (
       (raw (get-raw-balance owner stablecoin-id))
@@ -217,9 +211,7 @@
     )
     (asserts! (is-some linked-token) (err ERR_TOKEN_NOT_LINKED))
     (asserts! (is-eq (contract-of stablecoin-token) (unwrap-panic linked-token)) (err ERR_TOKEN_MISMATCH))
-    ;; Transfer stablecoin from user to pool
     (try! (contract-call? stablecoin-token transfer amount tx-sender (as-contract tx-sender)))
-    ;; Compact balance to current product and add deposit
     (map-set balances
       {owner: tx-sender, stablecoin-id: stablecoin-id}
       {balance: (+ effective-bal amount)}
@@ -255,9 +247,7 @@
     (asserts! (is-some linked-token) (err ERR_TOKEN_NOT_LINKED))
     (asserts! (is-eq (contract-of stablecoin-token) (unwrap-panic linked-token)) (err ERR_TOKEN_MISMATCH))
     (asserts! (>= effective-bal amount) (err ERR_INSUFFICIENT_BALANCE))
-    ;; Transfer stablecoin from pool to user
     (try! (as-contract (contract-call? stablecoin-token transfer amount tx-sender user)))
-    ;; Compact balance to current product minus withdrawal
     (map-set balances
       {owner: user, stablecoin-id: stablecoin-id}
       {balance: (- effective-bal amount)}
@@ -283,11 +273,9 @@
 )
 
 ;; ============================================
-;; Liquidation Distribution (called by liquidation engine)
+;; Liquidation Distribution (called by liquidation engine v7)
 ;; ============================================
 
-;; Called by the liquidation engine after vault collateral is seized and pool stablecoins burned.
-;; Updates internal accounting: deposit shrinkage (product) and collateral rewards.
 (define-public (distribute-liquidation-reward
     (stablecoin-id uint)
     (asset principal)
@@ -298,22 +286,17 @@
       (current-product (get-current-product stablecoin-id))
       (current-rpt (get-current-rpt stablecoin-id asset))
     )
-    ;; Only the liquidation engine can call this
-    (asserts! (is-eq contract-caller .liquidation-engine-v6) (err ERR_NOT_LIQUIDATION_ENGINE))
-    ;; Pool must have deposits to distribute against
+    (asserts! (is-eq contract-caller .liquidation-engine-v7) (err ERR_NOT_LIQUIDATION_ENGINE))
     (asserts! (> pool-total u0) (err ERR_EMPTY_POOL))
     (asserts! (>= pool-total debt-offset) (err ERR_INSUFFICIENT_BALANCE))
-    ;; Update deposit product: product *= (pool-total - debt-offset) / pool-total
     (map-set pool-product
       {stablecoin-id: stablecoin-id}
       {product: (/ (* current-product (- pool-total debt-offset)) pool-total)}
     )
-    ;; Update cumulative reward per token: rpt += collateral * SCALE / pool-total
     (map-set cumulative-reward-per-token
       {stablecoin-id: stablecoin-id, asset: asset}
       {reward-per-token: (+ current-rpt (/ (* collateral-earned SCALE_FACTOR) pool-total))}
     )
-    ;; Reduce total deposits by the stablecoins burned
     (map-set total-deposits
       {stablecoin-id: stablecoin-id}
       {amount: (- pool-total debt-offset)}
@@ -350,13 +333,9 @@
       (total-claimable (+ existing-pending new-reward))
       (user tx-sender)
     )
-    ;; Validate collateral token matches the asset
     (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_TOKEN_MISMATCH))
-    ;; Must have something to claim
     (asserts! (> total-claimable u0) (err ERR_NO_REWARD))
-    ;; Transfer collateral from pool to user
     (try! (as-contract (contract-call? collateral-token transfer total-claimable tx-sender user)))
-    ;; Reset pending and update snapshot
     (map-set pending-collateral-rewards
       {owner: user, stablecoin-id: stablecoin-id, asset: asset}
       {amount: u0}
