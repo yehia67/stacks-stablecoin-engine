@@ -23,12 +23,25 @@ epoch = "3.1"
 path = "contracts/bridge-adapter-trait.clar"
 epoch = "3.1"
 
-[contracts.bridge-registry-v3]
-path = "contracts/bridge-registry-v3.clar"
+# ── Governance ────────────────────────────────────────────────────────────────
+
+[contracts.sse-governance-v1]
+path = "contracts/sse-governance-v1.clar"
 epoch = "3.1"
 
-[contracts.stablecoin-factory-v3]
-path = "contracts/stablecoin-factory-v3.clar"
+[contracts.sse-timelock-v1]
+path = "contracts/sse-timelock-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-governance-v1", "stablecoin-factory-v4", "collateral-registry-v6", "bridge-registry-v4", "xreserve-adapter-v5", "multi-asset-vault-engine-v7"]
+
+# ── Governed (vN+1) ───────────────────────────────────────────────────────────
+
+[contracts.bridge-registry-v4]
+path = "contracts/bridge-registry-v4.clar"
+epoch = "3.1"
+
+[contracts.stablecoin-factory-v4]
+path = "contracts/stablecoin-factory-v4.clar"
 epoch = "3.1"
 
 # For simnet testing, use the mock adapter that allows set-value
@@ -62,30 +75,30 @@ path = "contracts/stablecoin-token-v4.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-engine-token-trait"]
 
-[contracts.collateral-registry-v5]
-path = "contracts/collateral-registry-v5.clar"
+[contracts.collateral-registry-v6]
+path = "contracts/collateral-registry-v6.clar"
 epoch = "3.1"
-depends_on = ["stablecoin-factory-v3"]
+depends_on = ["stablecoin-factory-v4"]
 
-[contracts.stability-pool-v5]
-path = "contracts/stability-pool-v5.clar"
+[contracts.stability-pool-v6]
+path = "contracts/stability-pool-v6.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-factory-v3", "stablecoin-token-v4", "liquidation-engine-v6"]
+depends_on = ["sip-010-trait", "stablecoin-factory-v4", "stablecoin-token-v4", "liquidation-engine-v7"]
 
-[contracts.multi-asset-vault-engine-v6]
-path = "contracts/multi-asset-vault-engine-v6.clar"
+[contracts.multi-asset-vault-engine-v7]
+path = "contracts/multi-asset-vault-engine-v7.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-token-v4", "price-oracle-dia-btc-v2", "price-oracle-dia-stx-v2", "collateral-registry-v5", "stablecoin-factory-v3", "stablecoin-engine-token-trait", "sbtc-token-v4", "stx-token-v4", "stability-pool-v5", "liquidation-engine-v6"]
+depends_on = ["sip-010-trait", "stablecoin-token-v4", "price-oracle-dia-btc-v2", "price-oracle-dia-stx-v2", "collateral-registry-v6", "stablecoin-factory-v4", "stablecoin-engine-token-trait", "sbtc-token-v4", "stx-token-v4", "stability-pool-v6", "liquidation-engine-v7"]
 
-[contracts.liquidation-engine-v6]
-path = "contracts/liquidation-engine-v6.clar"
+[contracts.liquidation-engine-v7]
+path = "contracts/liquidation-engine-v7.clar"
 epoch = "3.1"
-depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v6", "stability-pool-v5"]
+depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v7", "stability-pool-v6"]
 
-[contracts.xreserve-adapter-v4]
-path = "contracts/xreserve-adapter-v4.clar"
+[contracts.xreserve-adapter-v5]
+path = "contracts/xreserve-adapter-v5.clar"
 epoch = "3.1"
-depends_on = ["bridge-adapter-trait", "stablecoin-token-v4", "bridge-registry-v3"]
+depends_on = ["bridge-adapter-trait", "stablecoin-token-v4", "bridge-registry-v4"]
 
 [repl.analysis]
 passes = ["check_checker"]

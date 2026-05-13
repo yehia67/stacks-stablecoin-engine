@@ -22,13 +22,13 @@ const DEFAULT_FEE = 10000000;
 // Admin Functions Tests
 // ============================================
 
-describe("stablecoin-factory-v3 admin functions", () => {
+describe("stablecoin-factory-v4 admin functions", () => {
   describe("set-registration-fee", () => {
     it("allows owner to set registration fee", () => {
       const { deployer, wallet1 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(5000000)], // 5 STX
         deployer
@@ -37,7 +37,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
 
       // Verify fee was updated
       const fee = simnet.callReadOnlyFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "get-registration-fee",
         [],
         deployer
@@ -49,7 +49,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
       const { deployer, wallet1 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(0)],
         deployer
@@ -57,7 +57,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
       expect(result.result).toBeOk(Cl.bool(true));
 
       const fee = simnet.callReadOnlyFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "get-registration-fee",
         [],
         deployer
@@ -69,7 +69,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
       const { wallet1 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(5000000)],
         wallet1
@@ -83,7 +83,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
       const { deployer, wallet1 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-treasury-address",
         [Cl.principal(wallet1)],
         deployer
@@ -92,7 +92,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
 
       // Verify treasury was updated
       const treasury = simnet.callReadOnlyFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "get-treasury-address",
         [],
         deployer
@@ -104,7 +104,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
       const { wallet1, wallet2 } = getTestAccounts();
 
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-treasury-address",
         [Cl.principal(wallet2)],
         wallet1
@@ -118,7 +118,7 @@ describe("stablecoin-factory-v3 admin functions", () => {
 // Registration with Fee Tests
 // ============================================
 
-describe("stablecoin-factory-v3 registration", () => {
+describe("stablecoin-factory-v4 registration", () => {
   describe("register-stablecoin with fee", () => {
     it("successfully registers stablecoin and transfers fee to treasury", () => {
       const { deployer, wallet1 } = getTestAccounts();
@@ -129,7 +129,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Register stablecoin (deployer is treasury by default)
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Test USD"), Cl.stringAscii("TUSD")],
         wallet1
@@ -145,7 +145,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Verify stablecoin was registered
       const stablecoin = simnet.callReadOnlyFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "get-stablecoin",
         [Cl.uint(0)],
         wallet1
@@ -159,7 +159,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Set a very high fee
       simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(100000000000001)], // intentionally above funded wallet balance
         deployer
@@ -167,7 +167,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Try to register with insufficient balance
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Fail Coin"), Cl.stringAscii("FAIL")],
         wallet1
@@ -181,7 +181,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Set wallet2 as treasury
       simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-treasury-address",
         [Cl.principal(wallet2)],
         deployer
@@ -193,7 +193,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Register stablecoin
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Custom Treasury"), Cl.stringAscii("CTRS")],
         wallet1
@@ -215,7 +215,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Set fee to 0
       simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(0)],
         deployer
@@ -226,7 +226,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Register stablecoin
       const result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Free Coin"), Cl.stringAscii("FREE")],
         wallet1
@@ -239,7 +239,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Verify stablecoin was registered
       const stablecoin = simnet.callReadOnlyFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "get-stablecoin",
         [Cl.uint(0)],
         wallet1
@@ -254,7 +254,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Set fee to 0 for simplicity
       simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(0)],
         deployer
@@ -262,7 +262,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // First registration
       let result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Unique Name"), Cl.stringAscii("UNQ1")],
         wallet1
@@ -271,7 +271,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Try duplicate name
       result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Unique Name"), Cl.stringAscii("UNQ2")],
         wallet2
@@ -284,7 +284,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Set fee to 0 for simplicity
       simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "set-registration-fee",
         [Cl.uint(0)],
         deployer
@@ -292,7 +292,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // First registration
       let result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("First Coin"), Cl.stringAscii("SAME")],
         wallet1
@@ -301,7 +301,7 @@ describe("stablecoin-factory-v3 registration", () => {
 
       // Try duplicate symbol
       result = simnet.callPublicFn(
-        "stablecoin-factory-v3",
+        "stablecoin-factory-v4",
         "register-stablecoin",
         [Cl.stringAscii("Second Coin"), Cl.stringAscii("SAME")],
         wallet2
@@ -315,14 +315,14 @@ describe("stablecoin-factory-v3 registration", () => {
 // Token Contract Linking Tests
 // ============================================
 
-describe("stablecoin-factory-v3 token linking", () => {
+describe("stablecoin-factory-v4 token linking", () => {
   it("allows creator to link token contract", () => {
     const { deployer, wallet1 } = getTestAccounts();
     const tokenContract = `${deployer}.stablecoin-token-v4`;
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -330,7 +330,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
     // Register stablecoin
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Linked Coin"), Cl.stringAscii("LINK")],
       wallet1
@@ -338,7 +338,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
     // Link token contract
     const result = simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-token-contract",
       [Cl.uint(0), Cl.principal(tokenContract)],
       wallet1
@@ -347,7 +347,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
     // Verify token contract was linked
     const stablecoin = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin",
       [Cl.uint(0)],
       wallet1
@@ -361,7 +361,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -369,7 +369,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
     // Register stablecoin as wallet1
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Creator Only"), Cl.stringAscii("CRTR")],
       wallet1
@@ -377,7 +377,7 @@ describe("stablecoin-factory-v3 token linking", () => {
 
     // Try to link as wallet2 (not creator)
     const result = simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-token-contract",
       [Cl.uint(0), Cl.principal(tokenContract)],
       wallet2
@@ -390,7 +390,7 @@ describe("stablecoin-factory-v3 token linking", () => {
     const tokenContract = `${deployer}.stablecoin-token-v4`;
 
     const result = simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-token-contract",
       [Cl.uint(999), Cl.principal(tokenContract)],
       wallet1
@@ -403,13 +403,13 @@ describe("stablecoin-factory-v3 token linking", () => {
 // Read-Only Functions Tests
 // ============================================
 
-describe("stablecoin-factory-v3 read-only functions", () => {
+describe("stablecoin-factory-v4 read-only functions", () => {
   it("returns correct stablecoin count", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -417,7 +417,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Initial count should be 0
     let count = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin-count",
       [],
       deployer
@@ -426,13 +426,13 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Register two stablecoins
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Coin One"), Cl.stringAscii("ONE")],
       wallet1
     );
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Coin Two"), Cl.stringAscii("TWO")],
       wallet2
@@ -440,7 +440,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Count should be 2
     count = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin-count",
       [],
       deployer
@@ -453,7 +453,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -461,7 +461,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Register stablecoin
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Lookup Test"), Cl.stringAscii("LOOK")],
       wallet1
@@ -469,7 +469,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Lookup by name
     const result = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin-by-name",
       [Cl.stringAscii("Lookup Test")],
       deployer
@@ -478,7 +478,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Non-existent name returns none
     const notFound = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin-by-name",
       [Cl.stringAscii("Does Not Exist")],
       deployer
@@ -491,7 +491,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -499,7 +499,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Register stablecoin
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Symbol Test"), Cl.stringAscii("SYM")],
       wallet1
@@ -507,7 +507,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Lookup by symbol
     const result = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin-by-symbol",
       [Cl.stringAscii("SYM")],
       deployer
@@ -520,7 +520,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -528,7 +528,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Initially not taken
     let nameTaken = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "is-name-taken",
       [Cl.stringAscii("Check Name")],
       deployer
@@ -536,7 +536,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
     expect(nameTaken.result).toBeBool(false);
 
     let symbolTaken = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "is-symbol-taken",
       [Cl.stringAscii("CHK")],
       deployer
@@ -545,7 +545,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Register stablecoin
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Check Name"), Cl.stringAscii("CHK")],
       wallet1
@@ -553,7 +553,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Now taken
     nameTaken = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "is-name-taken",
       [Cl.stringAscii("Check Name")],
       deployer
@@ -561,7 +561,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
     expect(nameTaken.result).toBeBool(true);
 
     symbolTaken = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "is-symbol-taken",
       [Cl.stringAscii("CHK")],
       deployer
@@ -574,7 +574,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Set fee to 0
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(0)],
       deployer
@@ -582,7 +582,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Initial count for wallet1 should be 0
     let count = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-creator-stablecoin-count",
       [Cl.principal(wallet1)],
       deployer
@@ -591,13 +591,13 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Register two stablecoins as wallet1
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Creator Coin 1"), Cl.stringAscii("CC1")],
       wallet1
     );
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Creator Coin 2"), Cl.stringAscii("CC2")],
       wallet1
@@ -605,7 +605,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Count should be 2
     count = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-creator-stablecoin-count",
       [Cl.principal(wallet1)],
       deployer
@@ -614,7 +614,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Get first stablecoin by index
     const first = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-creator-stablecoin-at-index",
       [Cl.principal(wallet1), Cl.uint(0)],
       deployer
@@ -623,7 +623,7 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 
     // Get second stablecoin by index
     const second = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-creator-stablecoin-at-index",
       [Cl.principal(wallet1), Cl.uint(1)],
       deployer
@@ -643,11 +643,11 @@ describe("stablecoin-factory-v3 read-only functions", () => {
 describe("per-stablecoin collateral configuration", () => {
   function setupFactoryAndCollateral(deployer: string, wallet1: string) {
     // Set fee to 0
-    simnet.callPublicFn("stablecoin-factory-v3", "set-registration-fee", [Cl.uint(0)], deployer);
+    simnet.callPublicFn("stablecoin-factory-v4", "set-registration-fee", [Cl.uint(0)], deployer);
 
     // Register stablecoin
     const regResult = simnet.callPublicFn(
-      "stablecoin-factory-v3", "register-stablecoin",
+      "stablecoin-factory-v4", "register-stablecoin",
       [Cl.stringAscii("Test Stable"), Cl.stringAscii("TSTB")],
       wallet1
     );
@@ -656,7 +656,7 @@ describe("per-stablecoin collateral configuration", () => {
     // Add global collateral type
     const asset = `${deployer}.stablecoin-token-v4`;
     const oracle = `${deployer}.price-oracle-dia-btc-v2`;
-    simnet.callPublicFn("collateral-registry-v5", "add-collateral-type", [
+    simnet.callPublicFn("collateral-registry-v6", "add-collateral-type", [
       Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10),
       Cl.uint(200), Cl.uint(10000000), Cl.uint(100), Cl.principal(oracle),
     ], deployer);
@@ -669,7 +669,7 @@ describe("per-stablecoin collateral configuration", () => {
     const { asset } = setupFactoryAndCollateral(deployer, wallet1);
 
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(170), Cl.uint(130), Cl.uint(15), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet1
     );
@@ -677,7 +677,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Verify config was stored
     const config = simnet.callReadOnlyFn(
-      "collateral-registry-v5", "get-stablecoin-collateral-config",
+      "collateral-registry-v6", "get-stablecoin-collateral-config",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -699,7 +699,7 @@ describe("per-stablecoin collateral configuration", () => {
     const { asset } = setupFactoryAndCollateral(deployer, wallet1);
 
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(170), Cl.uint(130), Cl.uint(15), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet2 // not the creator
     );
@@ -712,7 +712,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Try min-collateral-ratio below global 150
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(140), Cl.uint(130), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
@@ -725,7 +725,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Try liquidation-ratio below global 120
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(110), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
@@ -738,13 +738,13 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure with higher ratios
     simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(200), Cl.uint(150), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     const effective = simnet.callReadOnlyFn(
-      "collateral-registry-v5", "get-effective-min-collateral-ratio",
+      "collateral-registry-v6", "get-effective-min-collateral-ratio",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -758,7 +758,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // No per-stablecoin config set — v4 returns none (no fallback to global)
     const effective = simnet.callReadOnlyFn(
-      "collateral-registry-v5", "get-effective-min-collateral-ratio",
+      "collateral-registry-v6", "get-effective-min-collateral-ratio",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -771,7 +771,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // stablecoin id 1 doesn't exist, should return none
     const effective = simnet.callReadOnlyFn(
-      "collateral-registry-v5", "is-collateral-enabled-for-stablecoin",
+      "collateral-registry-v6", "is-collateral-enabled-for-stablecoin",
       [Cl.uint(1), Cl.principal(asset)],
       deployer
     );
@@ -784,14 +784,14 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure first
     simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     // Disable
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "disable-collateral-for-stablecoin",
+      "collateral-registry-v6", "disable-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset)],
       wallet1
     );
@@ -799,7 +799,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Verify disabled — v4 returns false when per-stablecoin config is disabled
     const enabled = simnet.callReadOnlyFn(
-      "collateral-registry-v5", "is-collateral-enabled-for-stablecoin",
+      "collateral-registry-v6", "is-collateral-enabled-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset)],
       deployer
     );
@@ -812,13 +812,13 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure collateral
     simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     const count = simnet.callReadOnlyFn(
-      "collateral-registry-v5", "get-stablecoin-collateral-count-ro",
+      "collateral-registry-v6", "get-stablecoin-collateral-count-ro",
       [Cl.uint(0)],
       deployer
     );
@@ -830,7 +830,7 @@ describe("per-stablecoin collateral configuration", () => {
     setupFactoryAndCollateral(deployer, wallet1);
 
     const creator = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3", "get-stablecoin-creator",
+      "stablecoin-factory-v4", "get-stablecoin-creator",
       [Cl.uint(0)],
       deployer
     );
@@ -841,7 +841,7 @@ describe("per-stablecoin collateral configuration", () => {
     const { deployer } = getTestAccounts();
 
     const creator = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3", "get-stablecoin-creator",
+      "stablecoin-factory-v4", "get-stablecoin-creator",
       [Cl.uint(999)],
       deployer
     );
@@ -854,14 +854,14 @@ describe("per-stablecoin collateral configuration", () => {
 
     // wallet2 registers their own stablecoin
     simnet.callPublicFn(
-      "stablecoin-factory-v3", "register-stablecoin",
+      "stablecoin-factory-v4", "register-stablecoin",
       [Cl.stringAscii("Other Stable"), Cl.stringAscii("OTHB")],
       wallet2
     );
 
     // wallet2 tries to configure collateral for wallet1's stablecoin (id 0)
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(170), Cl.uint(130), Cl.uint(15), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet2
     );
@@ -874,7 +874,7 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Global liquidation-penalty is 10. Try setting to 5.
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(5), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
@@ -887,21 +887,21 @@ describe("per-stablecoin collateral configuration", () => {
 
     // Configure first
     simnet.callPublicFn(
-      "collateral-registry-v5", "configure-collateral-for-stablecoin",
+      "collateral-registry-v6", "configure-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(150), Cl.uint(120), Cl.uint(10), Cl.uint(200), Cl.uint(1000000), Cl.uint(100)],
       wallet1
     );
 
     // Admin disables the global collateral
     simnet.callPublicFn(
-      "collateral-registry-v5", "set-collateral-enabled",
+      "collateral-registry-v6", "set-collateral-enabled",
       [Cl.principal(asset), Cl.bool(false)],
       deployer
     );
 
     // Creator tries to update per-stablecoin config — should fail
     const result = simnet.callPublicFn(
-      "collateral-registry-v5", "update-collateral-for-stablecoin",
+      "collateral-registry-v6", "update-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(asset), Cl.uint(160), Cl.uint(130), Cl.uint(12), Cl.uint(300), Cl.uint(500000), Cl.uint(200)],
       wallet1
     );
@@ -909,13 +909,13 @@ describe("per-stablecoin collateral configuration", () => {
   });
 });
 
-describe("stablecoin-factory-v3 fee update flow", () => {
+describe("stablecoin-factory-v4 fee update flow", () => {
   it("applies updated fee to new registrations", () => {
     const { deployer, wallet1, wallet2 } = getTestAccounts();
 
     // Register first stablecoin with default fee
     const result1 = simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("Default Fee"), Cl.stringAscii("DFEE")],
       wallet1
@@ -924,7 +924,7 @@ describe("stablecoin-factory-v3 fee update flow", () => {
 
     // Update fee to 5 STX
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-registration-fee",
       [Cl.uint(5000000)],
       deployer
@@ -935,7 +935,7 @@ describe("stablecoin-factory-v3 fee update flow", () => {
 
     // Register second stablecoin with new fee
     const result2 = simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("New Fee"), Cl.stringAscii("NFEE")],
       wallet2
@@ -948,7 +948,7 @@ describe("stablecoin-factory-v3 fee update flow", () => {
 
     // Verify stablecoins were registered
     const stablecoin1 = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin",
       [Cl.uint(0)],
       deployer
@@ -956,7 +956,7 @@ describe("stablecoin-factory-v3 fee update flow", () => {
     expect(stablecoin1.result).not.toBeNone();
 
     const stablecoin2 = simnet.callReadOnlyFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "get-stablecoin",
       [Cl.uint(1)],
       deployer

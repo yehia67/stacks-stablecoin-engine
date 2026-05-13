@@ -226,8 +226,7 @@ export default function NewVaultPage() {
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const resp = await fetch(
-          `https://api.testnet.hiro.so/extended/v1/tx/${txId}`,
-          { headers: { 'x-api-key': process.env.NEXT_PUBLIC_HIRO_API_KEY || '' } }
+          `/api/stacks/extended/v1/tx/${txId}`
         );
         if (resp.ok) {
           const data = await resp.json();
@@ -249,10 +248,10 @@ export default function NewVaultPage() {
     if (!address || selectedStablecoinId === null) return false;
     try {
       const resp = await fetch(
-        `https://api.testnet.hiro.so/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.MULTI_ASSET_VAULT_ENGINE}/get-vault-for-stablecoin`,
+        `/api/stacks/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${CONTRACTS.MULTI_ASSET_VAULT_ENGINE}/get-vault-for-stablecoin`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_HIRO_API_KEY || '' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sender: address,
             arguments: [cvToHex(principalCV(address)), cvToHex(uintCV(selectedStablecoinId))],

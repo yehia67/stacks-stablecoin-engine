@@ -23,10 +23,10 @@ function registerAndLinkStablecoin(
   expectedId: number
 ) {
   // Zero-fee registration
-  simnet.callPublicFn("stablecoin-factory-v3", "set-registration-fee", [Cl.uint(0)], deployer);
+  simnet.callPublicFn("stablecoin-factory-v4", "set-registration-fee", [Cl.uint(0)], deployer);
 
   const regResult = simnet.callPublicFn(
-    "stablecoin-factory-v3",
+    "stablecoin-factory-v4",
     "register-stablecoin",
     [Cl.stringAscii(name), Cl.stringAscii(symbol)],
     creator
@@ -35,7 +35,7 @@ function registerAndLinkStablecoin(
 
   const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
   const linkResult = simnet.callPublicFn(
-    "stablecoin-factory-v3",
+    "stablecoin-factory-v4",
     "set-token-contract",
     [Cl.uint(expectedId), Cl.principal(tokenPrincipal)],
     creator
@@ -54,7 +54,7 @@ function mintStablecoinTokens(deployer: string, recipient: string, amount: numbe
   // So we authorize a helper or use the multi-asset vault engine flow
 
   // Authorize the multi-asset vault engine as the vault engine for the stablecoin token
-  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v6`;
+  const vaultEnginePrincipal = `${deployer}.multi-asset-vault-engine-v7`;
   simnet.callPublicFn(
     "stablecoin-token-v4",
     "set-vault-engine",
@@ -81,7 +81,7 @@ function mintStablecoinTokens(deployer: string, recipient: string, amount: numbe
 
   // Add global sBTC collateral (idempotent if already added — will fail silently)
   simnet.callPublicFn(
-    "collateral-registry-v5",
+    "collateral-registry-v6",
     "add-collateral-type",
     [
       Cl.principal(sbtcAsset),
@@ -94,7 +94,7 @@ function mintStablecoinTokens(deployer: string, recipient: string, amount: numbe
 
   // Register asset oracle
   simnet.callPublicFn(
-    "multi-asset-vault-engine-v6",
+    "multi-asset-vault-engine-v7",
     "register-asset-oracle",
     [Cl.principal(sbtcAsset), Cl.uint(3)],
     deployer
@@ -111,19 +111,19 @@ function mintStablecoinTokens(deployer: string, recipient: string, amount: numbe
 
   // Open vault and deposit collateral and mint
   simnet.callPublicFn(
-    "multi-asset-vault-engine-v6",
+    "multi-asset-vault-engine-v7",
     "open-vault-for-stablecoin",
     [Cl.uint(0)],
     recipient
   );
   simnet.callPublicFn(
-    "multi-asset-vault-engine-v6",
+    "multi-asset-vault-engine-v7",
     "deposit-collateral-for-stablecoin",
     [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(collateralNeeded)],
     recipient
   );
   const mintResult = simnet.callPublicFn(
-    "multi-asset-vault-engine-v6",
+    "multi-asset-vault-engine-v7",
     "mint-against-asset-for-stablecoin",
     [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(amount)],
     recipient
@@ -136,7 +136,7 @@ function addSbtcGlobalCollateral(deployer: string) {
   const sbtcAsset = `${deployer}.sbtc-token-v4`;
   const oraclePrincipal = `${deployer}.price-oracle-dia-btc-v2`;
   simnet.callPublicFn(
-    "collateral-registry-v5",
+    "collateral-registry-v6",
     "add-collateral-type",
     [
       Cl.principal(sbtcAsset),
@@ -152,7 +152,7 @@ function addSbtcGlobalCollateral(deployer: string) {
 function configureSbtcForStablecoin(deployer: string, creator: string, stablecoinId: number) {
   const sbtcAsset = `${deployer}.sbtc-token-v4`;
   const result = simnet.callPublicFn(
-    "collateral-registry-v5",
+    "collateral-registry-v6",
     "configure-collateral-for-stablecoin",
     [
       Cl.uint(stablecoinId),
@@ -190,10 +190,10 @@ function getStablecoinBalance(deployer: string, owner: string): bigint {
 }
 
 function getPoolPrincipal(deployer: string): string {
-  return `${deployer}.stability-pool-v5`;
+  return `${deployer}.stability-pool-v6`;
 }
 
-describe("stability-pool-v5 token custody", () => {
+describe("stability-pool-v6 token custody", () => {
   describe("deposit transfers tokens to pool", () => {
     it("transfers stablecoin tokens from user to pool on deposit", () => {
       const { deployer, wallet1 } = getTestAccounts();
@@ -212,7 +212,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Deposit to pool
       const result = simnet.callPublicFn(
-        "stability-pool-v5",
+        "stability-pool-v6",
         "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(2000)],
         wallet1
@@ -225,7 +225,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Verify pool ledger balance
       const poolBalance = simnet.callReadOnlyFn(
-        "stability-pool-v5",
+        "stability-pool-v6",
         "balance-of-for-stablecoin",
         [Cl.principal(wallet1), Cl.uint(0)],
         deployer
@@ -234,7 +234,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Verify total deposits
       const totalDeposits = simnet.callReadOnlyFn(
-        "stability-pool-v5",
+        "stability-pool-v6",
         "get-total-deposits",
         [Cl.uint(0)],
         deployer
@@ -252,14 +252,14 @@ describe("stability-pool-v5 token custody", () => {
 
       // First deposit
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(1000)],
         wallet1
       );
 
       // Second deposit
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(1500)],
         wallet1
       );
@@ -269,7 +269,7 @@ describe("stability-pool-v5 token custody", () => {
       expect(getStablecoinBalance(deployer, poolPrincipal)).toBe(2500n);
 
       const poolBalance = simnet.callReadOnlyFn(
-        "stability-pool-v5", "balance-of-for-stablecoin",
+        "stability-pool-v6", "balance-of-for-stablecoin",
         [Cl.principal(wallet1), Cl.uint(0)],
         deployer
       );
@@ -285,7 +285,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Try to deposit more than balance
       const result = simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(500)],
         wallet1
       );
@@ -302,7 +302,7 @@ describe("stability-pool-v5 token custody", () => {
       registerAndLinkStablecoin(deployer, wallet1, "Mis Dollar", "MUSD", 0);
 
       const result = simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(wrongToken), Cl.uint(100)],
         wallet1
       );
@@ -314,15 +314,15 @@ describe("stability-pool-v5 token custody", () => {
       const tokenPrincipal = `${deployer}.stablecoin-token-v4`;
 
       // Register but do NOT link token
-      simnet.callPublicFn("stablecoin-factory-v3", "set-registration-fee", [Cl.uint(0)], deployer);
+      simnet.callPublicFn("stablecoin-factory-v4", "set-registration-fee", [Cl.uint(0)], deployer);
       simnet.callPublicFn(
-        "stablecoin-factory-v3", "register-stablecoin",
+        "stablecoin-factory-v4", "register-stablecoin",
         [Cl.stringAscii("Unlinked Dollar"), Cl.stringAscii("XUSD")],
         wallet1
       );
 
       const result = simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(100)],
         wallet1
       );
@@ -341,7 +341,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Deposit first
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(3000)],
         wallet1
       );
@@ -350,7 +350,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Withdraw partial
       const result = simnet.callPublicFn(
-        "stability-pool-v5", "withdraw",
+        "stability-pool-v6", "withdraw",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(1000)],
         wallet1
       );
@@ -362,7 +362,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Verify pool ledger
       const poolBalance = simnet.callReadOnlyFn(
-        "stability-pool-v5", "balance-of-for-stablecoin",
+        "stability-pool-v6", "balance-of-for-stablecoin",
         [Cl.principal(wallet1), Cl.uint(0)],
         deployer
       );
@@ -378,14 +378,14 @@ describe("stability-pool-v5 token custody", () => {
 
       // Deposit 500
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(500)],
         wallet1
       );
 
       // Try to withdraw 600
       const result = simnet.callPublicFn(
-        "stability-pool-v5", "withdraw",
+        "stability-pool-v6", "withdraw",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(600)],
         wallet1
       );
@@ -407,7 +407,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Deposit all
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(3000)],
         wallet1
       );
@@ -416,7 +416,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Withdraw all
       const result = simnet.callPublicFn(
-        "stability-pool-v5", "withdraw",
+        "stability-pool-v6", "withdraw",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(3000)],
         wallet1
       );
@@ -428,7 +428,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Pool ledger is zero
       const poolBalance = simnet.callReadOnlyFn(
-        "stability-pool-v5", "balance-of-for-stablecoin",
+        "stability-pool-v6", "balance-of-for-stablecoin",
         [Cl.principal(wallet1), Cl.uint(0)],
         deployer
       );
@@ -436,7 +436,7 @@ describe("stability-pool-v5 token custody", () => {
 
       // Total deposits is zero
       const totalDeposits = simnet.callReadOnlyFn(
-        "stability-pool-v5", "get-total-deposits",
+        "stability-pool-v6", "get-total-deposits",
         [Cl.uint(0)],
         deployer
       );
@@ -457,35 +457,35 @@ describe("stability-pool-v5 token custody", () => {
       // Open a separate vault for wallet2
       const sbtcAsset = `${deployer}.sbtc-token-v4`;
       simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(4000), Cl.principal(wallet2)], wallet2);
-      simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet2);
+      simnet.callPublicFn("multi-asset-vault-engine-v7", "open-vault-for-stablecoin", [Cl.uint(0)], wallet2);
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v6", "deposit-collateral-for-stablecoin",
+        "multi-asset-vault-engine-v7", "deposit-collateral-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(4000)],
         wallet2
       );
       simnet.callPublicFn(
-        "multi-asset-vault-engine-v6", "mint-against-asset-for-stablecoin",
+        "multi-asset-vault-engine-v7", "mint-against-asset-for-stablecoin",
         [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(2000)],
         wallet2
       );
 
       // wallet1 deposits 1500
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(1500)],
         wallet1
       );
 
       // wallet2 deposits 1000
       simnet.callPublicFn(
-        "stability-pool-v5", "deposit",
+        "stability-pool-v6", "deposit",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(1000)],
         wallet2
       );
 
       // Total pool = 2500
       const totalDeposits = simnet.callReadOnlyFn(
-        "stability-pool-v5", "get-total-deposits",
+        "stability-pool-v6", "get-total-deposits",
         [Cl.uint(0)],
         deployer
       );
@@ -496,21 +496,21 @@ describe("stability-pool-v5 token custody", () => {
 
       // wallet1 withdraws 500
       simnet.callPublicFn(
-        "stability-pool-v5", "withdraw",
+        "stability-pool-v6", "withdraw",
         [Cl.uint(0), Cl.principal(tokenPrincipal), Cl.uint(500)],
         wallet1
       );
 
       // wallet1 pool balance = 1000, wallet2 pool balance = 1000, total = 2000
       const w1Balance = simnet.callReadOnlyFn(
-        "stability-pool-v5", "balance-of-for-stablecoin",
+        "stability-pool-v6", "balance-of-for-stablecoin",
         [Cl.principal(wallet1), Cl.uint(0)],
         deployer
       );
       expect(w1Balance.result).toBeUint(1000);
 
       const w2Balance = simnet.callReadOnlyFn(
-        "stability-pool-v5", "balance-of-for-stablecoin",
+        "stability-pool-v6", "balance-of-for-stablecoin",
         [Cl.principal(wallet2), Cl.uint(0)],
         deployer
       );

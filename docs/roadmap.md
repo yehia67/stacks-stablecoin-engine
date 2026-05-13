@@ -6,7 +6,7 @@
 
 ## 1. Stablecoin Factory (Registration & Token Linking)
 
-### Contract: `stablecoin-factory-v3`
+### Contract: `stablecoin-factory-v4` (governance-gated)
 ### Frontend: `/factory`
 
 | Feature | Contract | Frontend | Status |
@@ -15,8 +15,8 @@
 | Set token contract (link deployed SIP-010 to registration) | ✅ | ✅ | **Working** |
 | Deploy & auto-link token contract | — | ✅ | **Working** (FE-only: deploys via `openContractDeploy`, then calls `set-token-contract`) |
 | Name/symbol uniqueness check | ✅ | ✅ | **Working** |
-| Admin: set registration fee | ✅ | ❌ | **No FE** |
-| Admin: set treasury address | ✅ | ❌ | **No FE** |
+| Admin: set registration fee | ✅ | ✅ | **Multisig-only** — queue via `sse-timelock-v1::execute-factory-set-fee` from Asigna; `/governance` inspector |
+| Admin: set treasury address | ✅ | ✅ | **Multisig-only** — queue via `sse-timelock-v1::execute-factory-set-treasury` from Asigna; `/governance` inspector |
 | Read: get stablecoin by name/symbol | ✅ | ❌ | Not used in FE |
 | Read: get creator's stablecoins | ✅ | ✅ (via iteration) | **Working** |
 
@@ -24,7 +24,7 @@
 
 ## 2. Collateral Registry (Per-Stablecoin Risk Configuration)
 
-### Contract: `collateral-registry-v5`
+### Contract: `collateral-registry-v6` (governance-gated)
 ### Frontend: `/factory` (configure collateral section)
 
 | Feature | Contract | Frontend | Status |
@@ -47,13 +47,13 @@
 
 ### Contract: `vault-engine-v3` — **DELETED**
 
-The legacy single-collateral vault engine has been removed. All vault operations now go through `multi-asset-vault-engine-v6`. Frontend hooks for the legacy engine (`openVault`, `depositCollateral`, `withdrawCollateral`, `mint`, `burn`) have been removed.
+The legacy single-collateral vault engine has been removed. All vault operations now go through `multi-asset-vault-engine-v7`. Frontend hooks for the legacy engine (`openVault`, `depositCollateral`, `withdrawCollateral`, `mint`, `burn`) have been removed.
 
 ---
 
 ## 4. Multi-Asset Vault Engine (Production)
 
-### Contract: `multi-asset-vault-engine-v6`
+### Contract: `multi-asset-vault-engine-v7` (governance-gated `register-asset-oracle`)
 ### Frontend: `/vaults/new`, `/vaults`
 
 | Feature | Contract | Frontend | Status |
@@ -76,7 +76,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 
 ## 5. Stability Pool
 
-### Contract: `stability-pool-v5`
+### Contract: `stability-pool-v6`
 ### Frontend: `/pool`
 
 | Feature | Contract | Frontend | Status |
@@ -99,7 +99,7 @@ The legacy single-collateral vault engine has been removed. All vault operations
 
 ## 6. Liquidation Engine
 
-### Contract: `liquidation-engine-v6`
+### Contract: `liquidation-engine-v7`
 ### Frontend: `/liquidations`
 
 **Liquidation engine now orchestrates the full flow:**
@@ -122,8 +122,8 @@ The legacy single-collateral vault engine has been removed. All vault operations
 
 ## 7. Cross-Chain Bridge
 
-### Contracts: `bridge-registry-v3`, `xreserve-adapter-v3`, `bridge-adapter-trait`
-### Frontend: **None**
+### Contracts: `bridge-registry-v4`, `xreserve-adapter-v5`, `bridge-adapter-trait` (all governance-gated)
+### Frontend: `/governance` (read-only inspector); write flows still go through Asigna
 
 | Feature | Contract | Frontend | Status |
 |---|---|---|---|
@@ -193,13 +193,17 @@ All data is **stub** — `TODO: Fetch from contracts` everywhere:
 - **Cross-chain bridge** (burn-to-remote, mint-from-remote) — entire subsystem
 - **Liquidation vault scanning** — contract logic is complete, FE doesn't scan for liquidatable vaults on-chain
 - **Dashboard data** — all stats are placeholders
-- **Admin functions** — registration fee, treasury, global collateral management, oracle updates, vault engine authorization
 - **Token balance display** — wallet balances for stablecoin/collateral assets are still not shown
 
-### ✅ Contract-level TODOs (all completed, deployed as v6):
-- **Actual collateral custody**: `multi-asset-vault-engine-v6` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
-- **Stability pool custody**: `stability-pool-v5` performs real SIP-010 token transfers with stablecoin-scoped balances. Token validated against factory-linked contract (`ERR_TOKEN_MISMATCH`).
+### 🔐 Admin functions (now multisig-gated, write flow on Asigna):
+- registration fee, treasury, global collateral management, oracle updates, vault engine authorization, bridge chain/token mgmt, xReserve pause/attestation
+- Frontend `/governance` is **read-only**: shows roles, delay, lock status, governed contracts, emergency whitelist, queued-action lookup. Write flows happen on `https://stx.asigna.io/`.
+
+### ✅ Contract-level TODOs (all completed, deployed 2026-05-12):
+- **Governance**: Asigna multisig + 24h timelock (`sse-governance-v1`, `sse-timelock-v1`). All five governed contracts (`stablecoin-factory-v4`, `collateral-registry-v6`, `bridge-registry-v4`, `xreserve-adapter-v5`, `multi-asset-vault-engine-v7`) are bootstrap-locked. Deployer key has zero admin power. See [`adl/governance.md`](./adl/governance.md). Frontend inspector at `/governance`. Asigna vault dashboards: [testnet](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) · [mainnet](https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard).
+- **Actual collateral custody**: `multi-asset-vault-engine-v7` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
+- **Stability pool custody**: `stability-pool-v6` performs real SIP-010 token transfers with stablecoin-scoped balances. Token validated against factory-linked contract (`ERR_TOKEN_MISMATCH`).
 - **Native fungible tokens**: All token contracts use `define-fungible-token` with `ft-transfer?`/`ft-mint?`/`ft-burn?` for proper Stacks post-condition enforcement in wallet UIs.
 - **Liquidation reward accounting**: Creator-configurable reward percentage (basis points). Product-based deposit tracking for proportional loss. Reward-per-token pattern for collateral distribution. Full liquidation flow: vault engine seizes collateral + burns stablecoins, stability pool updates accounting.
-- **Liquidation engine**: `liquidation-engine-v6` — Full orchestration: health check → calculate amounts → vault engine liquidate-position → pool distribute-liquidation-reward
+- **Liquidation engine**: `liquidation-engine-v7` — Full orchestration: health check → calculate amounts → vault engine liquidate-position → pool distribute-liquidation-reward
 - **Oracles**: DIA push-based oracle integration. `dia-oracle-adapter` forwards to the real DIA oracle on testnet. `price-oracle-dia-btc-v2` and `price-oracle-dia-stx-v2` implement `oracle-trait` with configurable staleness guard and ms→s timestamp conversion. Vault engine supports oracle IDs 3/4 (DIA only). DIA testnet: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`. Prices use 8 decimal places (matches SSE's `PRICE-SCALE`).

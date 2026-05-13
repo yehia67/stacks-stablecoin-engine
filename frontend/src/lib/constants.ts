@@ -6,14 +6,23 @@ export const IS_MAINNET = NETWORK === "mainnet";
 // Falls back to testnet deployer if not set
 const DEFAULT_TESTNET_DEPLOYER = "ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF";
 const DEPLOYER_ADDRESS = process.env.NEXT_PUBLIC_DEPLOYER_ADDRESS || DEFAULT_TESTNET_DEPLOYER;
+
+// Allow per-contract overrides via env, but default to the on-chain names
+// in sse.config.json. Keep these in sync with that file when versioning.
 const STABLECOIN_FACTORY_CONTRACT =
-  process.env.NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT || "stablecoin-factory-v3";
+  process.env.NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT || "stablecoin-factory-v4";
 const MULTI_ASSET_VAULT_ENGINE_CONTRACT =
-  process.env.NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT || "multi-asset-vault-engine-v5";
+  process.env.NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT || "multi-asset-vault-engine-v7";
 const COLLATERAL_REGISTRY_CONTRACT =
-  process.env.NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT || "collateral-registry-v4";
+  process.env.NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT || "collateral-registry-v6";
 const LIQUIDATION_ENGINE_CONTRACT =
-  process.env.NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT || "liquidation-engine-v5";
+  process.env.NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT || "liquidation-engine-v7";
+const STABILITY_POOL_CONTRACT =
+  process.env.NEXT_PUBLIC_STABILITY_POOL_CONTRACT || "stability-pool-v6";
+const BRIDGE_REGISTRY_CONTRACT =
+  process.env.NEXT_PUBLIC_BRIDGE_REGISTRY_CONTRACT || "bridge-registry-v4";
+const XRESERVE_ADAPTER_CONTRACT =
+  process.env.NEXT_PUBLIC_XRESERVE_ADAPTER_CONTRACT || "xreserve-adapter-v5";
 
 // Contract addresses
 export const CONTRACTS = {
@@ -21,17 +30,22 @@ export const CONTRACTS = {
 
   // Core contracts
   MULTI_ASSET_VAULT_ENGINE: MULTI_ASSET_VAULT_ENGINE_CONTRACT,
-  STABLECOIN_TOKEN: "stablecoin-token-v3",
+  STABLECOIN_TOKEN: "stablecoin-token-v4",
   STABLECOIN_FACTORY: STABLECOIN_FACTORY_CONTRACT,
   COLLATERAL_REGISTRY: COLLATERAL_REGISTRY_CONTRACT,
   LIQUIDATION_ENGINE: LIQUIDATION_ENGINE_CONTRACT,
-  STABILITY_POOL: "stability-pool-v4",
+  STABILITY_POOL: STABILITY_POOL_CONTRACT,
   PRICE_ORACLE_DIA_BTC: "price-oracle-dia-btc-v2",
   PRICE_ORACLE_DIA_STX: "price-oracle-dia-stx-v2",
   DIA_ORACLE_ADAPTER: "dia-oracle-adapter",
   STABLECOIN_ENGINE_TOKEN_TRAIT: "stablecoin-engine-token-trait",
   BRIDGE_ADAPTER_TRAIT: "bridge-adapter-trait",
-  BRIDGE_REGISTRY: "bridge-registry-v3",
+  BRIDGE_REGISTRY: BRIDGE_REGISTRY_CONTRACT,
+  XRESERVE_ADAPTER: XRESERVE_ADAPTER_CONTRACT,
+
+  // Governance
+  SSE_GOVERNANCE: "sse-governance-v1",
+  SSE_TIMELOCK: "sse-timelock-v1",
 };
 
 // Helper to get full contract identifier
@@ -41,9 +55,9 @@ export const getContractId = (contractName: string) =>
 // Mapping from token contract name to native fungible token asset name
 // Used for building Pc.ft() post-conditions
 export const FT_ASSET_NAMES: Record<string, string> = {
-  "sbtc-token-v3": "sbtc-token",
-  "stx-token-v3": "stx-token",
-  "stablecoin-token-v3": "sse-stablecoin",
+  "sbtc-token-v4": "sbtc-token",
+  "stx-token-v4": "stx-token",
+  "stablecoin-token-v4": "sse-stablecoin",
 };
 
 // App configuration
@@ -52,7 +66,7 @@ export const APP_CONFIG = {
   icon: "/logo.jpg",
 };
 
-// Oracle IDs matching contract constants in multi-asset-vault-engine-v5
+// Oracle IDs matching contract constants in the vault engine
 // DIA oracles: BTC=3, STX=4
 export const ORACLE_IDS = {
   DIA_BTC: 3,
@@ -67,14 +81,14 @@ export const FAUCET_COLLATERALS = [
   {
     name: "Test sBTC",
     symbol: "sBTC",
-    contractName: "sbtc-token-v3",
+    contractName: "sbtc-token-v4",
     decimals: 8,
     mintAmount: 10_00000000, // 10 sBTC (8 decimals)
   },
   {
     name: "Test STX",
     symbol: "STX",
-    contractName: "stx-token-v3",
+    contractName: "stx-token-v4",
     decimals: 6,
     mintAmount: 10_000000, // 10 STX (6 decimals)
   },
@@ -82,8 +96,8 @@ export const FAUCET_COLLATERALS = [
 
 /** Known decimal counts for collateral tokens, keyed by contract name. */
 export const COLLATERAL_DECIMALS: Record<string, number> = {
-  "sbtc-token-v3": 8,
-  "stx-token-v3": 6,
+  "sbtc-token-v4": 8,
+  "stx-token-v4": 6,
 };
 
 /** All factory-created stablecoins use 6 decimals. */
@@ -114,3 +128,56 @@ export const getExplorerTxUrl = (txId: string) =>
 
 export const getExplorerAddressUrl = (address: string) =>
   `${EXPLORER_URL}/address/${address}?chain=${EXPLORER_CHAIN}`;
+
+// ============================================================================
+// Governance
+// ============================================================================
+
+/** Target enum — keep in sync with contracts/sse-timelock-v1.clar. */
+export const TIMELOCK_TARGETS = {
+  FACTORY: 1,
+  COLLATERAL: 2,
+  BRIDGE: 3,
+  XRESERVE: 4,
+  VAULT: 5,
+  SELF: 6,
+} as const;
+
+/** Per-target function IDs — keep in sync with contracts/sse-timelock-v1.clar. */
+export const TIMELOCK_FNS = {
+  factory: {
+    SET_FEE: 1,
+    SET_TREASURY: 2,
+  },
+  collateral: {
+    ADD: 1,
+    UPDATE: 2,
+    SET_ENABLED: 3,
+    UPDATE_ORACLE: 4,
+    SET_VAULT_AUTH: 5,
+  },
+  bridge: {
+    ADD_CHAIN: 1,
+    DISABLE_CHAIN: 2,
+    REGISTER_TOKEN: 3,
+    UPDATE_ADAPTER: 4,
+    SET_TOKEN_ENABLED: 5,
+    CONFIG_CHAIN: 6,
+  },
+  xreserve: {
+    SET_ATTEST: 1,
+    SET_TOKEN: 2,
+    SET_PAUSED: 3,
+    ADD_CHAIN: 4,
+    REMOVE_CHAIN: 5,
+  },
+  vault: {
+    REGISTER_ORACLE: 1,
+  },
+  self: {
+    SET_DELAY: 1,
+    SET_EMERGENCY: 2,
+    ROTATE_ADMIN: 3,
+    ROTATE_GUARDIAN: 4,
+  },
+} as const;

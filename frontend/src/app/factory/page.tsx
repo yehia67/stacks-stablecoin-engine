@@ -244,8 +244,7 @@ export default function FactoryPage() {
   const checkTxStatus = useCallback(async (txHash: string) => {
     try {
       const response = await fetch(
-        `https://api.testnet.hiro.so/extended/v1/tx/${txHash}`,
-        { headers: { 'x-api-key': process.env.NEXT_PUBLIC_HIRO_API_KEY || '' } }
+        `/api/stacks/extended/v1/tx/${txHash}`
       );
       if (!response.ok) return null;
       const data = await response.json();

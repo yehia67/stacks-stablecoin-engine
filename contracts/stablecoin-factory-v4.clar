@@ -1,5 +1,6 @@
-;; Stablecoin Factory
-;; Manages registration of new stablecoins with configurable fees
+;; Stablecoin Factory v4
+;; Same product surface as v3, but admin functions are now gated on the timelock
+;; (set via bootstrap, then locked). See contracts/sse-timelock-v1.clar.
 
 ;; ============================================
 ;; Constants
@@ -14,14 +15,49 @@
 (define-constant ERR_INVALID_FEE u704)
 (define-constant ERR_TRANSFER_FAILED u705)
 (define-constant ERR_INVALID_TREASURY u706)
+(define-constant ERR_BOOTSTRAP_LOCKED u707)
+
+;; ============================================
+;; Governance
+;; ============================================
+
+;; Principal allowed to invoke admin functions. Bootstrap-set by deployer to the
+;; sse-timelock-v1 principal, then locked.
+(define-data-var governance principal CONTRACT-OWNER)
+(define-data-var bootstrap-locked bool false)
+
+(define-read-only (get-governance) (var-get governance))
+(define-read-only (is-bootstrap-locked) (var-get bootstrap-locked))
+
+(define-public (bootstrap-set-governance (new-gov principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (not (var-get bootstrap-locked)) (err ERR_BOOTSTRAP_LOCKED))
+    (var-set governance new-gov)
+    (ok true)
+  )
+)
+
+(define-public (lock-bootstrap)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (var-set bootstrap-locked true)
+    (ok true)
+  )
+)
+
+(define-private (is-governance-caller)
+  (or
+    (is-eq contract-caller (var-get governance))
+    (and (not (var-get bootstrap-locked)) (is-eq tx-sender CONTRACT-OWNER))
+  )
+)
 
 ;; ============================================
 ;; Data Variables
 ;; ============================================
 
-;; Registration fee in microSTX (1 STX = 1,000,000 microSTX)
-;; Default: 10 STX = 10,000,000 microSTX
-;; Set to 0 to disable fee
+;; Registration fee in microSTX. Default: 10 STX. Fee 0 disables.
 (define-data-var registration-fee uint u10000000)
 
 ;; Treasury address where fees are sent
@@ -34,7 +70,6 @@
 ;; Data Maps
 ;; ============================================
 
-;; Registry of all registered stablecoins
 (define-map registered-stablecoins
   {stablecoin-id: uint}
   {
@@ -47,58 +82,42 @@
   }
 )
 
-;; Map from creator to their stablecoin IDs
 (define-map creator-stablecoins
   {creator: principal, index: uint}
   {stablecoin-id: uint}
 )
 
-;; Count of stablecoins per creator
 (define-map creator-stablecoin-count
   {creator: principal}
   {count: uint}
 )
 
-;; Check if a name is already taken
 (define-map stablecoin-names
   {name: (string-ascii 32)}
   {stablecoin-id: uint}
 )
 
-;; Check if a symbol is already taken
 (define-map stablecoin-symbols
   {symbol: (string-ascii 10)}
   {stablecoin-id: uint}
 )
 
 ;; ============================================
-;; Private Functions
+;; Admin Functions (governance-gated)
 ;; ============================================
 
-(define-private (is-owner)
-  (is-eq tx-sender CONTRACT-OWNER)
-)
-
-;; ============================================
-;; Admin Functions
-;; ============================================
-
-;; Set the registration fee (only owner)
-;; Fee of 0 disables the fee requirement
 (define-public (set-registration-fee (new-fee uint))
   (begin
-    (asserts! (is-owner) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (var-set registration-fee new-fee)
     (print {event: "registration-fee-updated", new-fee: new-fee})
     (ok true)
   )
 )
 
-;; Set the treasury address (only owner)
 (define-public (set-treasury-address (new-treasury principal))
   (begin
-    (asserts! (is-owner) (err ERR_UNAUTHORIZED))
-    ;; Cannot set treasury to the zero address (contract itself as proxy check)
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (asserts! (not (is-eq new-treasury (as-contract tx-sender))) (err ERR_INVALID_TREASURY))
     (var-set treasury-address new-treasury)
     (print {event: "treasury-updated", new-treasury: new-treasury})
@@ -110,9 +129,7 @@
 ;; Registration Functions
 ;; ============================================
 
-;; Register a new stablecoin
-;; Charges the registration fee in STX and transfers to treasury
-(define-public (register-stablecoin 
+(define-public (register-stablecoin
     (name (string-ascii 32))
     (symbol (string-ascii 10))
   )
@@ -122,19 +139,14 @@
       (new-id (var-get stablecoin-count))
       (creator-count (default-to u0 (get count (map-get? creator-stablecoin-count {creator: tx-sender}))))
     )
-    ;; Check name is not already taken
     (asserts! (is-none (map-get? stablecoin-names {name: name})) (err ERR_STABLECOIN_ALREADY_REGISTERED))
-    
-    ;; Check symbol is not already taken
     (asserts! (is-none (map-get? stablecoin-symbols {symbol: symbol})) (err ERR_STABLECOIN_ALREADY_REGISTERED))
-    
-    ;; Transfer fee if fee > 0 AND sender is not treasury (can't transfer to self)
+
     (if (and (> fee u0) (not (is-eq tx-sender treasury)))
       (try! (stx-transfer? fee tx-sender treasury))
       true
     )
-    
-    ;; Register the stablecoin
+
     (map-set registered-stablecoins
       {stablecoin-id: new-id}
       {
@@ -146,12 +158,10 @@
         fee-paid: fee
       }
     )
-    
-    ;; Reserve the name and symbol
+
     (map-set stablecoin-names {name: name} {stablecoin-id: new-id})
     (map-set stablecoin-symbols {symbol: symbol} {stablecoin-id: new-id})
-    
-    ;; Track creator's stablecoins
+
     (map-set creator-stablecoins
       {creator: tx-sender, index: creator-count}
       {stablecoin-id: new-id}
@@ -160,10 +170,9 @@
       {creator: tx-sender}
       {count: (+ creator-count u1)}
     )
-    
-    ;; Increment global counter
+
     (var-set stablecoin-count (+ new-id u1))
-    
+
     (print {
       event: "stablecoin-registered",
       stablecoin-id: new-id,
@@ -172,13 +181,11 @@
       creator: tx-sender,
       fee-paid: fee
     })
-    
+
     (ok new-id)
   )
 )
 
-;; Link a deployed token contract to a registered stablecoin
-;; Only the creator can do this
 (define-public (set-token-contract (stablecoin-id uint) (token-contract principal))
   (match (map-get? registered-stablecoins {stablecoin-id: stablecoin-id})
     stablecoin
@@ -196,20 +203,12 @@
 )
 
 ;; ============================================
-;; Read-Only Functions
+;; Read-Only
 ;; ============================================
 
-(define-read-only (get-registration-fee)
-  (var-get registration-fee)
-)
-
-(define-read-only (get-treasury-address)
-  (var-get treasury-address)
-)
-
-(define-read-only (get-stablecoin-count)
-  (var-get stablecoin-count)
-)
+(define-read-only (get-registration-fee) (var-get registration-fee))
+(define-read-only (get-treasury-address) (var-get treasury-address))
+(define-read-only (get-stablecoin-count) (var-get stablecoin-count))
 
 (define-read-only (get-stablecoin (stablecoin-id uint))
   (map-get? registered-stablecoins {stablecoin-id: stablecoin-id})

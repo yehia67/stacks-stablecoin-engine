@@ -29,11 +29,13 @@ NEXT_PUBLIC_NETWORK=testnet
 NEXT_PUBLIC_DEPLOYER_ADDRESS=ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF
 
 # Optional contract-name overrides (for hotfix releases)
-NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT=stablecoin-factory-v3
-NEXT_PUBLIC_VAULT_ENGINE_CONTRACT=vault-engine-v3
-NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT=multi-asset-vault-engine-v3
-NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT=collateral-registry-v3
-NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT=liquidation-engine-v3
+NEXT_PUBLIC_STABLECOIN_FACTORY_CONTRACT=stablecoin-factory-v4
+NEXT_PUBLIC_MULTI_ASSET_VAULT_ENGINE_CONTRACT=multi-asset-vault-engine-v7
+NEXT_PUBLIC_COLLATERAL_REGISTRY_CONTRACT=collateral-registry-v6
+NEXT_PUBLIC_LIQUIDATION_ENGINE_CONTRACT=liquidation-engine-v7
+NEXT_PUBLIC_STABILITY_POOL_CONTRACT=stability-pool-v6
+NEXT_PUBLIC_BRIDGE_REGISTRY_CONTRACT=bridge-registry-v4
+NEXT_PUBLIC_XRESERVE_ADAPTER_CONTRACT=xreserve-adapter-v5
 ```
 
 ## Getting Started
@@ -65,33 +67,34 @@ The SSE contracts are already deployed on testnet at:
 
 **Deployer:** `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF`
 
-**Deployed Contracts (all v3):**
-- `stablecoin-factory-v3` - Stablecoin registration with configurable fee
-- `vault-engine-v3` - Single-collateral CDP vault management
-- `multi-asset-vault-engine-v3` - Stablecoin-scoped multi-asset vault engine
-- `stablecoin-token-v3` - SIP-010 stablecoin token
+**Deployed Contracts (current — see [`../sse.config.json`](../sse.config.json) for the canonical list):**
+- `sse-governance-v1` - Admin/guardian/timelock principal store (Asigna multisig pinned)
+- `sse-timelock-v1` - 24h timelock + emergency whitelist
+- `stablecoin-factory-v4` - Stablecoin registration with governance-gated admin
+- `multi-asset-vault-engine-v7` - Stablecoin-scoped multi-asset vault engine
+- `stablecoin-token-v4` - SIP-010 stablecoin token (native FT)
 - `stablecoin-engine-token-trait` - Token mint/burn trait used by vault engines
-- `collateral-registry-v3` - Collateral configuration with per-asset oracles
-- `liquidation-engine-v3` - Liquidation logic
-- `stability-pool-v3` - Stability pool deposits
-- `price-oracle-sbtc-v3` - sBTC price oracle
-- `price-oracle-stx-v3` - STX price oracle
+- `collateral-registry-v6` - Collateral configuration with governance-gated admin
+- `liquidation-engine-v7` - Liquidation logic (full orchestration)
+- `stability-pool-v6` - Stability pool deposits
+- `price-oracle-dia-btc-v2` / `price-oracle-dia-stx-v2` - DIA-backed oracles
+- `dia-oracle-adapter` - Forwards to real DIA oracle
 - `bridge-adapter-trait` - Bridge adapter interface trait
-- `bridge-registry-v3` - Bridge adapter/token registry
-- `xreserve-adapter-v3` - xReserve-style bridge adapter
-- `sbtc-token-v3` - Faucet sBTC token (testnet only)
-- `stx-token-v3` - Faucet STX token (testnet only)
+- `bridge-registry-v4` - Bridge adapter/token registry (governance-gated)
+- `xreserve-adapter-v5` - xReserve-style bridge adapter (governance-gated)
+- `sbtc-token-v4` / `stx-token-v4` - Faucet collateral tokens (native FT)
 
-To deploy your own contracts, from the project root:
+To deploy your own contracts, from the project root run a single command:
 
 ```bash
-# Step 1: Deploy core v3 contracts to testnet
-npm run deploy:v3
+npm run deploy
+```
 
-# Step 2: Bootstrap (deploys faucet tokens + configures everything)
-npm run bootstrap:v3
+This reads [`sse.config.json`](../sse.config.json), runs tests, generates the Clarinet plan, deploys all new contracts, runs bootstrap (vault auth, oracle mappings, collateral types), wires governance to the Asigna multisig, and locks bootstrap.
 
-# Or run locally with devnet
+To run locally with devnet:
+
+```bash
 clarinet devnet start
 ```
 
@@ -101,6 +104,7 @@ clarinet devnet start
 - **Vault Management**: Open vaults, deposit collateral, mint/burn stablecoins
 - **Stability Pool**: Deposit sUSD to earn liquidation rewards
 - **Liquidations**: Liquidate undercollateralized vaults
+- **Governance** (`/governance`): Read-only inspector for the Asigna multisig + 24h timelock that owns all global admin functions. See [`docs/adl/governance.md`](../docs/adl/governance.md).
 
 ## Tech Stack
 

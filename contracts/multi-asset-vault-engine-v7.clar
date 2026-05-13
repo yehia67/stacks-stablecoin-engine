@@ -1,5 +1,8 @@
-;; Multi-Asset Vault Engine
-;; Supports multiple collateral types and per-stablecoin vault namespaces.
+;; multi-asset-vault-engine-v7.clar
+;; Same logic as v6. Changes:
+;;  - register-asset-oracle is now governance-gated.
+;;  - Cross-references factory v4, collateral-registry v6, stability-pool v6,
+;;    liquidation-engine v7.
 
 (use-trait token-trait .stablecoin-engine-token-trait.stablecoin-engine-token-trait)
 (use-trait sip-010-trait .sip-010-trait.sip-010-trait)
@@ -24,24 +27,57 @@
 (define-constant ERR_UNKNOWN_ORACLE u214)
 (define-constant ERR_ASSET_MISMATCH u215)
 (define-constant ERR_NOT_LIQUIDATION_ENGINE u216)
+(define-constant ERR_BOOTSTRAP_LOCKED u217)
 
 ;; ============================================
 ;; Constants
 ;; ============================================
 (define-constant CONTRACT-OWNER tx-sender)
-(define-constant PRICE-SCALE u100000000)  ;; 1e8 for price precision
-(define-constant RATIO-SCALE u100)        ;; Ratios are in percentage (150 = 150%)
+(define-constant PRICE-SCALE u100000000)
+(define-constant RATIO-SCALE u100)
 (define-constant ZERO-DEBT-HEALTH-FACTOR u1000000)
 
-;; Known oracle IDs (DIA only - no mock oracles)
 (define-constant ORACLE-DIA-BTC u3)
 (define-constant ORACLE-DIA-STX u4)
+
+;; ============================================
+;; Governance (gates register-asset-oracle)
+;; ============================================
+
+(define-data-var governance principal CONTRACT-OWNER)
+(define-data-var bootstrap-locked bool false)
+
+(define-read-only (get-governance) (var-get governance))
+(define-read-only (is-bootstrap-locked) (var-get bootstrap-locked))
+
+(define-public (bootstrap-set-governance (new-gov principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (not (var-get bootstrap-locked)) (err ERR_BOOTSTRAP_LOCKED))
+    (var-set governance new-gov)
+    (ok true)
+  )
+)
+
+(define-public (lock-bootstrap)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (var-set bootstrap-locked true)
+    (ok true)
+  )
+)
+
+(define-private (is-governance-caller)
+  (or
+    (is-eq contract-caller (var-get governance))
+    (and (not (var-get bootstrap-locked)) (is-eq tx-sender CONTRACT-OWNER))
+  )
+)
 
 ;; ============================================
 ;; Data Maps
 ;; ============================================
 
-;; A user can own one vault per stablecoin-id.
 (define-map vaults
   {owner: principal, stablecoin-id: uint}
   {
@@ -50,7 +86,6 @@
   }
 )
 
-;; Per-asset collateral positions within a vault namespace.
 (define-map vault-collateral
   {owner: principal, stablecoin-id: uint, asset: principal}
   {
@@ -59,7 +94,6 @@
   }
 )
 
-;; Track which assets are present in each stablecoin vault namespace.
 (define-map vault-asset-count
   {owner: principal, stablecoin-id: uint}
   {count: uint}
@@ -71,14 +105,14 @@
 )
 
 ;; ============================================
-;; Per-Asset Oracle Registry
+;; Per-Asset Oracle Registry (governance-gated)
 ;; ============================================
 
 (define-map asset-oracle-id {asset: principal} {oracle-id: uint})
 
 (define-public (register-asset-oracle (asset principal) (oracle-id uint))
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
     (asserts! (or (is-eq oracle-id ORACLE-DIA-BTC) (is-eq oracle-id ORACLE-DIA-STX)) (err ERR_UNKNOWN_ORACLE))
     (map-set asset-oracle-id {asset: asset} {oracle-id: oracle-id})
     (ok true)
@@ -114,27 +148,27 @@
 )
 
 (define-private (get-asset-config (asset principal))
-  (contract-call? .collateral-registry-v5 get-collateral-config asset)
+  (contract-call? .collateral-registry-v6 get-collateral-config asset)
 )
 
 (define-private (get-asset-config-for-stablecoin (stablecoin-id uint) (asset principal))
-  (contract-call? .collateral-registry-v5 get-effective-collateral-config stablecoin-id asset)
+  (contract-call? .collateral-registry-v6 get-effective-collateral-config stablecoin-id asset)
 )
 
 (define-private (get-min-ratio-for-asset (asset principal))
-  (default-to u150 (contract-call? .collateral-registry-v5 get-min-collateral-ratio asset))
+  (default-to u150 (contract-call? .collateral-registry-v6 get-min-collateral-ratio asset))
 )
 
 (define-private (get-min-ratio-for-stablecoin-asset (stablecoin-id uint) (asset principal))
-  (default-to u150 (contract-call? .collateral-registry-v5 get-effective-min-collateral-ratio stablecoin-id asset))
+  (default-to u150 (contract-call? .collateral-registry-v6 get-effective-min-collateral-ratio stablecoin-id asset))
 )
 
 (define-private (get-liquidation-ratio-for-asset (asset principal))
-  (default-to u120 (contract-call? .collateral-registry-v5 get-liquidation-ratio asset))
+  (default-to u120 (contract-call? .collateral-registry-v6 get-liquidation-ratio asset))
 )
 
 (define-private (get-liquidation-ratio-for-stablecoin-asset (stablecoin-id uint) (asset principal))
-  (default-to u120 (contract-call? .collateral-registry-v5 get-effective-liquidation-ratio stablecoin-id asset))
+  (default-to u120 (contract-call? .collateral-registry-v6 get-effective-liquidation-ratio stablecoin-id asset))
 )
 
 (define-private (calculate-collateral-value (asset principal) (amount uint))
@@ -151,7 +185,7 @@
 )
 
 (define-private (get-linked-token-contract (stablecoin-id uint))
-  (match (contract-call? .stablecoin-factory-v3 get-stablecoin stablecoin-id)
+  (match (contract-call? .stablecoin-factory-v4 get-stablecoin stablecoin-id)
     stablecoin-entry
       (match (get token-contract stablecoin-entry)
         token-contract (ok token-contract)
@@ -204,7 +238,6 @@
       (err ERR_NO_VAULT)
     )
 
-    ;; Use per-stablecoin config for non-zero stablecoin-id, global for u0
     (match (get-asset-config-for-stablecoin stablecoin-id asset)
       config
         (begin
@@ -252,7 +285,6 @@
             (ok new-amount)
           )
         )
-      ;; No config found means asset not whitelisted for this stablecoin
       (err ERR_ASSET_NOT_WHITELISTED)
     )
   )
@@ -332,7 +364,7 @@
                     (asserts! (>= health-factor RATIO-SCALE) (err ERR_UNSAFE_HEALTH_FACTOR))
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
-                    (try! (contract-call? .collateral-registry-v5 increase-stablecoin-debt stablecoin-id asset amount))
+                    (try! (contract-call? .collateral-registry-v6 increase-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -403,7 +435,7 @@
                     (asserts! (>= health-factor RATIO-SCALE) (err ERR_UNSAFE_HEALTH_FACTOR))
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
-                    (try! (contract-call? .collateral-registry-v5 increase-stablecoin-debt stablecoin-id asset amount))
+                    (try! (contract-call? .collateral-registry-v6 increase-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -462,7 +494,7 @@
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
                     (try! (contract-call? .stablecoin-token-v4 burn amount tx-sender))
-                    (try! (contract-call? .collateral-registry-v5 decrease-stablecoin-debt stablecoin-id asset amount))
+                    (try! (contract-call? .collateral-registry-v6 decrease-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -525,7 +557,7 @@
                     (asserts! (or (is-eq new-debt-share u0) (>= new-debt-share debt-floor)) (err ERR_BELOW_DEBT_FLOOR))
 
                     (try! (contract-call? token burn amount tx-sender))
-                    (try! (contract-call? .collateral-registry-v5 decrease-stablecoin-debt stablecoin-id asset amount))
+                    (try! (contract-call? .collateral-registry-v6 decrease-stablecoin-debt stablecoin-id asset amount))
 
                     (map-set vault-collateral
                       {owner: tx-sender, stablecoin-id: stablecoin-id, asset: asset}
@@ -567,7 +599,6 @@
 ;; Public Write Functions
 ;; ============================================
 
-;; Backward-compatible default namespace for legacy integrations.
 (define-public (open-vault)
   (open-vault-internal u0)
 )
@@ -579,7 +610,6 @@
   )
 )
 
-;; Backward-compatible default namespace for legacy integrations.
 (define-public (deposit-collateral (asset principal) (collateral-token <sip-010-trait>) (amount uint))
   (deposit-collateral-internal u0 asset collateral-token amount)
 )
@@ -588,7 +618,6 @@
   (deposit-collateral-internal stablecoin-id asset collateral-token amount)
 )
 
-;; Backward-compatible default namespace for legacy integrations.
 (define-public (withdraw-collateral (asset principal) (collateral-token <sip-010-trait>) (amount uint))
   (withdraw-collateral-internal u0 asset collateral-token amount)
 )
@@ -597,7 +626,6 @@
   (withdraw-collateral-internal stablecoin-id asset collateral-token amount)
 )
 
-;; Backward-compatible default token minting path.
 (define-public (mint-against-asset (asset principal) (amount uint))
   (mint-with-default-token u0 asset amount)
 )
@@ -611,7 +639,6 @@
   (mint-with-token-for-stablecoin stablecoin-id asset token amount)
 )
 
-;; Backward-compatible default token repay path.
 (define-public (repay-against-asset (asset principal) (amount uint))
   (repay-with-default-token u0 asset amount)
 )
@@ -629,7 +656,6 @@
 ;; Read-Only Functions
 ;; ============================================
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-vault (owner principal))
   (map-get? vaults {owner: owner, stablecoin-id: u0})
 )
@@ -638,7 +664,6 @@
   (map-get? vaults {owner: owner, stablecoin-id: stablecoin-id})
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-collateral-position (owner principal) (asset principal))
   (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
 )
@@ -647,7 +672,6 @@
   (map-get? vault-collateral {owner: owner, stablecoin-id: stablecoin-id, asset: asset})
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-position-health-factor (owner principal) (asset principal))
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
     position
@@ -676,7 +700,6 @@
   )
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-position-liquidation-status (owner principal) (asset principal))
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
     position
@@ -727,7 +750,6 @@
   )
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-vault-asset-count (owner principal))
   (read-asset-count owner u0)
 )
@@ -736,7 +758,6 @@
   (read-asset-count owner stablecoin-id)
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-vault-asset-at-index (owner principal) (index uint))
   (map-get? vault-asset-list {owner: owner, stablecoin-id: u0, index: index})
 )
@@ -745,7 +766,6 @@
   (map-get? vault-asset-list {owner: owner, stablecoin-id: stablecoin-id, index: index})
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-max-mintable (owner principal) (asset principal))
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
     position
@@ -782,7 +802,6 @@
   )
 )
 
-;; Backward-compatible default namespace read.
 (define-read-only (get-total-vault-value (owner principal))
   (match (map-get? vaults {owner: owner, stablecoin-id: u0})
     vault (get total-debt vault)
@@ -798,11 +817,9 @@
 )
 
 ;; ============================================
-;; Liquidation Support (called by liquidation engine)
+;; Liquidation Support (called by liquidation engine v7)
 ;; ============================================
 
-;; Seize collateral from a vault and burn stablecoins from the stability pool.
-;; Only callable by the liquidation engine.
 (define-public (liquidate-position
     (owner principal)
     (stablecoin-id uint)
@@ -812,7 +829,7 @@
     (debt-to-offset uint)
     (collateral-to-seize uint))
   (begin
-    (asserts! (is-eq contract-caller .liquidation-engine-v6) (err ERR_NOT_LIQUIDATION_ENGINE))
+    (asserts! (is-eq contract-caller .liquidation-engine-v7) (err ERR_NOT_LIQUIDATION_ENGINE))
     (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
     (try! (assert-token-contract-match stablecoin-id stablecoin-token))
 
@@ -824,7 +841,6 @@
               (asserts! (>= (get amount position) collateral-to-seize) (err ERR_INSUFFICIENT_COLLATERAL))
               (asserts! (>= (get debt-share position) debt-to-offset) (err ERR_INSUFFICIENT_DEBT))
 
-              ;; Reduce vault collateral and debt
               (map-set vault-collateral
                 {owner: owner, stablecoin-id: stablecoin-id, asset: asset}
                 {
@@ -839,12 +855,9 @@
                   created-at: (get created-at vault)
                 }
               )
-              ;; Reduce debt in registry
-              (try! (contract-call? .collateral-registry-v5 decrease-stablecoin-debt stablecoin-id asset debt-to-offset))
-              ;; Transfer seized collateral to stability pool
-              (try! (as-contract (contract-call? collateral-token transfer collateral-to-seize tx-sender .stability-pool-v5)))
-              ;; Burn stablecoins from stability pool's balance
-              (try! (contract-call? stablecoin-token burn debt-to-offset .stability-pool-v5))
+              (try! (contract-call? .collateral-registry-v6 decrease-stablecoin-debt stablecoin-id asset debt-to-offset))
+              (try! (as-contract (contract-call? collateral-token transfer collateral-to-seize tx-sender .stability-pool-v6)))
+              (try! (contract-call? stablecoin-token burn debt-to-offset .stability-pool-v6))
 
               (print {
                 event: "position-liquidated",

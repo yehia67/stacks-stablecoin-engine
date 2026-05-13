@@ -69,19 +69,19 @@ plan:
             path: contracts/bridge-adapter-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: bridge-registry-v3
+            contract-name: bridge-registry-v4
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/bridge-registry-v3.clar
+            path: contracts/bridge-registry-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: stablecoin-factory-v3
+            contract-name: stablecoin-factory-v4
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stablecoin-factory-v3.clar
+            path: contracts/stablecoin-factory-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: collateral-registry-v5
+            contract-name: collateral-registry-v6
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/collateral-registry-v5.clar
+            path: contracts/collateral-registry-v6.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: dia-oracle-adapter
@@ -119,19 +119,19 @@ plan:
             path: contracts/stablecoin-token-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: multi-asset-vault-engine-v6
+            contract-name: multi-asset-vault-engine-v7
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/multi-asset-vault-engine-v6.clar
+            path: contracts/multi-asset-vault-engine-v7.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: stability-pool-v5
+            contract-name: stability-pool-v6
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/stability-pool-v5.clar
+            path: contracts/stability-pool-v6.clar
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: liquidation-engine-v6
+            contract-name: liquidation-engine-v7
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/liquidation-engine-v6.clar
+            path: contracts/liquidation-engine-v7.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: sbtc-token-v4
@@ -139,13 +139,23 @@ plan:
             path: contracts/sbtc-token-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: sse-governance-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sse-governance-v1.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: xreserve-adapter-v5
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/xreserve-adapter-v5.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: sse-timelock-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sse-timelock-v1.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: stx-token-v4
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stx-token-v4.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: xreserve-adapter-v4
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/xreserve-adapter-v4.clar
             clarity-version: 3
       epoch: "3.1"

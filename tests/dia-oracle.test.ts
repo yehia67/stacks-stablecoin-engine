@@ -236,7 +236,7 @@ describe("vault engine DIA oracle routing", () => {
     const sbtcAsset = `${deployer}.sbtc-token-v4`;
 
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "register-asset-oracle",
       [Cl.principal(sbtcAsset), Cl.uint(3)],
       deployer
@@ -249,7 +249,7 @@ describe("vault engine DIA oracle routing", () => {
     const stxAsset = `${deployer}.stx-token-v4`;
 
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "register-asset-oracle",
       [Cl.principal(stxAsset), Cl.uint(4)],
       deployer
@@ -262,7 +262,7 @@ describe("vault engine DIA oracle routing", () => {
     const sbtcAsset = `${deployer}.sbtc-token-v4`;
 
     const result = simnet.callPublicFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "register-asset-oracle",
       [Cl.principal(sbtcAsset), Cl.uint(5)],
       deployer
@@ -281,28 +281,28 @@ describe("vault engine DIA oracle routing", () => {
 
     // Register sBTC with DIA-BTC oracle (ID 3)
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "register-asset-oracle",
       [Cl.principal(sbtcAsset), Cl.uint(3)],
       deployer
     );
 
     // Setup: add global collateral, factory, etc.
-    simnet.callPublicFn("stablecoin-factory-v3", "set-registration-fee", [Cl.uint(0)], deployer);
+    simnet.callPublicFn("stablecoin-factory-v4", "set-registration-fee", [Cl.uint(0)], deployer);
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "register-stablecoin",
       [Cl.stringAscii("DIA Dollar"), Cl.stringAscii("DUSD")],
       wallet1
     );
     simnet.callPublicFn(
-      "stablecoin-factory-v3",
+      "stablecoin-factory-v4",
       "set-token-contract",
       [Cl.uint(0), Cl.principal(tokenPrincipal)],
       wallet1
     );
     simnet.callPublicFn(
-      "collateral-registry-v5",
+      "collateral-registry-v6",
       "add-collateral-type",
       [
         Cl.principal(sbtcAsset),
@@ -313,7 +313,7 @@ describe("vault engine DIA oracle routing", () => {
       deployer
     );
     simnet.callPublicFn(
-      "collateral-registry-v5",
+      "collateral-registry-v6",
       "configure-collateral-for-stablecoin",
       [
         Cl.uint(0), Cl.principal(sbtcAsset),
@@ -325,15 +325,15 @@ describe("vault engine DIA oracle routing", () => {
     simnet.callPublicFn(
       "stablecoin-token-v4",
       "set-vault-engine",
-      [Cl.principal(`${deployer}.multi-asset-vault-engine-v6`)],
+      [Cl.principal(`${deployer}.multi-asset-vault-engine-v7`)],
       deployer
     );
 
     // Faucet sBTC + open vault + deposit
     simnet.callPublicFn("sbtc-token-v4", "faucet-mint", [Cl.uint(10000), Cl.principal(wallet1)], wallet1);
-    simnet.callPublicFn("multi-asset-vault-engine-v6", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
+    simnet.callPublicFn("multi-asset-vault-engine-v7", "open-vault-for-stablecoin", [Cl.uint(0)], wallet1);
     simnet.callPublicFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "deposit-collateral-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(sbtcAsset), Cl.uint(10000)],
       wallet1
@@ -341,7 +341,7 @@ describe("vault engine DIA oracle routing", () => {
 
     // Mint stablecoins — this triggers the vault engine to read the DIA oracle price
     const mintResult = simnet.callPublicFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "mint-against-asset-for-stablecoin",
       [Cl.uint(0), Cl.principal(sbtcAsset), Cl.principal(tokenPrincipal), Cl.uint(2000)],
       wallet1
@@ -350,7 +350,7 @@ describe("vault engine DIA oracle routing", () => {
 
     // Verify health factor is computed using DIA price
     const healthResult = simnet.callReadOnlyFn(
-      "multi-asset-vault-engine-v6",
+      "multi-asset-vault-engine-v7",
       "get-position-health-factor-for-stablecoin",
       [Cl.principal(wallet1), Cl.uint(0), Cl.principal(sbtcAsset)],
       deployer
