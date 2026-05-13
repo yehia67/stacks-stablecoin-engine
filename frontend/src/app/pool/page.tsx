@@ -10,9 +10,9 @@ import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useRegisteredStablecoins, useStabilityPoolState } from "@/hooks/useContractRead";
 import { formatNumber, formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
-import { getExplorerTxUrl, IS_MAINNET, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
+import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
 
-const API_BASE = IS_MAINNET ? "https://api.mainnet.hiro.so" : "https://api.testnet.hiro.so";
+const API_BASE = "/api/stacks";
 
 function formatAssetName(asset: string) {
   const [, contractName] = asset.split(".");
@@ -84,9 +84,7 @@ export default function PoolPage() {
   const pollTx = useCallback(async (txId: string) => {
     for (let attempt = 0; attempt < 120; attempt++) {
       const response = await fetch(`${API_BASE}/extended/v1/tx/${txId}`, {
-        headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_HIRO_API_KEY || "",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
       if (response.ok) {

@@ -1,15 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { CONTRACTS, IS_MAINNET, getContractId, COLLATERAL_DECIMALS, STABLECOIN_DECIMALS } from "@/lib/constants";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS } from "@/lib/constants";
 import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
 
-const API_BASE = IS_MAINNET 
-  ? "https://api.mainnet.hiro.so" 
-  : "https://api.testnet.hiro.so";
-
-// Optional API key from environment
-const API_KEY = process.env.NEXT_PUBLIC_HIRO_API_KEY;
+const API_BASE = "/api/stacks";
+const API_KEY: string | undefined = undefined;
 
 
 interface ReadContractOptions {
@@ -864,21 +860,22 @@ async function readContract(
   args: string[],
   sender: string
 ): Promise<any> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (API_KEY) headers["x-api-key"] = API_KEY;
-
-  const resp = await fetch(
-    `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${contractName}/${functionName}`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ sender, arguments: args }),
-    }
-  );
-  if (!resp.ok) return null;
-  const data = await resp.json();
-  if (!data.okay) return null;
-  return data.result;
+  try {
+    const resp = await fetch(
+      `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${contractName}/${functionName}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender, arguments: args }),
+      }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.okay) return null;
+    return data.result;
+  } catch {
+    return null;
+  }
 }
 
 async function loadVaultForStablecoin(
@@ -974,10 +971,19 @@ async function loadVaultForStablecoin(
       userAddress
     );
 
-    const healthFactor = parseRequiredUint(
-      hfHex,
-      `health factor for owner=${userAddress} stablecoin=${coin.id} asset=${asset}`
-    );
+    let healthFactor: number | null = null;
+    try {
+      healthFactor = parseRequiredUint(
+        hfHex,
+        `health factor for owner=${userAddress} stablecoin=${coin.id} asset=${asset}`
+      );
+    } catch (e) {
+      console.error(
+        `[SSE] Skipping collateral position due to unreadable health factor: owner=${userAddress} stablecoin=${coin.id} asset=${asset} raw=${hfHex}`,
+        e
+      );
+      continue;
+    }
 
     positions.push({
       asset,
@@ -1015,10 +1021,22 @@ export function useUserVaults(userAddress: string | null) {
     setError(null);
 
     try {
-      const loadedVaults = await Promise.all(
+      const settledVaults = await Promise.allSettled(
         stablecoins.map((coin) => loadVaultForStablecoin(userAddress, coin))
       );
-      setVaults(loadedVaults.filter((vault): vault is UserVault => vault !== null));
+
+      const loadedVaults = settledVaults
+        .filter((result): result is PromiseFulfilledResult<UserVault | null> => result.status === "fulfilled")
+        .map((result) => result.value)
+        .filter((vault): vault is UserVault => vault !== null);
+
+      for (const result of settledVaults) {
+        if (result.status === "rejected") {
+          console.error("[SSE] Failed to load one stablecoin vault; continuing with remaining vaults:", result.reason);
+        }
+      }
+
+      setVaults(loadedVaults);
     } catch (err) {
       console.error("[SSE] Error fetching user vaults:", err);
       setError(err as Error);
@@ -1704,19 +1722,29 @@ export interface ProtocolStats {
   tvlPartial: boolean; // true when some oracle prices were unavailable
 }
 
+const PROTOCOL_STATS_CACHE_TTL_MS = 30_000;
+
 export function useProtocolStats() {
   const [stats, setStats] = useState<ProtocolStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const collateralOracleCacheRef = useRef<Map<string, string | null>>(new Map());
+  const statsCacheRef = useRef<{ value: ProtocolStats; cachedAt: number } | null>(null);
 
-  const fetchStats = useCallback(async (signal: AbortSignal) => {
+  const fetchStats = useCallback(async (signal: AbortSignal, force = false) => {
     // Only show loading spinner on initial fetch, not on background refresh
     setError(null);
 
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (API_KEY) headers["x-api-key"] = API_KEY;
+    if (!force && statsCacheRef.current) {
+      const ageMs = Date.now() - statsCacheRef.current.cachedAt;
+      if (ageMs < PROTOCOL_STATS_CACHE_TTL_MS) {
+        setStats(statsCacheRef.current.value);
+        setIsLoading(false);
+        return;
+      }
+    }
 
+    try {
       // Helper: fetch oracle price with caching per asset within this call
       const oraclePriceCache = new Map<string, number | null>();
       const fetchOraclePrice = async (oraclePrincipal: string): Promise<number | null> => {
@@ -1724,15 +1752,12 @@ export function useProtocolStats() {
         const [addr, name] = oraclePrincipal.split(".");
         if (!addr || !name) return null;
         try {
-          const resp = await fetch(
-            `${API_BASE}/v2/contracts/call-read/${addr}/${name}/get-price`,
-            {
-              method: "POST",
-              headers,
-              signal,
-              body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
-            }
-          );
+          const resp = await fetch(`${API_BASE}/v2/contracts/call-read/${addr}/${name}/get-price`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal,
+            body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: [] }),
+          });
           if (!resp.ok) { oraclePriceCache.set(oraclePrincipal, null); return null; }
           const result = await resp.json();
           if (!result.okay || !result.result) { oraclePriceCache.set(oraclePrincipal, null); return null; }
@@ -1759,72 +1784,111 @@ export function useProtocolStats() {
       }
       const stablecoinCount = parseRequiredUint(countHex, "stablecoin-count");
 
-      // 2. Aggregate debt across all stablecoins (parallelized per-stablecoin)
-      // Assumes factory IDs are monotonic starting at 1 (consistent with all other hooks)
-      const debtPerStablecoin = await Promise.all(
-        Array.from({ length: stablecoinCount }, (_, i) => i + 1).map(async (sid) => {
-          const colCountHex = await readContract(
+      const totalDebtUsdPromise = (async () => {
+        // 2. Aggregate debt across all stablecoins (parallelized per-stablecoin)
+        // Assumes factory IDs are monotonic starting at 1 (consistent with all other hooks)
+        const debtPerStablecoin = await Promise.all(
+          Array.from({ length: stablecoinCount }, (_, i) => i + 1).map(async (sid) => {
+            const colCountHex = await readContract(
+              CONTRACTS.COLLATERAL_REGISTRY,
+              "get-stablecoin-collateral-count-ro",
+              [cvToHex(uintCV(sid))],
+              CONTRACTS.DEPLOYER
+            );
+            if (!colCountHex) {
+              console.warn(`[SSE] useProtocolStats: missing collateral count for stablecoin ${sid}, skipping`);
+              return 0;
+            }
+            const colCount = parseRequiredUint(colCountHex, `col-count-${sid}`);
+
+            const assetDebts = await Promise.all(
+              Array.from({ length: colCount }, (_, ci) => ci).map(async (ci) => {
+                const indexHex = await readContract(
+                  CONTRACTS.COLLATERAL_REGISTRY,
+                  "get-stablecoin-collateral-at-index",
+                  [cvToHex(uintCV(sid)), cvToHex(uintCV(ci))],
+                  CONTRACTS.DEPLOYER
+                );
+                const decoded = indexHex ? decodeClarityTuple(indexHex) : null;
+                const asset = decoded?.asset;
+                if (typeof asset !== "string") return 0;
+
+                const debtHex = await readContract(
+                  CONTRACTS.COLLATERAL_REGISTRY,
+                  "get-stablecoin-collateral-debt-ro",
+                  [cvToHex(uintCV(sid)), cvToHex(principalCV(asset))],
+                  CONTRACTS.DEPLOYER
+                );
+                if (!debtHex) {
+                  console.warn(`[SSE] useProtocolStats: missing debt for stablecoin=${sid} asset=${asset}`);
+                  return 0;
+                }
+                return parseRequiredUint(debtHex, `debt-${sid}-${asset}`);
+              })
+            );
+            return assetDebts.reduce((sum, d) => sum + d, 0);
+          })
+        );
+        const totalDebtRaw = debtPerStablecoin.reduce((sum, d) => sum + d, 0);
+        return totalDebtRaw / Math.pow(10, STABLECOIN_DECIMALS);
+      })();
+
+      const tvlPromise = (async (): Promise<{ tvlUsd: number | null; tvlPartial: boolean }> => {
+        // 3. TVL: read assets from collateral registry, then
+        //    get-balance(vault-engine) × oracle price for each asset.
+        try {
+          const vaultEnginePrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE);
+          const collateralCountHex = await readContract(
             CONTRACTS.COLLATERAL_REGISTRY,
-            "get-stablecoin-collateral-count-ro",
-            [cvToHex(uintCV(sid))],
+            "get-collateral-count",
+            [],
             CONTRACTS.DEPLOYER
           );
-          if (!colCountHex) {
-            console.warn(`[SSE] useProtocolStats: missing collateral count for stablecoin ${sid}, skipping`);
-            return 0;
+          if (!collateralCountHex) {
+            return { tvlUsd: 0, tvlPartial: true };
           }
-          const colCount = parseRequiredUint(colCountHex, `col-count-${sid}`);
 
-          // Parallelize per-asset within each stablecoin
-          const assetDebts = await Promise.all(
-            Array.from({ length: colCount }, (_, ci) => ci).map(async (ci) => {
-              const indexHex = await readContract(
+          const collateralCount = parseRequiredUint(collateralCountHex, "protocol-tvl-collateral-count");
+          if (collateralCount === 0) {
+            return { tvlUsd: 0, tvlPartial: false };
+          }
+
+          const collateralAssets = await Promise.all(
+            Array.from({ length: collateralCount }, (_, i) => i).map(async (index) => {
+              const atIndexHex = await readContract(
                 CONTRACTS.COLLATERAL_REGISTRY,
-                "get-stablecoin-collateral-at-index",
-                [cvToHex(uintCV(sid)), cvToHex(uintCV(ci))],
+                "get-collateral-at-index",
+                [cvToHex(uintCV(index))],
                 CONTRACTS.DEPLOYER
               );
-              const decoded = indexHex ? decodeClarityTuple(indexHex) : null;
-              const asset = decoded?.asset;
-              if (typeof asset !== "string") return 0;
-
-              const debtHex = await readContract(
-                CONTRACTS.COLLATERAL_REGISTRY,
-                "get-stablecoin-collateral-debt-ro",
-                [cvToHex(uintCV(sid)), cvToHex(principalCV(asset))],
-                CONTRACTS.DEPLOYER
-              );
-              if (!debtHex) {
-                console.warn(`[SSE] useProtocolStats: missing debt for stablecoin=${sid} asset=${asset}`);
-                return 0;
-              }
-              return parseRequiredUint(debtHex, `debt-${sid}-${asset}`);
+              const decoded = atIndexHex ? decodeClarityTuple(atIndexHex) : null;
+              return typeof decoded?.asset === "string" ? decoded.asset : null;
             })
           );
-          return assetDebts.reduce((sum, d) => sum + d, 0);
-        })
-      );
-      const totalDebtRaw = debtPerStablecoin.reduce((sum, d) => sum + d, 0);
-      const totalDebtUsd = totalDebtRaw / Math.pow(10, STABLECOIN_DECIMALS);
 
-      // 3. TVL: direct get-balance reads on each known collateral token × oracle prices
-      //    Uses COLLATERAL_DECIMALS keys as the set of known collateral tokens.
-      //    Oracle principal is read from get-collateral-config per asset (not hardcoded).
-      let tvlUsd: number | null = null;
-      let tvlPartial = false;
-      try {
-        const vaultEnginePrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE);
-        const collateralTokens = Object.entries(COLLATERAL_DECIMALS);
+          const uniqueAssets = Array.from(new Set(collateralAssets.filter((a): a is string => !!a)));
+          if (uniqueAssets.length === 0) {
+            return { tvlUsd: 0, tvlPartial: true };
+          }
 
-        if (collateralTokens.length === 0) {
-          tvlUsd = 0;
-        } else {
+          const decimalsCache = new Map<string, number>();
+          const getAssetDecimals = async (assetPrincipal: string): Promise<number> => {
+            if (decimalsCache.has(assetPrincipal)) return decimalsCache.get(assetPrincipal)!;
+            const contractName = assetPrincipal.includes(".") ? assetPrincipal.split(".")[1] : assetPrincipal;
+            const decimalsHex = await readContract(contractName, "get-decimals", [], CONTRACTS.DEPLOYER);
+            const decimals = decimalsHex
+              ? parseOkUint(decimalsHex) ?? getCollateralDecimals(assetPrincipal)
+              : getCollateralDecimals(assetPrincipal);
+            decimalsCache.set(assetPrincipal, decimals);
+            return decimals;
+          };
+
           let total = 0;
           let allPriced = true;
 
           const results = await Promise.all(
-            collateralTokens.map(async ([contractName, decimals]) => {
-              // Read balance of vault engine in this token via get-balance
+            uniqueAssets.map(async (assetPrincipal) => {
+              const contractName = assetPrincipal.includes(".") ? assetPrincipal.split(".")[1] : assetPrincipal;
               const balHex = await readContract(
                 contractName,
                 "get-balance",
@@ -1835,48 +1899,52 @@ export function useProtocolStats() {
               const balRaw = parseOkUint(balHex);
               if (balRaw === null || balRaw === 0) return { priced: true, value: 0 };
 
+              const decimals = await getAssetDecimals(assetPrincipal);
               const balHuman = balRaw / Math.pow(10, decimals);
 
-              // Look up oracle from on-chain collateral config
-              const assetPrincipal = getContractId(contractName);
-              const configHex = await readContract(
-                CONTRACTS.COLLATERAL_REGISTRY,
-                "get-collateral-config",
-                [cvToHex(principalCV(assetPrincipal))],
-                CONTRACTS.DEPLOYER
-              );
-              const config = configHex ? decodeClarityTuple(configHex) : null;
-              const oraclePrincipal = config?.oracle;
+              let oraclePrincipal = collateralOracleCacheRef.current.get(assetPrincipal) ?? null;
+
+              if (!oraclePrincipal) {
+                const configHex = await readContract(
+                  CONTRACTS.COLLATERAL_REGISTRY,
+                  "get-collateral-config",
+                  [cvToHex(principalCV(assetPrincipal))],
+                  CONTRACTS.DEPLOYER
+                );
+                const config = configHex ? decodeClarityTuple(configHex) : null;
+                oraclePrincipal = typeof config?.oracle === "string" ? config.oracle : null;
+                collateralOracleCacheRef.current.set(assetPrincipal, oraclePrincipal);
+              }
+
               if (typeof oraclePrincipal !== "string") {
                 console.warn(`[SSE] useProtocolStats: no oracle found for collateral ${contractName}`);
                 return { priced: false, value: 0 };
               }
 
               const price = await fetchOraclePrice(oraclePrincipal);
-              if (price !== null) {
-                return { priced: true, value: balHuman * price };
-              }
+              if (price !== null) return { priced: true, value: balHuman * price };
               return { priced: false, value: 0 };
             })
           );
 
           for (const r of results) {
-            if (r.priced) {
-              total += r.value;
-            } else {
-              allPriced = false;
-            }
+            if (r.priced) total += r.value;
+            else allPriced = false;
           }
 
-          tvlPartial = !allPriced;
-          tvlUsd = total;
+          return { tvlUsd: total, tvlPartial: !allPriced };
+        } catch (e) {
+          console.error("[SSE] useProtocolStats TVL fetch error:", e);
+          return { tvlUsd: null, tvlPartial: false };
         }
-      } catch (e) {
-        console.error("[SSE] useProtocolStats TVL fetch error:", e);
-      }
+      })();
+
+      const [totalDebtUsd, { tvlUsd, tvlPartial }] = await Promise.all([totalDebtUsdPromise, tvlPromise]);
 
       if (!signal.aborted) {
-        setStats({ stablecoinCount, totalDebtUsd, tvlUsd, tvlPartial });
+        const nextStats: ProtocolStats = { stablecoinCount, totalDebtUsd, tvlUsd, tvlPartial };
+        statsCacheRef.current = { value: nextStats, cachedAt: Date.now() };
+        setStats(nextStats);
       }
     } catch (err) {
       if (!signal.aborted) {
@@ -1894,7 +1962,7 @@ export function useProtocolStats() {
     const controller = new AbortController();
     fetchStats(controller.signal);
     const interval = setInterval(() => {
-      fetchStats(controller.signal);
+      fetchStats(controller.signal, true);
     }, 60000);
     return () => {
       controller.abort();
@@ -1902,5 +1970,5 @@ export function useProtocolStats() {
     };
   }, [fetchStats]);
 
-  return { stats, isLoading, error, refetch: () => fetchStats(new AbortController().signal) };
+  return { stats, isLoading, error, refetch: () => fetchStats(new AbortController().signal, true) };
 }

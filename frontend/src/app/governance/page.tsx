@@ -94,6 +94,17 @@ const GOVERNED_CONTRACTS: { label: string; key: keyof typeof CONTRACTS }[] = [
   { label: "Multi-Asset Vault Engine", key: "MULTI_ASSET_VAULT_ENGINE" },
 ];
 
+const MULTISIG_DASHBOARDS: { network: "Testnet" | "Mainnet"; url: string }[] = [
+  {
+    network: "Testnet",
+    url: "https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard",
+  },
+  {
+    network: "Mainnet",
+    url: "https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard",
+  },
+];
+
 function blocksToHuman(blocks: number | null): string {
   if (blocks === null) return "—";
   // Stacks block time: ~10 minutes
@@ -207,6 +218,35 @@ export default function GovernancePage() {
         </Card>
       </div>
 
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Multisignature dashboard</CardTitle>
+          <CardDescription>
+            Direct links to the Asigna vault dashboards used for SSE governance operations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {MULTISIG_DASHBOARDS.map((dashboard) => (
+              <div
+                key={dashboard.network}
+                className="flex items-center justify-between rounded-md border p-3"
+              >
+                <span className="font-medium">{dashboard.network}</span>
+                <a
+                  href={dashboard.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  Open dashboard <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Status banner */}
       <Card className="mt-6">
         <CardHeader>
@@ -241,7 +281,7 @@ export default function GovernancePage() {
             {state.timelock &&
               (timelockMatchesExpected ? (
                 <Badge variant="outline" className="gap-1">
-                  <CheckCircle2 className="h-3 w-3 text-green-600" /> matches frontend
+                  <CheckCircle2 className="h-3 w-3 text-green-600" /> UI matches timelock
                 </Badge>
               ) : (
                 <Badge variant="destructive" className="gap-1">

@@ -2,12 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { cvToValue, hexToCV } from "@stacks/transactions";
-import { CONTRACTS, IS_MAINNET } from "@/lib/constants";
+import { CONTRACTS } from "@/lib/constants";
 
-const API_BASE = IS_MAINNET
-  ? "https://api.mainnet.hiro.so"
-  : "https://api.testnet.hiro.so";
-const API_KEY = process.env.NEXT_PUBLIC_HIRO_API_KEY;
+const API_BASE = "/api/stacks";
 
 export interface GovernanceState {
   admin: string | null;
@@ -22,14 +19,11 @@ async function read(
   fnName: string,
   args: string[] = []
 ): Promise<string | null> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (API_KEY) headers["x-api-key"] = API_KEY;
-
   const resp = await fetch(
     `${API_BASE}/v2/contracts/call-read/${CONTRACTS.DEPLOYER}/${contractName}/${fnName}`,
     {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: args }),
     }
   );
