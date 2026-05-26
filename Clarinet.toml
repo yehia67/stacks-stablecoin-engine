@@ -7,9 +7,11 @@ cache_dir = "./.cache"
 clarity_version = 3
 epoch = "3.1"
 
-[contracts.sip-010-trait]
-path = "contracts/sip-010-trait.clar"
-epoch = "3.1"
+# Canonical SIP-010 fungible-token trait. We reference the mainnet-deployed
+# trait by full principal across all consumer contracts. Clarinet downloads
+# the source for simnet tests via this requirement.
+[[project.requirements]]
+contract_id = "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard"
 
 [contracts.stablecoin-engine-token-trait]
 path = "contracts/stablecoin-engine-token-trait.clar"
@@ -60,6 +62,13 @@ path = "contracts/price-oracle-dia-stx-v2.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait", "dia-oracle-adapter"]
 
+# Constant $1 oracle for VoltFi vGold (vGLD). Implements oracle-trait,
+# returns u100000000 (= $1.00 at 8-decimal PRICE-SCALE) unconditionally.
+[contracts.price-oracle-vgld-v1]
+path = "contracts/price-oracle-vgld-v1.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait"]
+
 [contracts.sbtc-token-v4]
 path = "contracts/sbtc-token-v4.clar"
 epoch = "3.1"
@@ -67,6 +76,13 @@ depends_on = ["sip-010-trait"]
 
 [contracts.stx-token-v4]
 path = "contracts/stx-token-v4.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait"]
+
+# Testnet/simnet stand-in for VoltFi vGLD (real vGLD principal is wired via
+# sse.config.json on mainnet).
+[contracts.vgld-token-v4]
+path = "contracts/vgld-token-v4.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait"]
 
@@ -94,6 +110,29 @@ depends_on = ["sip-010-trait", "stablecoin-token-v4", "price-oracle-dia-btc-v2",
 path = "contracts/liquidation-engine-v7.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v7", "stability-pool-v6"]
+
+# ── v8 engine + liquidation (trait-based oracle dispatch) ─────────────────────
+# v8 reads the oracle principal from collateral-registry-v6 (which already
+# stored it but v7 ignored) and accepts the oracle as a trait reference at
+# every pricing call site. After v8 ships, adding any new collateral with a
+# new price source requires zero engine changes -- only a tiny oracle wrapper
+# (or none if reusing existing) plus a timelock-governed add-collateral-type
+# call. See docs/plans/add-vgld-collateral.md for full rationale.
+
+[contracts.stability-pool-v7]
+path = "contracts/stability-pool-v7.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "stablecoin-factory-v4", "stablecoin-token-v4", "liquidation-engine-v8"]
+
+[contracts.multi-asset-vault-engine-v8]
+path = "contracts/multi-asset-vault-engine-v8.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "oracle-trait", "stablecoin-token-v4", "collateral-registry-v6", "stablecoin-factory-v4", "stablecoin-engine-token-trait", "stability-pool-v7", "liquidation-engine-v8"]
+
+[contracts.liquidation-engine-v8]
+path = "contracts/liquidation-engine-v8.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait", "oracle-trait", "stablecoin-engine-token-trait", "multi-asset-vault-engine-v8", "stability-pool-v7"]
 
 [contracts.xreserve-adapter-v5]
 path = "contracts/xreserve-adapter-v5.clar"

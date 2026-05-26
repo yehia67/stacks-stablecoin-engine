@@ -1,11 +1,35 @@
-;; multi-asset-vault-engine-v7.clar
-;; Same logic as v6. Changes:
-;;  - register-asset-oracle is now governance-gated.
-;;  - Cross-references factory v4, collateral-registry v6, stability-pool v6,
-;;    liquidation-engine v7.
+;; multi-asset-vault-engine-v8.clar
+;;
+;; Final engine refactor: trait-based oracle dispatch. The engine now reads the
+;; oracle principal from collateral-registry-v6 (which already stored it in v6
+;; but was ignored by v7) and accepts the oracle as a trait reference at every
+;; pricing call site. After this one-time migration, adding any new collateral
+;; with any new price source is deployment-free at the engine level -- only a
+;; small oracle wrapper (or none, if reusing an existing feed) plus a single
+;; governance call to collateral-registry-v6::add-collateral-type is required.
+;;
+;; Changes vs v7:
+;;   - REMOVED: hardcoded if/else in get-oracle-price-by-id; removed the
+;;     asset-oracle-id map and register-asset-oracle function entirely. The
+;;     oracle for each asset lives exclusively in collateral-registry-v6 now.
+;;   - ADDED: every public/read-only function that prices collateral now takes
+;;     an (oracle <oracle-trait>) parameter. The engine validates that
+;;     (contract-of oracle) matches the principal registered in the registry
+;;     for the given asset. Mismatch => price returned as u0, which causes
+;;     mint/withdraw safety checks to refuse the operation.
+;;   - REMOVED: governance data-var, bootstrap-set-governance, lock-bootstrap
+;;     gating around register-asset-oracle (there is no register-asset-oracle
+;;     anymore; all admin surface for collateral/oracle config lives in the
+;;     registry and remains timelock-governed).
+;;   - liquidate-position now checks contract-caller against
+;;     .liquidation-engine-v8.
+;;
+;; Everything else (vault state shape, deposit/withdraw/mint/repay flows,
+;; health-factor math, token transfers) is byte-for-byte identical to v7.
 
 (use-trait token-trait .stablecoin-engine-token-trait.stablecoin-engine-token-trait)
 (use-trait sip-010-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
+(use-trait oracle-trait .oracle-trait.oracle-trait)
 
 ;; ============================================
 ;; Error Constants
@@ -24,10 +48,10 @@
 (define-constant ERR_TOKEN_NOT_LINKED u211)
 (define-constant ERR_TOKEN_MISMATCH u212)
 (define-constant ERR_ASSET_NOT_WHITELISTED u213)
-(define-constant ERR_UNKNOWN_ORACLE u214)
+(define-constant ERR_ORACLE_MISMATCH u214)
 (define-constant ERR_ASSET_MISMATCH u215)
 (define-constant ERR_NOT_LIQUIDATION_ENGINE u216)
-(define-constant ERR_BOOTSTRAP_LOCKED u217)
+(define-constant ERR_NO_ORACLE u218)
 
 ;; ============================================
 ;; Constants
@@ -36,43 +60,6 @@
 (define-constant PRICE-SCALE u100000000)
 (define-constant RATIO-SCALE u100)
 (define-constant ZERO-DEBT-HEALTH-FACTOR u1000000)
-
-(define-constant ORACLE-DIA-BTC u3)
-(define-constant ORACLE-DIA-STX u4)
-
-;; ============================================
-;; Governance (gates register-asset-oracle)
-;; ============================================
-
-(define-data-var governance principal CONTRACT-OWNER)
-(define-data-var bootstrap-locked bool false)
-
-(define-read-only (get-governance) (var-get governance))
-(define-read-only (is-bootstrap-locked) (var-get bootstrap-locked))
-
-(define-public (bootstrap-set-governance (new-gov principal))
-  (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
-    (asserts! (not (var-get bootstrap-locked)) (err ERR_BOOTSTRAP_LOCKED))
-    (var-set governance new-gov)
-    (ok true)
-  )
-)
-
-(define-public (lock-bootstrap)
-  (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
-    (var-set bootstrap-locked true)
-    (ok true)
-  )
-)
-
-(define-private (is-governance-caller)
-  (or
-    (is-eq contract-caller (var-get governance))
-    (and (not (var-get bootstrap-locked)) (is-eq tx-sender CONTRACT-OWNER))
-  )
-)
 
 ;; ============================================
 ;; Data Maps
@@ -105,21 +92,6 @@
 )
 
 ;; ============================================
-;; Per-Asset Oracle Registry (governance-gated)
-;; ============================================
-
-(define-map asset-oracle-id {asset: principal} {oracle-id: uint})
-
-(define-public (register-asset-oracle (asset principal) (oracle-id uint))
-  (begin
-    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
-    (asserts! (or (is-eq oracle-id ORACLE-DIA-BTC) (is-eq oracle-id ORACLE-DIA-STX)) (err ERR_UNKNOWN_ORACLE))
-    (map-set asset-oracle-id {asset: asset} {oracle-id: oracle-id})
-    (ok true)
-  )
-)
-
-;; ============================================
 ;; Private Helper Functions
 ;; ============================================
 
@@ -130,19 +102,21 @@
   )
 )
 
-(define-private (get-oracle-price-by-id (oracle-id uint))
-  (if (is-eq oracle-id ORACLE-DIA-BTC)
-    (unwrap-panic (contract-call? .price-oracle-dia-btc-v2 get-price))
-    (if (is-eq oracle-id ORACLE-DIA-STX)
-      (unwrap-panic (contract-call? .price-oracle-dia-stx-v2 get-price))
-      u0
-    )
-  )
-)
-
-(define-private (get-asset-price (asset principal))
-  (match (map-get? asset-oracle-id {asset: asset})
-    entry (get-oracle-price-by-id (get oracle-id entry))
+;; Validates the caller-supplied oracle trait against the principal stored
+;; in collateral-registry-v6 for this asset, then returns the live price.
+;; Returns u0 on any failure -- mismatched oracle, missing registry entry,
+;; or oracle call error -- which causes downstream health checks to refuse
+;; the operation.
+(define-private (price-asset-via (asset principal) (oracle <oracle-trait>))
+  (match (contract-call? .collateral-registry-v6 get-oracle asset)
+    registered
+      (if (is-eq (contract-of oracle) registered)
+        (match (contract-call? oracle get-price)
+          price price
+          err-code u0
+        )
+        u0
+      )
     u0
   )
 )
@@ -171,10 +145,12 @@
   (default-to u120 (contract-call? .collateral-registry-v6 get-effective-liquidation-ratio stablecoin-id asset))
 )
 
-(define-private (calculate-collateral-value (asset principal) (amount uint))
-  (let ((price (get-asset-price asset)))
-    (/ (* amount price) PRICE-SCALE)
-  )
+(define-private (compute-collateral-value (price uint) (amount uint))
+  (/ (* amount price) PRICE-SCALE)
+)
+
+(define-private (calculate-collateral-value-via (asset principal) (oracle <oracle-trait>) (amount uint))
+  (compute-collateral-value (price-asset-via asset oracle) amount)
 )
 
 (define-private (calculate-position-health-factor (collateral-value uint) (debt uint) (min-ratio uint))
@@ -290,7 +266,13 @@
   )
 )
 
-(define-private (withdraw-collateral-internal (stablecoin-id uint) (asset principal) (collateral-token <sip-010-trait>) (amount uint))
+(define-private (withdraw-collateral-internal
+    (stablecoin-id uint)
+    (asset principal)
+    (collateral-token <sip-010-trait>)
+    (oracle <oracle-trait>)
+    (amount uint)
+  )
   (begin
     (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
     (match (map-get? vaults {owner: tx-sender, stablecoin-id: stablecoin-id})
@@ -304,7 +286,7 @@
                   (new-amount (- (get amount position) amount))
                   (debt-share (get debt-share position))
                   (min-ratio (get-min-ratio-for-stablecoin-asset stablecoin-id asset))
-                  (new-collateral-value (calculate-collateral-value asset new-amount))
+                  (new-collateral-value (calculate-collateral-value-via asset oracle new-amount))
                   (user tx-sender)
                 )
                 (if (> debt-share u0)
@@ -341,7 +323,12 @@
   )
 )
 
-(define-private (mint-with-default-token (stablecoin-id uint) (asset principal) (amount uint))
+(define-private (mint-with-default-token
+    (stablecoin-id uint)
+    (asset principal)
+    (oracle <oracle-trait>)
+    (amount uint)
+  )
   (begin
     (match (map-get? vaults {owner: tx-sender, stablecoin-id: stablecoin-id})
       vault
@@ -356,7 +343,7 @@
                       (collateral-amount (get amount position))
                       (current-debt-share (get debt-share position))
                       (new-debt-share (+ current-debt-share amount))
-                      (collateral-value (calculate-collateral-value asset collateral-amount))
+                      (collateral-value (calculate-collateral-value-via asset oracle collateral-amount))
                       (min-ratio (get min-collateral-ratio config))
                       (debt-floor (get debt-floor config))
                       (health-factor (calculate-position-health-factor collateral-value new-debt-share min-ratio))
@@ -409,6 +396,7 @@
     (stablecoin-id uint)
     (asset principal)
     (token <token-trait>)
+    (oracle <oracle-trait>)
     (amount uint)
   )
   (begin
@@ -427,7 +415,7 @@
                       (collateral-amount (get amount position))
                       (current-debt-share (get debt-share position))
                       (new-debt-share (+ current-debt-share amount))
-                      (collateral-value (calculate-collateral-value asset collateral-amount))
+                      (collateral-value (calculate-collateral-value-via asset oracle collateral-amount))
                       (min-ratio (get min-collateral-ratio config))
                       (debt-floor (get debt-floor config))
                       (health-factor (calculate-position-health-factor collateral-value new-debt-share min-ratio))
@@ -618,25 +606,41 @@
   (deposit-collateral-internal stablecoin-id asset collateral-token amount)
 )
 
-(define-public (withdraw-collateral (asset principal) (collateral-token <sip-010-trait>) (amount uint))
-  (withdraw-collateral-internal u0 asset collateral-token amount)
+(define-public (withdraw-collateral
+    (asset principal)
+    (collateral-token <sip-010-trait>)
+    (oracle <oracle-trait>)
+    (amount uint)
+  )
+  (withdraw-collateral-internal u0 asset collateral-token oracle amount)
 )
 
-(define-public (withdraw-collateral-for-stablecoin (stablecoin-id uint) (asset principal) (collateral-token <sip-010-trait>) (amount uint))
-  (withdraw-collateral-internal stablecoin-id asset collateral-token amount)
+(define-public (withdraw-collateral-for-stablecoin
+    (stablecoin-id uint)
+    (asset principal)
+    (collateral-token <sip-010-trait>)
+    (oracle <oracle-trait>)
+    (amount uint)
+  )
+  (withdraw-collateral-internal stablecoin-id asset collateral-token oracle amount)
 )
 
-(define-public (mint-against-asset (asset principal) (amount uint))
-  (mint-with-default-token u0 asset amount)
+(define-public (mint-against-asset
+    (asset principal)
+    (oracle <oracle-trait>)
+    (amount uint)
+  )
+  (mint-with-default-token u0 asset oracle amount)
 )
 
 (define-public (mint-against-asset-for-stablecoin
     (stablecoin-id uint)
     (asset principal)
     (token <token-trait>)
+    (oracle <oracle-trait>)
     (amount uint)
   )
-  (mint-with-token-for-stablecoin stablecoin-id asset token amount)
+  (mint-with-token-for-stablecoin stablecoin-id asset token oracle amount)
 )
 
 (define-public (repay-against-asset (asset principal) (amount uint))
@@ -672,11 +676,20 @@
   (map-get? vault-collateral {owner: owner, stablecoin-id: stablecoin-id, asset: asset})
 )
 
-(define-read-only (get-position-health-factor (owner principal) (asset principal))
+;; Read-only price-aware functions take (price uint) directly because Clarity
+;; forbids calling a trait function (potentially writing) from a read-only.
+;; Off-chain consumers fetch the live price by calling the oracle's read-only
+;; get-price first, then pass the uint here.
+
+(define-read-only (get-position-health-factor
+    (owner principal)
+    (asset principal)
+    (price uint)
+  )
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
     position
       (let (
-          (collateral-value (calculate-collateral-value asset (get amount position)))
+          (collateral-value (compute-collateral-value price (get amount position)))
           (debt-share (get debt-share position))
           (min-ratio (get-min-ratio-for-asset asset))
         )
@@ -686,11 +699,16 @@
   )
 )
 
-(define-read-only (get-position-health-factor-for-stablecoin (owner principal) (stablecoin-id uint) (asset principal))
+(define-read-only (get-position-health-factor-for-stablecoin
+    (owner principal)
+    (stablecoin-id uint)
+    (asset principal)
+    (price uint)
+  )
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: stablecoin-id, asset: asset})
     position
       (let (
-          (collateral-value (calculate-collateral-value asset (get amount position)))
+          (collateral-value (compute-collateral-value price (get amount position)))
           (debt-share (get debt-share position))
           (min-ratio (get-min-ratio-for-stablecoin-asset stablecoin-id asset))
         )
@@ -700,11 +718,15 @@
   )
 )
 
-(define-read-only (get-position-liquidation-status (owner principal) (asset principal))
+(define-read-only (get-position-liquidation-status
+    (owner principal)
+    (asset principal)
+    (price uint)
+  )
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
     position
       (let (
-          (collateral-value (calculate-collateral-value asset (get amount position)))
+          (collateral-value (compute-collateral-value price (get amount position)))
           (debt-share (get debt-share position))
           (liq-ratio (get-liquidation-ratio-for-asset asset))
           (health-factor (calculate-position-health-factor collateral-value debt-share liq-ratio))
@@ -725,11 +747,16 @@
   )
 )
 
-(define-read-only (get-position-liquidation-status-for-stablecoin (owner principal) (stablecoin-id uint) (asset principal))
+(define-read-only (get-position-liquidation-status-for-stablecoin
+    (owner principal)
+    (stablecoin-id uint)
+    (asset principal)
+    (price uint)
+  )
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: stablecoin-id, asset: asset})
     position
       (let (
-          (collateral-value (calculate-collateral-value asset (get amount position)))
+          (collateral-value (compute-collateral-value price (get amount position)))
           (debt-share (get debt-share position))
           (liq-ratio (get-liquidation-ratio-for-stablecoin-asset stablecoin-id asset))
           (health-factor (calculate-position-health-factor collateral-value debt-share liq-ratio))
@@ -766,11 +793,15 @@
   (map-get? vault-asset-list {owner: owner, stablecoin-id: stablecoin-id, index: index})
 )
 
-(define-read-only (get-max-mintable (owner principal) (asset principal))
+(define-read-only (get-max-mintable
+    (owner principal)
+    (asset principal)
+    (price uint)
+  )
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: u0, asset: asset})
     position
       (let (
-          (collateral-value (calculate-collateral-value asset (get amount position)))
+          (collateral-value (compute-collateral-value price (get amount position)))
           (current-debt (get debt-share position))
           (min-ratio (get-min-ratio-for-asset asset))
           (max-debt (/ (* collateral-value RATIO-SCALE) min-ratio))
@@ -784,11 +815,16 @@
   )
 )
 
-(define-read-only (get-max-mintable-for-stablecoin (owner principal) (stablecoin-id uint) (asset principal))
+(define-read-only (get-max-mintable-for-stablecoin
+    (owner principal)
+    (stablecoin-id uint)
+    (asset principal)
+    (price uint)
+  )
   (match (map-get? vault-collateral {owner: owner, stablecoin-id: stablecoin-id, asset: asset})
     position
       (let (
-          (collateral-value (calculate-collateral-value asset (get amount position)))
+          (collateral-value (compute-collateral-value price (get amount position)))
           (current-debt (get debt-share position))
           (min-ratio (get-min-ratio-for-stablecoin-asset stablecoin-id asset))
           (max-debt (/ (* collateral-value RATIO-SCALE) min-ratio))
@@ -817,7 +853,7 @@
 )
 
 ;; ============================================
-;; Liquidation Support (called by liquidation engine v7)
+;; Liquidation Support (called by liquidation-engine-v8)
 ;; ============================================
 
 (define-public (liquidate-position
@@ -829,7 +865,7 @@
     (debt-to-offset uint)
     (collateral-to-seize uint))
   (begin
-    (asserts! (is-eq contract-caller .liquidation-engine-v7) (err ERR_NOT_LIQUIDATION_ENGINE))
+    (asserts! (is-eq contract-caller .liquidation-engine-v8) (err ERR_NOT_LIQUIDATION_ENGINE))
     (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
     (try! (assert-token-contract-match stablecoin-id stablecoin-token))
 
@@ -856,8 +892,8 @@
                 }
               )
               (try! (contract-call? .collateral-registry-v6 decrease-stablecoin-debt stablecoin-id asset debt-to-offset))
-              (try! (as-contract (contract-call? collateral-token transfer collateral-to-seize tx-sender .stability-pool-v6 none)))
-              (try! (contract-call? stablecoin-token burn debt-to-offset .stability-pool-v6))
+              (try! (as-contract (contract-call? collateral-token transfer collateral-to-seize tx-sender .stability-pool-v7 none)))
+              (try! (contract-call? stablecoin-token burn debt-to-offset .stability-pool-v7))
 
               (print {
                 event: "position-liquidated",

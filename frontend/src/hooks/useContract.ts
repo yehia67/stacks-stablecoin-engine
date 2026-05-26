@@ -10,7 +10,7 @@ import {
   standardPrincipalCV,
   contractPrincipalCV,
 } from "@stacks/transactions";
-import { CONTRACTS, APP_CONFIG, FT_ASSET_NAMES, getContractId } from "@/lib/constants";
+import { CONTRACTS, APP_CONFIG, FT_ASSET_NAMES, getContractId, VAULT_ENGINE_IS_V8 } from "@/lib/constants";
 import { networkName, getUserAddress } from "@/lib/stacks";
 import { generateTokenContract, deriveTokenContractName } from "@/lib/tokenTemplate";
 
@@ -153,9 +153,24 @@ export function useContract() {
       collateralAsset: string,
       tokenContract: string,
       amount: number,
+      // v8 requires the oracle trait; v7 ignores it. Callers should always
+      // pass the registry-stored oracle principal for `collateralAsset` --
+      // letting it default to null only works on v7.
+      oracleContract: string | null,
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      if (VAULT_ENGINE_IS_V8 && !oracleContract) {
+        const err = new Error(
+          `[SSE] mint-against-asset-for-stablecoin requires an oracleContract on v8 (asset=${collateralAsset}). ` +
+            "Resolve it via getOraclePrincipalForAsset() before calling."
+        );
+        onError?.(err);
+        return Promise.reject(err);
+      }
+      const v8ExtraArgs = VAULT_ENGINE_IS_V8 && oracleContract
+        ? [parseContractPrincipal(oracleContract)]
+        : [];
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
         functionName: "mint-against-asset-for-stablecoin",
@@ -163,6 +178,7 @@ export function useContract() {
           uintCV(stablecoinId),
           principalCV(collateralAsset),
           parseContractPrincipal(tokenContract),
+          ...v8ExtraArgs,
           uintCV(amount),
         ],
         postConditions: [],
@@ -213,15 +229,29 @@ export function useContract() {
       stablecoinId: number,
       collateralAsset: string,
       amount: number,
+      // v8 only: oracle trait required at the withdraw boundary so the engine
+      // can re-check health-factor with a live price.
+      oracleContract: string | null,
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
+      if (VAULT_ENGINE_IS_V8 && !oracleContract) {
+        const err = new Error(
+          `[SSE] withdraw-collateral-for-stablecoin requires an oracleContract on v8 (asset=${collateralAsset}).`
+        );
+        onError?.(err);
+        return Promise.reject(err);
+      }
       const ftName = getFtAssetName(collateralAsset);
       const vaultPrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE) as `${string}.${string}`;
       const postConditions =
         ftName
           ? [Pc.principal(vaultPrincipal).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
           : [];
+
+      const v8ExtraArgs = VAULT_ENGINE_IS_V8 && oracleContract
+        ? [parseContractPrincipal(oracleContract)]
+        : [];
 
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
@@ -230,6 +260,7 @@ export function useContract() {
           uintCV(stablecoinId),
           parseContractPrincipal(collateralAsset),
           parseContractPrincipal(collateralAsset),
+          ...v8ExtraArgs,
           uintCV(amount),
         ],
         postConditions,

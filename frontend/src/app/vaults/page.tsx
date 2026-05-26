@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useUserVaults, UserVault, CollateralPosition } from "@/hooks/useContractRead";
 import { formatTokenAmount } from "@/lib/utils";
-import { STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
+import { STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralSymbol } from "@/lib/constants";
 
 const ZERO_DEBT_SENTINEL = 1000000;
 
@@ -213,7 +213,7 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
                     return (
                       <div key={pos.asset} className="flex items-center justify-between rounded-lg bg-muted/50 p-2 text-sm">
                         <div>
-                          <p className="font-medium">{formatAssetName(pos.asset)}</p>
+                          <p className="font-medium">{getCollateralSymbol(pos.asset)}</p>
                           <p className="text-xs text-muted-foreground">
                             {formatTokenAmount(pos.amount, getCollateralDecimals(pos.asset))} deposited · {formatTokenAmount(pos.debtShare, STABLECOIN_DECIMALS)} debt
                           </p>

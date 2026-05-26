@@ -1,5 +1,11 @@
-;; stability-pool-v6.clar
-;; Cross-reference bump from v5. References factory-v4 and liquidation-engine-v7.
+;; stability-pool-v7.clar
+;; Cross-reference bump from v6. References factory-v4 and liquidation-engine-v8.
+;; Required because the v6 pool hardcodes contract-caller==.liquidation-engine-v7
+;; in distribute-liquidation-reward, which would block liquidation flows that
+;; originate from liquidation-engine-v8. State shape, math, and admin gating are
+;; byte-for-byte identical to v6 -- only the liquidation engine principal in the
+;; gate at distribute-liquidation-reward changes.
+;;
 ;; Admin functions remain creator-gated; no governance change.
 
 (use-trait sip-010-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
@@ -273,7 +279,7 @@
 )
 
 ;; ============================================
-;; Liquidation Distribution (called by liquidation engine v7)
+;; Liquidation Distribution (called by liquidation engine v8)
 ;; ============================================
 
 (define-public (distribute-liquidation-reward
@@ -286,7 +292,7 @@
       (current-product (get-current-product stablecoin-id))
       (current-rpt (get-current-rpt stablecoin-id asset))
     )
-    (asserts! (is-eq contract-caller .liquidation-engine-v7) (err ERR_NOT_LIQUIDATION_ENGINE))
+    (asserts! (is-eq contract-caller .liquidation-engine-v8) (err ERR_NOT_LIQUIDATION_ENGINE))
     (asserts! (> pool-total u0) (err ERR_EMPTY_POOL))
     (asserts! (>= pool-total debt-offset) (err ERR_INSUFFICIENT_BALANCE))
     (map-set pool-product

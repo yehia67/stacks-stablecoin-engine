@@ -18,9 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useRegisteredStablecoins, useUserVault } from "@/hooks/useContractRead";
+import { useCollateralTypes, useRegisteredStablecoins, useUserVault } from "@/hooks/useContractRead";
 import { formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
-import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
+import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralSymbol } from "@/lib/constants";
+import { getOraclePrincipalForAsset } from "@/lib/oracles";
 
 const ZERO_DEBT_SENTINEL = 1000000;
 const API_BASE = "/api/stacks";
@@ -58,6 +59,8 @@ export default function VaultManagePage({
     withdrawCollateralForStablecoin,
   } = useContract();
   const { stablecoins, isLoading: stablecoinsLoading } = useRegisteredStablecoins();
+  // Needed to resolve the oracle principal v8 requires for withdraw calls.
+  const { collateralTypes } = useCollateralTypes();
 
   const parsedStablecoinId = Number(params.stablecoinId);
   const stablecoinId =
@@ -198,12 +201,14 @@ export default function VaultManagePage({
   const handleWithdraw = useCallback(async () => {
     if (stablecoinId === null || !selectedPosition || !canWithdraw) return;
 
+    const withdrawOracle = getOraclePrincipalForAsset(selectedPosition.asset, collateralTypes);
     await executeVaultAction("Withdraw collateral", () =>
       callAsPromise(
         withdrawCollateralForStablecoin,
         stablecoinId,
         selectedPosition.asset,
-        withdrawUnits
+        withdrawUnits,
+        withdrawOracle
       )
     );
 
@@ -211,6 +216,7 @@ export default function VaultManagePage({
   }, [
     callAsPromise,
     canWithdraw,
+    collateralTypes,
     executeVaultAction,
     selectedPosition,
     stablecoinId,
@@ -383,7 +389,7 @@ export default function VaultManagePage({
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium">{formatAssetName(position.asset)}</p>
+                      <p className="font-medium">{getCollateralSymbol(position.asset)}</p>
                       <Badge variant={getPositionBadgeVariant(position.healthFactor, position.debtShare)}>
                         {getPositionBadgeLabel(position.healthFactor, position.debtShare)}
                       </Badge>
@@ -419,7 +425,7 @@ export default function VaultManagePage({
             <CardHeader>
               <CardTitle>Selected Position</CardTitle>
               <CardDescription>
-                {selectedPosition ? formatAssetName(selectedPosition.asset) : "Choose a collateral asset"}
+                {selectedPosition ? getCollateralSymbol(selectedPosition.asset) : "Choose a collateral asset"}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

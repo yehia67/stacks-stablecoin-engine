@@ -1,0 +1,8 @@
+.env.local
+.env.*.local
+.next
+.next/**
+.netlify
+.netlify/**
+node_modules
+node_modules/**

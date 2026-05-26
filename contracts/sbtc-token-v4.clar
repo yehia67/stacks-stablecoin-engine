@@ -1,4 +1,4 @@
-(impl-trait .sip-010-trait.sip-010-trait)
+(impl-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
 
 (define-constant TOKEN-NAME "Test sBTC")
 (define-constant TOKEN-SYMBOL "sBTC")
@@ -13,10 +13,12 @@
   (ft-mint? sbtc-token amount recipient)
 )
 
-(define-public (transfer (amount uint) (sender principal) (recipient principal))
+(define-public (transfer (amount uint) (sender principal) (recipient principal) (memo (optional (buff 34))))
   (begin
     (asserts! (is-eq tx-sender sender) (err ERR_UNAUTHORIZED))
-    (ft-transfer? sbtc-token amount sender recipient)
+    (try! (ft-transfer? sbtc-token amount sender recipient))
+    (match memo to-print (print to-print) 0x)
+    (ok true)
   )
 )
 
