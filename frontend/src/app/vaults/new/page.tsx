@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices, useTokenDecimals } from "@/hooks/useContractRead";
-import { CONTRACTS } from "@/lib/constants";
+import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices, useTokenDecimals, useUserVault } from "@/hooks/useContractRead";
+import { CONTRACTS, getCollateralSymbol, getCollateralUx } from "@/lib/constants";
+import { getOraclePrincipalForAsset } from "@/lib/oracles";
 import { calculateHealthFactor, formatNumber, toSmallestUnits, toHumanReadable } from "@/lib/utils";
 
 type StepStatus = 'pending' | 'active' | 'done' | 'skipped' | 'error';
@@ -49,6 +50,17 @@ export default function NewVaultPage() {
 
   const { collaterals: stablecoinCollaterals } = useStablecoinCollateralList(selectedStablecoinId);
   const { prices: diaOraclePrices } = useDiaOraclePrices();
+  // Existing vault + per-asset position. Used to detect when the user already
+  // has collateral deposited (allow mint-only flow) and to skip open-vault +
+  // deposit steps when state is already on-chain.
+  const { vault: userVault, refetch: refetchUserVault } = useUserVault(address, selectedStablecoinId);
+  const existingPosition = useMemo(() => {
+    if (!userVault || !selectedCollateralAsset) return null;
+    return userVault.positions.find((p) => p.asset === selectedCollateralAsset) || null;
+  }, [userVault, selectedCollateralAsset]);
+  const existingCollateralAmount = existingPosition?.amount ?? 0;
+  const existingDebtShare = existingPosition?.debtShare ?? 0;
+  const hasExistingCollateral = existingCollateralAmount > 0;
 
   // Fetch token decimals dynamically from chain
   const { decimals: collateralDecimals } = useTokenDecimals(selectedCollateralAsset);
@@ -59,19 +71,24 @@ export default function NewVaultPage() {
   }, [selectedStablecoinId, stablecoins]);
   const { decimals: stablecoinDecimals } = useTokenDecimals(stablecoinTokenContract);
 
-  // Helper to get oracle price for an asset - use DIA prices with fallback to registry oracle
+  // Registry-backed oracle price lookup. v8 engines mandate one canonical
+  // oracle per asset on the registry, so the frontend MUST use that price --
+  // string-matching asset names ("btc"/"stx") silently misroutes new
+  // collateral (e.g. vGLD) into the wrong feed and produces catastrophically
+  // wrong preview numbers. We keep the diaOraclePrices fallback only for
+  // assets the registry has no price for yet (pre-bootstrap), and only when
+  // the symbol disambiguates safely.
   const getOraclePrice = useCallback((asset: string): number | null => {
+    const fromRegistry = collateralTypes.find((ct) => ct.asset === asset)?.oraclePrice;
+    if (fromRegistry != null) return fromRegistry;
     const assetName = asset.split(".").pop()?.toLowerCase() ?? "";
-    // Map asset names to DIA oracle prices
-    if (assetName.includes("sbtc") || assetName.includes("btc")) {
+    if (assetName.includes("sbtc") || assetName === "sbtc-token-v4") {
       return diaOraclePrices.btcUsd;
     }
-    if (assetName.includes("stx")) {
+    if (assetName === "stx-token-v4") {
       return diaOraclePrices.stxUsd;
     }
-    // Fallback to global collateral type oracle price
-    const globalType = collateralTypes.find((ct) => ct.asset === asset);
-    return globalType?.oraclePrice ?? null;
+    return null;
   }, [diaOraclePrices, collateralTypes]);
 
   // Use only collateral explicitly configured for the selected stablecoin.
@@ -112,6 +129,13 @@ export default function NewVaultPage() {
   useEffect(() => {
     setSelectedCollateralAsset(null);
   }, [selectedStablecoinId]);
+
+  // When the user selects a collateral asset that already has a deposited
+  // position, pre-fill deposit input with 0 (mint-only flow). Otherwise leave
+  // whatever the user typed so they can fluidly switch back and forth.
+  useEffect(() => {
+    if (hasExistingCollateral) setCollateralAmount("0");
+  }, [hasExistingCollateral, selectedCollateralAsset]);
 
   const selectedCollateral =
     effectiveCollateralTypes.find((type) => type.asset === selectedCollateralAsset) || null;
@@ -161,19 +185,37 @@ export default function NewVaultPage() {
   const collateralUnits = collateralDecimals !== null ? toSmallestUnits(collateralHuman, collateralDecimals) : 0;
   const borrowUnits = stablecoinDecimals !== null ? toSmallestUnits(borrowHuman, stablecoinDecimals) : 0;
 
-  // USD value of collateral deposit (human-readable: whole tokens × USD per token)
-  const collateralUsd = oraclePrice !== null ? collateralHuman * oraclePrice : 0;
+  // Effective totals = existing on-chain position + the new amounts the user
+  // is about to add. When the user already has collateral deposited (returned
+  // here after a failed mint, or topping up an existing position) the inputs
+  // represent INCREMENTAL deposit/mint, not absolute, so health-factor and
+  // debt-floor checks must run against the totals, not just the new amounts.
+  const effectiveCollateralUnits = existingCollateralAmount + collateralUnits;
+  const effectiveBorrowUnits = existingDebtShare + borrowUnits;
+  const existingCollateralHuman = collateralDecimals !== null
+    ? toHumanReadable(existingCollateralAmount, collateralDecimals)
+    : 0;
+  const existingDebtHuman = stablecoinDecimals !== null
+    ? toHumanReadable(existingDebtShare, stablecoinDecimals)
+    : 0;
+  const effectiveCollateralHuman = existingCollateralHuman + collateralHuman;
+  const effectiveBorrowHuman = existingDebtHuman + borrowHuman;
 
-  // Preview health factor in human-readable terms (collateralUSD vs borrowHuman stablecoins)
-  const previewHealthFactor = calculateHealthFactor(collateralUsd, borrowHuman, minRatio);
+  // USD value of TOTAL collateral (existing + new) at the registry oracle.
+  const collateralUsd = oraclePrice !== null ? effectiveCollateralHuman * oraclePrice : 0;
 
-  // Max borrowable in human-readable stablecoins (assuming $1 peg)
+  // Preview health factor against effective totals.
+  const previewHealthFactor = calculateHealthFactor(collateralUsd, effectiveBorrowHuman, minRatio);
+
+  // Max borrowable in human-readable stablecoins against TOTAL collateral.
   const maxBorrow = minRatio > 0 ? (collateralUsd * 100) / minRatio : 0;
 
   // Debt floor in human-readable
   const debtFloorHuman = stablecoinDecimals !== null ? toHumanReadable(debtFloorRaw, stablecoinDecimals) : 0;
 
-  const isBelowDebtFloor = borrowUnits > 0 && borrowUnits < debtFloorRaw;
+  // Floor check applies to the position's TOTAL debt share after mint, not
+  // just the new amount. A 0-mint that leaves existing debt above floor is OK.
+  const isBelowDebtFloor = effectiveBorrowUnits > 0 && effectiveBorrowUnits < debtFloorRaw;
 
   // Dynamic placeholder values: minimum acceptable amounts from on-chain config
   const minBorrowPlaceholder = stablecoinDecimals !== null && debtFloorRaw > 0
@@ -190,13 +232,27 @@ export default function NewVaultPage() {
     return `e.g. ${Number(minCollateralHuman.toPrecision(3))}`;
   }, [collateralDecimals, stablecoinDecimals, oraclePrice, debtFloorRaw, minRatio]);
 
+  // A position is valid to submit when:
+  //  * a stablecoin + collateral type are selected
+  //  * effective collateral (existing + new deposit) > 0
+  //  * effective debt (existing + new mint) >= debt floor and > 0
+  //  * health factor against effective totals >= min ratio
+  // The preview health-factor check is SKIPPED when oraclePrice is null
+  // (registry oracle still loading) so the user isn't stuck behind a stale
+  // 0% preview. The vault engine itself enforces the real check at execute
+  // time, so deferring here is safe.
+  // Allows two modes vs the original logic:
+  //  * collateralUnits = 0 when the user already has collateral deposited
+  //    (skip the deposit tx and just mint more)
+  //  * borrowUnits = 0 is still rejected -- no reason to submit the flow
+  //    without minting (deposit-only flows belong on the dashboard)
   const isValidPosition =
     !!selectedStablecoin &&
     !!selectedCollateral &&
-    collateralUnits > 0 &&
+    effectiveCollateralUnits > 0 &&
     borrowUnits > 0 &&
     !isBelowDebtFloor &&
-    previewHealthFactor >= minRatio;
+    (oraclePrice == null || previewHealthFactor >= minRatio);
 
   const ownerPrincipal = address || CONTRACTS.DEPLOYER;
   const healthFactorArgs = [
@@ -298,25 +354,34 @@ export default function NewVaultPage() {
         await pollTx(openTxId);
       }
 
-      // Step 3: Deposit collateral
-      setFlowStep('depositing');
-      const depositTxId = await callAsPromise(
-        depositCollateralForStablecoin,
-        selectedStablecoin.id,
-        selectedCollateral.asset,
-        collateralUnits
-      );
-      setFlowTxId(depositTxId);
-      await pollTx(depositTxId);
+      // Step 3: Deposit collateral. Skip when collateralUnits === 0 so users
+      // can revisit /vaults/new with an existing on-chain position (e.g.
+      // after a failed mint) and just submit the mint tx without
+      // double-depositing.
+      if (collateralUnits > 0) {
+        setFlowStep('depositing');
+        const depositTxId = await callAsPromise(
+          depositCollateralForStablecoin,
+          selectedStablecoin.id,
+          selectedCollateral.asset,
+          collateralUnits
+        );
+        setFlowTxId(depositTxId);
+        await pollTx(depositTxId);
+      }
 
-      // Step 4: Mint stablecoin
+      // Step 4: Mint stablecoin. v8 engine requires the oracle trait at the
+      // call boundary so it can validate price-source against the registry.
+      // Look up the registry-stored oracle for the selected asset.
       setFlowStep('minting');
+      const mintOracle = getOraclePrincipalForAsset(selectedCollateral.asset, collateralTypes);
       const mintTxId = await callAsPromise(
         mintAgainstAssetForStablecoin,
         selectedStablecoin.id,
         selectedCollateral.asset,
         selectedStablecoin.tokenContract,
-        borrowUnits
+        borrowUnits,
+        mintOracle
       );
       setFlowTxId(mintTxId);
       await pollTx(mintTxId);
@@ -324,6 +389,7 @@ export default function NewVaultPage() {
       // Done!
       setFlowStep('done');
       await refetchOnChainHealth();
+      await refetchUserVault();
     } catch (error: any) {
       console.error('[SSE] Vault flow failed:', error);
       setFlowStep('error');
@@ -438,26 +504,29 @@ export default function NewVaultPage() {
               <CardDescription>Set collateral and borrow target for {stablecoinSymbol}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {effectiveCollateralTypes.map((type) => (
-                <button
-                  key={type.asset}
-                  onClick={() => setSelectedCollateralAsset(type.asset)}
-                  className={`flex w-full items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted ${
-                    selectedCollateralAsset === type.asset ? "border-primary" : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                      {formatAssetName(type.asset).charAt(0).toUpperCase()}
+              {effectiveCollateralTypes.map((type) => {
+                const symbol = getCollateralSymbol(type.asset);
+                return (
+                  <button
+                    key={type.asset}
+                    onClick={() => setSelectedCollateralAsset(type.asset)}
+                    className={`flex w-full items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted ${
+                      selectedCollateralAsset === type.asset ? "border-primary" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                        {symbol.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="text-left">
+                        <p className="font-medium">{symbol}</p>
+                        <p className="text-sm text-muted-foreground">Min Ratio: {type.minCollateralRatio}%</p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="font-medium">{formatAssetName(type.asset)}</p>
-                      <p className="text-sm text-muted-foreground">Min Ratio: {type.minCollateralRatio}%</p>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{type.asset}</div>
-                </button>
-              ))}
+                    <div className="text-xs text-muted-foreground">{formatAssetName(type.asset)}</div>
+                  </button>
+                );
+              })}
               {collateralLoading && (
                 <p className="text-sm text-muted-foreground">Loading collateral types from registry...</p>
               )}
@@ -471,41 +540,80 @@ export default function NewVaultPage() {
 
               {selectedCollateral ? (
                 <div className="rounded-lg border border-primary/50 bg-primary/5 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                      {formatAssetName(selectedCollateral.asset).charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-medium">{formatAssetName(selectedCollateral.asset)}</p>
-                      <p className="text-xs text-muted-foreground">Min Ratio: {selectedCollateral.minCollateralRatio}%</p>
-                    </div>
-                  </div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Deposit Amount ({formatAssetName(selectedCollateral.asset)})
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    placeholder={minCollateralPlaceholder}
-                    value={collateralAmount}
-                    onChange={(e) => setCollateralAmount(e.target.value)}
-                    className="text-lg"
-                  />
-                  <div className="mt-2 space-y-1">
-                    {oraclePrice !== null && oraclePrice > 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        ≈ <span className="font-medium text-foreground">${formatNumber(collateralUsd, 2)}</span> USD
-                        <span className="ml-2 text-xs">(@ ${formatNumber(oraclePrice, 2)} per {formatAssetName(selectedCollateral.asset)})</span>
-                      </p>
-                    ) : (
-                      <p className="text-sm text-yellow-600">
-                        ⚠ Oracle price unavailable - value estimate not shown
-                      </p>
-                    )}
-                    {collateralDecimals === null && (
-                      <p className="text-sm text-yellow-600">Loading token decimals...</p>
-                    )}
-                  </div>
+                  {(() => {
+                    const symbol = getCollateralSymbol(selectedCollateral.asset);
+                    const ux = getCollateralUx(selectedCollateral.asset);
+                    return (
+                      <>
+                        <div className="mb-3 flex items-center gap-2">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                            {symbol.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium">{symbol}</p>
+                            <p className="text-xs text-muted-foreground">Min Ratio: {selectedCollateral.minCollateralRatio}%</p>
+                          </div>
+                        </div>
+                        {ux && (
+                          <div className="mb-3 rounded-md border border-amber-300/50 bg-amber-50/40 p-3 text-xs dark:bg-amber-900/10">
+                            <p className="mb-1 text-muted-foreground">{ux.tagline}</p>
+                            <a
+                              href={ux.acquisitionUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-medium text-amber-700 hover:underline dark:text-amber-300"
+                            >
+                              {ux.acquisitionLabel} <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        )}
+                        {hasExistingCollateral && (
+                          <button
+                            type="button"
+                            onClick={() => setStep(3)}
+                            className="mb-3 block w-full rounded-md border border-blue-300/50 bg-blue-50/40 p-3 text-left text-xs transition hover:bg-blue-100/60 dark:bg-blue-900/10 dark:hover:bg-blue-900/20"
+                          >
+                            <p className="font-medium text-blue-800 dark:text-blue-200">
+                              Existing position detected — click to skip to Confirm
+                            </p>
+                            <p className="text-muted-foreground">
+                              You already have <span className="font-medium text-foreground">{formatNumber(existingCollateralHuman, 6)} {symbol}</span> deposited
+                              {existingDebtShare > 0 && (
+                                <> and <span className="font-medium text-foreground">{formatNumber(existingDebtHuman, 2)} {stablecoinSymbol}</span> debt</>
+                              )}
+                              . Leave deposit at 0 to mint against existing collateral; the deposit tx will be skipped.
+                            </p>
+                          </button>
+                        )}
+                        <label className="mb-2 block text-sm font-medium">
+                          {hasExistingCollateral ? `Additional deposit (${symbol}, 0 to skip)` : `Deposit Amount (${symbol})`}
+                        </label>
+                        <Input
+                          type="number"
+                          step="any"
+                          placeholder={hasExistingCollateral ? "0" : minCollateralPlaceholder}
+                          value={collateralAmount}
+                          onChange={(e) => setCollateralAmount(e.target.value)}
+                          className="text-lg"
+                        />
+                        <div className="mt-2 space-y-1">
+                          {oraclePrice !== null && oraclePrice > 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              ≈ <span className="font-medium text-foreground">${formatNumber(collateralUsd, 2)}</span> USD
+                              <span className="ml-2 text-xs">(@ ${formatNumber(oraclePrice, 2)} per {symbol})</span>
+                            </p>
+                          ) : (
+                            <p className="text-sm text-yellow-600">
+                              ⚠ Oracle price unavailable - value estimate not shown
+                            </p>
+                          )}
+                          {collateralDecimals === null && (
+                            <p className="text-sm text-yellow-600">Loading token decimals...</p>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-muted-foreground/50 p-4 text-center">
@@ -601,27 +709,75 @@ export default function NewVaultPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Collateral Asset</span>
-                  <span className="font-medium">{selectedCollateral?.asset || "-"}</span>
+                  <span className="font-medium">{getCollateralSymbol(selectedCollateral?.asset || "")}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Collateral Amount</span>
-                  <span className="font-medium">{collateralHuman} {formatAssetName(selectedCollateral?.asset || "")} ({collateralUnits} units)</span>
+                <div className="font-mono text-xs text-muted-foreground break-all">
+                  {selectedCollateral?.asset || "-"}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Borrow Amount</span>
-                  <span className="font-medium">{borrowHuman} {stablecoinSymbol} ({borrowUnits} units)</span>
-                </div>
-                {debtFloorHuman > 0 && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Debt Floor (minimum)</span>
-                    <span>{formatNumber(debtFloorHuman)} {stablecoinSymbol}</span>
+
+                <div className="mt-4 rounded-lg border p-3 text-sm">
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Current position</p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Deposited</span>
+                    <span className="font-medium">{formatNumber(existingCollateralHuman, 6)} {getCollateralSymbol(selectedCollateral?.asset || "")}</span>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Preview Health Factor</span>
-                  <span className="font-bold">{previewHealthFactor}%</span>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Debt</span>
+                    <span className="font-medium">{formatNumber(existingDebtHuman, 2)} {stablecoinSymbol}</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-lg border p-3 text-sm">
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">This transaction will</p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Deposit</span>
+                    <span className={`font-medium ${collateralUnits > 0 ? "" : "text-muted-foreground"}`}>
+                      {collateralUnits > 0
+                        ? `+${collateralHuman} ${getCollateralSymbol(selectedCollateral?.asset || "")} (${collateralUnits} units)`
+                        : "skipped (no additional deposit)"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Mint</span>
+                    <span className={`font-medium ${borrowUnits > 0 ? "" : "text-destructive"}`}>
+                      {borrowUnits > 0
+                        ? `+${borrowHuman} ${stablecoinSymbol} (${borrowUnits} units)`
+                        : "nothing — go back and enter a mint amount"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-lg border border-primary/50 bg-primary/5 p-3 text-sm">
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Position after</p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total deposited</span>
+                    <span className="font-medium">{formatNumber(effectiveCollateralHuman, 6)} {getCollateralSymbol(selectedCollateral?.asset || "")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total debt</span>
+                    <span className="font-medium">{formatNumber(effectiveBorrowHuman, 2)} {stablecoinSymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Health factor</span>
+                    <span className="font-bold">{effectiveBorrowHuman > 0 ? `${previewHealthFactor}%` : "no debt"}</span>
+                  </div>
+                  {debtFloorHuman > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Debt floor</span>
+                      <span>{formatNumber(debtFloorHuman)} {stablecoinSymbol}</span>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {borrowUnits === 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span>
+                    Mint amount is 0 — nothing to submit. Click <b>Back</b> and enter a mint amount (minimum {formatNumber(debtFloorHuman)} {stablecoinSymbol}).
+                  </span>
+                </div>
+              )}
 
               {flowStep === 'idle' && (
                 <div className="flex items-start gap-2 rounded-lg bg-muted p-4 text-sm">
@@ -653,13 +809,15 @@ export default function NewVaultPage() {
                   />
                   {/* Step: Deposit */}
                   <FlowStepRow
-                    label="Deposit collateral"
+                    label={collateralUnits === 0 ? 'Deposit collateral (skipped — using existing position)' : 'Deposit collateral'}
                     status={
-                      flowStep === 'depositing' ? 'active'
-                      : (['checking', 'opening'].includes(flowStep)) ? 'pending'
-                      : flowStep === 'error' ? 'error'
-                      : flowStep === 'done' || flowStep === 'minting' ? 'done'
-                      : 'pending'
+                      collateralUnits === 0
+                        ? (['checking', 'opening'].includes(flowStep) ? 'pending' : 'skipped')
+                        : flowStep === 'depositing' ? 'active'
+                          : (['checking', 'opening'].includes(flowStep)) ? 'pending'
+                          : flowStep === 'error' ? 'error'
+                          : flowStep === 'done' || flowStep === 'minting' ? 'done'
+                          : 'pending'
                     }
                   />
                   {/* Step: Mint */}
@@ -725,7 +883,7 @@ export default function NewVaultPage() {
                 </Button>
               </>
             ) : (
-              <Button className="flex-1" onClick={handleCreateVault} loading={isLoading} disabled={isLoading}>
+              <Button className="flex-1" onClick={handleCreateVault} loading={isLoading} disabled={isLoading || borrowUnits === 0}>
                 {isLoading ? 'Executing...' : 'Execute Vault Flow'}
               </Button>
             )}

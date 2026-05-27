@@ -23,6 +23,38 @@ function readConfig() {
   return JSON.parse(raw);
 }
 
+// Flatten a network-aware sse.config.json into the shape the rest of this
+// script expects. Pulls deployer / governance / collaterals / deployContracts /
+// factoryFeeMicroStx out of rawConfig.networks[network] and merges them with
+// the shared top-level fields. Hard-fails if the network block is missing.
+function resolveForNetwork(rawConfig, network) {
+  if (!rawConfig.networks || !rawConfig.networks[network]) {
+    throw new Error(
+      `sse.config.json has no "networks.${network}" block. Available: ${Object.keys(rawConfig.networks || {}).join(", ") || "(none)"}`
+    );
+  }
+  const netCfg = rawConfig.networks[network];
+  // Merge per-network contractOverrides over the global contracts map. Used to
+  // route different networks at different engine versions (e.g. testnet on v8
+  // while mainnet stays on v7 pending audit).
+  const mergedContracts = {
+    ...(rawConfig.contracts || {}),
+    ...(netCfg.contractOverrides || {}),
+  };
+  return {
+    version: rawConfig.version,
+    network,
+    deployer: netCfg.deployer,
+    governance: netCfg.governance || {},
+    factoryFeeMicroStx: netCfg.factoryFeeMicroStx,
+    deployContracts: netCfg.deployContracts || [],
+    collaterals: netCfg.collaterals || [],
+    contracts: mergedContracts,
+    contractCosts: rawConfig.contractCosts || {},
+    oracles: rawConfig.oracles || {},
+  };
+}
+
 function getApiUrl(network) {
   return process.env.STACKS_API_URL || NETWORK_APIS[network];
 }
@@ -168,7 +200,12 @@ async function callContract(
 
 // ── YAML Generator ──────────────────────────────────────────────────────────
 
-function resolveContractPath(contractName) {
+function resolveContractPath(contractName, network) {
+  // The dia-oracle-adapter source differs by target network because it forwards
+  // to a different real DIA oracle principal. Pick the matching source file.
+  if (contractName === "dia-oracle-adapter") {
+    return `contracts/dia-oracle-adapter-${network}.clar`;
+  }
   return `contracts/${contractName}.clar`;
 }
 
@@ -183,7 +220,7 @@ function generateDeploymentYaml(config, contractsToDeploy) {
   let transactions = "";
   for (const contractName of contractsToDeploy) {
     const cost = config.contractCosts[contractName] || 50000;
-    const sourcePath = resolveContractPath(contractName);
+    const sourcePath = resolveContractPath(contractName, network);
     transactions += `        - contract-publish:\n`;
     transactions += `            contract-name: ${contractName}\n`;
     transactions += `            expected-sender: ${config.deployer}\n`;
@@ -266,7 +303,7 @@ async function deploy(config, contractsToDeploy) {
     const sourcePath = path.resolve(
       __dirname,
       "..",
-      resolveContractPath(contractName)
+      resolveContractPath(contractName, config.network)
     );
     if (!fs.existsSync(sourcePath)) {
       throw new Error(`Source file not found: ${sourcePath}`);
@@ -276,16 +313,16 @@ async function deploy(config, contractsToDeploy) {
   const yaml = generateDeploymentYaml(config, contractsToDeploy);
   const yamlPath = path.resolve(
     __dirname,
-    "../deployments/generated-testnet-plan.yaml"
+    `../deployments/generated-${config.network}-plan.yaml`
   );
   fs.writeFileSync(yamlPath, yaml);
-  console.log(`  Generated: deployments/generated-testnet-plan.yaml`);
+  console.log(`  Generated: deployments/generated-${config.network}-plan.yaml`);
 
   // Apply with Clarinet
   console.log("  Applying deployment plan...");
   try {
     execSync(
-      `echo Y | clarinet deployments apply -p deployments/generated-testnet-plan.yaml --no-dashboard`,
+      `echo Y | clarinet deployments apply -p deployments/generated-${config.network}-plan.yaml --no-dashboard`,
       {
         cwd: path.resolve(__dirname, ".."),
         stdio: "inherit",
@@ -310,6 +347,10 @@ async function bootstrap(config) {
   const stablecoinToken = config.contracts.stablecoinToken;
   const collateralRegistry = config.contracts.collateralRegistry;
   const vaultEngine = config.contracts.multiAssetVaultEngine;
+  // v8 engine reads the oracle from collateral-registry-v6 directly and has
+  // no register-asset-oracle / bootstrap-set-governance functions. Detect it
+  // by name so the bootstrap loop skips those v7-only calls.
+  const isVaultEngineV8 = vaultEngine && vaultEngine.includes("-v8");
 
   // 1. Authorize vault engine in stablecoin token
   console.log("\n  Authorizing vault engine...");
@@ -334,41 +375,81 @@ async function bootstrap(config) {
     { skipOnAbort: true }
   );
 
-  // 3. Register DIA oracle mappings
-  console.log("\n  Registering oracle mappings...");
-  for (const collateral of config.collaterals) {
-    await callContract(
-      apiUrl,
-      network,
-      vaultEngine,
-      "register-asset-oracle",
-      [
-        principalCV(`${DEPLOYER}.${collateral.contractName}`),
-        uintCV(collateral.diaOracleId),
-      ],
-      nonce++,
-      { skipOnAbort: true }
-    );
-  }
+  // Prefer collateral.assetPrincipal (full external principal, e.g. real sBTC
+  // on mainnet at SM3VDXK….sbtc-token) over the deployer-namespaced fallback.
+  const assetPrincipalOf = (collateral) =>
+    collateral.assetPrincipal || `${DEPLOYER}.${collateral.contractName}`;
 
-  // 4. Add collateral types with DIA oracle contracts
-  console.log("\n  Adding collateral types...");
-  const oracleMap = {
+  // Resolve the oracle contract for a collateral entry. New entries use
+  // `oracleKey` (a key into config.contracts) which is the v8-aligned shape.
+  // Older entries still using `diaOracleId` are mapped through the legacy
+  // {3: priceOracleDiaBtc, 4: priceOracleDiaStx} table for backwards compat.
+  const legacyOracleByDiaId = {
     3: config.contracts.priceOracleDiaBtc,
     4: config.contracts.priceOracleDiaStx,
   };
-  for (const collateral of config.collaterals) {
-    const oracleContract = oracleMap[collateral.diaOracleId];
-    if (!oracleContract) {
-      throw new Error(`No oracle contract mapped for DIA oracle ID ${collateral.diaOracleId}`);
+  const oracleContractOf = (collateral) => {
+    if (collateral.oracleKey) {
+      const name = config.contracts[collateral.oracleKey];
+      if (!name) {
+        throw new Error(
+          `Collateral "${collateral.symbol || collateral.name}" references unknown oracleKey "${collateral.oracleKey}"`
+        );
+      }
+      return name;
     }
+    if (collateral.diaOracleId != null) {
+      const name = legacyOracleByDiaId[collateral.diaOracleId];
+      if (!name) {
+        throw new Error(
+          `Collateral "${collateral.symbol || collateral.name}" has unmapped diaOracleId ${collateral.diaOracleId}. Add an oracleKey instead.`
+        );
+      }
+      return name;
+    }
+    throw new Error(
+      `Collateral "${collateral.symbol || collateral.name}" must specify oracleKey (preferred) or diaOracleId.`
+    );
+  };
+
+  // 3. Register oracle mappings on the engine (v7 only -- v8 reads oracle
+  //    from the collateral registry directly).
+  if (!isVaultEngineV8) {
+    console.log("\n  Registering oracle mappings (v7 engine)...");
+    for (const collateral of config.collaterals) {
+      if (collateral.diaOracleId == null) {
+        throw new Error(
+          `v7 engine requires diaOracleId on every collateral entry; "${collateral.symbol || collateral.name}" is missing it.`
+        );
+      }
+      await callContract(
+        apiUrl,
+        network,
+        vaultEngine,
+        "register-asset-oracle",
+        [
+          principalCV(assetPrincipalOf(collateral)),
+          uintCV(collateral.diaOracleId),
+        ],
+        nonce++,
+        { skipOnAbort: true }
+      );
+    }
+  } else {
+    console.log("\n  ⊘ Skipping register-asset-oracle (v8 engine reads oracle from collateral-registry-v6 directly)");
+  }
+
+  // 4. Add collateral types with their resolved oracle contracts
+  console.log("\n  Adding collateral types...");
+  for (const collateral of config.collaterals) {
+    const oracleContract = oracleContractOf(collateral);
     await callContract(
       apiUrl,
       network,
       collateralRegistry,
       "add-collateral-type",
       [
-        principalCV(`${DEPLOYER}.${collateral.contractName}`),
+        principalCV(assetPrincipalOf(collateral)),
         uintCV(collateral.risk.minCollateralRatio),
         uintCV(collateral.risk.liquidationRatio),
         uintCV(collateral.risk.liquidationPenalty),
@@ -382,17 +463,18 @@ async function bootstrap(config) {
     );
   }
 
-  // 5. Update oracle principals in collateral registry (for re-deployments)
+  // 5. Update oracle principals in collateral registry (for re-deployments
+  //    where the registry already has a stale oracle stored).
   console.log("\n  Updating oracle principals...");
   for (const collateral of config.collaterals) {
-    const oracleContract = oracleMap[collateral.diaOracleId];
+    const oracleContract = oracleContractOf(collateral);
     await callContract(
       apiUrl,
       network,
       collateralRegistry,
       "update-oracle",
       [
-        principalCV(`${DEPLOYER}.${collateral.contractName}`),
+        principalCV(assetPrincipalOf(collateral)),
         principalCV(`${DEPLOYER}.${oracleContract}`),
       ],
       nonce++,
@@ -411,6 +493,24 @@ async function bootstrap(config) {
   const timelockContract = config.contracts.sseTimelock;
   const bridgeRegistry = config.contracts.bridgeRegistry;
   const xreserveAdapter = config.contracts.xreserveAdapter;
+  const stablecoinFactory = config.contracts.stablecoinFactory;
+
+  // 6.pre. If a network-level factoryFeeMicroStx is configured, set it before
+  // the factory's lock-bootstrap runs. Allowed pre-lock because the factory's
+  // is-governance-caller accepts CONTRACT-OWNER while bootstrap-locked = false.
+  // Used by mainnet to set the registration fee to 0 at launch.
+  if (typeof config.factoryFeeMicroStx === "number" && stablecoinFactory) {
+    console.log(`  Setting factory registration fee to ${config.factoryFeeMicroStx} microSTX...`);
+    await callContract(
+      apiUrl,
+      network,
+      stablecoinFactory,
+      "set-registration-fee",
+      [uintCV(config.factoryFeeMicroStx)],
+      nonce++,
+      { skipOnAbort: true }
+    );
+  }
 
   const governance = config.governance || {};
   const adminPrincipal = governance.admin || DEPLOYER;
@@ -422,19 +522,31 @@ async function bootstrap(config) {
     const timelockFqn = `${DEPLOYER}.${timelockContract}`;
 
     // 6a. Each governed contract: set governance var to the timelock principal, then lock.
+    //     v8 vault engine has NO governance var AND NO lock-bootstrap (admin
+    //     surface lives entirely in collateral-registry-v6). Both calls must
+    //     be skipped or the script aborts with NoSuchPublicFunction once it
+    //     reaches the engine row.
     const governedContracts = [
-      config.contracts.stablecoinFactory,
-      bridgeRegistry,
-      config.contracts.collateralRegistry,
-      config.contracts.multiAssetVaultEngine,
-      xreserveAdapter,
-    ].filter(Boolean);
+      { name: config.contracts.stablecoinFactory, hasGovernance: true, hasLockBootstrap: true },
+      { name: bridgeRegistry, hasGovernance: true, hasLockBootstrap: true },
+      { name: config.contracts.collateralRegistry, hasGovernance: true, hasLockBootstrap: true },
+      {
+        name: config.contracts.multiAssetVaultEngine,
+        hasGovernance: !isVaultEngineV8,
+        hasLockBootstrap: !isVaultEngineV8,
+      },
+      { name: xreserveAdapter, hasGovernance: true, hasLockBootstrap: true },
+    ].filter((c) => Boolean(c.name));
 
-    for (const name of governedContracts) {
-      await callContract(apiUrl, network, name, "bootstrap-set-governance",
-        [principalCV(timelockFqn)], nonce++, { skipOnAbort: true });
-      await callContract(apiUrl, network, name, "lock-bootstrap",
-        [], nonce++, { skipOnAbort: true });
+    for (const { name, hasGovernance, hasLockBootstrap } of governedContracts) {
+      if (hasGovernance) {
+        await callContract(apiUrl, network, name, "bootstrap-set-governance",
+          [principalCV(timelockFqn)], nonce++, { skipOnAbort: true });
+      }
+      if (hasLockBootstrap) {
+        await callContract(apiUrl, network, name, "lock-bootstrap",
+          [], nonce++, { skipOnAbort: true });
+      }
     }
 
     // 6b. Governance registry: store admin (Asigna multisig), guardian, timelock principal.
@@ -471,20 +583,31 @@ async function main() {
   const startTime = Date.now();
   const config = readConfig();
 
-  // CLI override: --network testnet|mainnet
+  // CLI override: --network testnet|mainnet (falls back to defaultNetwork)
+  let network = config.defaultNetwork || "testnet";
   const networkArg = process.argv.find((a) => a.startsWith("--network"));
   if (networkArg) {
     const val = networkArg.includes("=")
       ? networkArg.split("=")[1]
       : process.argv[process.argv.indexOf(networkArg) + 1];
-    if (val) config.network = val;
+    if (val) network = val;
   }
+
+  // Flatten the network-aware config into the shape the rest of the script
+  // expects (legacy single-network shape with deployer/governance/etc. at top).
+  const resolved = resolveForNetwork(config, network);
+  // Re-bind so downstream uses the resolved view.
+  // eslint-disable-next-line no-param-reassign
+  Object.assign(config, resolved);
 
   const timestamp = new Date().toISOString();
   console.log(`\nSSE Deploy v${config.version} — ${timestamp}`);
   console.log("═".repeat(50));
   console.log(`Network:  ${config.network}`);
   console.log(`Deployer: ${config.deployer}`);
+  if (typeof config.factoryFeeMicroStx === "number") {
+    console.log(`Factory fee: ${config.factoryFeeMicroStx} microSTX (set during bootstrap)`);
+  }
 
   await resolveSigner(config);
 

@@ -1,103 +1,187 @@
 {
   "$schema": "./sse.config.schema.json",
-  "version": "6",
-  "network": "testnet",
-  "deployer": "ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF",
-
-  "governance": {
-    "_comment": "Asigna multisig principal (admin) and a separate guardian principal. Set these before deploying. Defaults to the deployer for bootstrap; rotate via timelock after lock-bootstrap.",
-    "admin": "SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF",
-    "guardian": "SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF",
-    "timelockDelayBlocks": 144
-  },
+  "version": "7",
+  "defaultNetwork": "testnet",
 
   "contracts": {
+    "stablecoinEngineTokenTrait": "stablecoin-engine-token-trait",
+    "oracleTrait": "oracle-trait",
+    "bridgeAdapterTrait": "bridge-adapter-trait",
     "sseGovernance": "sse-governance-v1",
     "sseTimelock": "sse-timelock-v1",
     "stablecoinFactory": "stablecoin-factory-v4",
     "stablecoinToken": "stablecoin-token-v4",
     "sbtcToken": "sbtc-token-v4",
     "stxToken": "stx-token-v4",
+    "vgldToken": "vgld-token-v4",
     "collateralRegistry": "collateral-registry-v6",
     "multiAssetVaultEngine": "multi-asset-vault-engine-v7",
+    "multiAssetVaultEngineV8": "multi-asset-vault-engine-v8",
     "stabilityPool": "stability-pool-v6",
+    "stabilityPoolV7": "stability-pool-v7",
     "liquidationEngine": "liquidation-engine-v7",
+    "liquidationEngineV8": "liquidation-engine-v8",
     "bridgeRegistry": "bridge-registry-v4",
     "xreserveAdapter": "xreserve-adapter-v5",
     "diaOracleAdapter": "dia-oracle-adapter",
     "priceOracleDiaBtc": "price-oracle-dia-btc-v2",
-    "priceOracleDiaStx": "price-oracle-dia-stx-v2"
+    "priceOracleDiaStx": "price-oracle-dia-stx-v2",
+    "priceOracleVgld": "price-oracle-vgld-v1"
   },
 
-  "deployContracts": [
-    "sseGovernance",
-    "sbtcToken",
-    "stxToken",
-    "stablecoinToken",
-    "stablecoinFactory",
-    "bridgeRegistry",
-    "collateralRegistry",
-    "stabilityPool",
-    "multiAssetVaultEngine",
-    "liquidationEngine",
-    "xreserveAdapter",
-    "sseTimelock"
-  ],
-
   "contractCosts": {
+    "stablecoin-engine-token-trait": 15000,
+    "oracle-trait": 15000,
+    "bridge-adapter-trait": 15000,
     "sse-governance-v1": 30000,
     "sse-timelock-v1": 150000,
     "stablecoin-factory-v4": 80000,
     "stablecoin-token-v4": 40000,
     "sbtc-token-v4": 25000,
     "stx-token-v4": 25000,
+    "vgld-token-v4": 25000,
     "bridge-registry-v4": 50000,
     "collateral-registry-v6": 60000,
     "stability-pool-v6": 60000,
+    "stability-pool-v7": 60000,
     "multi-asset-vault-engine-v7": 200000,
+    "multi-asset-vault-engine-v8": 200000,
     "liquidation-engine-v7": 60000,
-    "xreserve-adapter-v5": 50000
+    "liquidation-engine-v8": 60000,
+    "xreserve-adapter-v5": 50000,
+    "dia-oracle-adapter": 25000,
+    "price-oracle-dia-btc-v2": 30000,
+    "price-oracle-dia-stx-v2": 30000,
+    "price-oracle-vgld-v1": 15000
   },
-
-  "collaterals": [
-    {
-      "name": "Test sBTC",
-      "symbol": "sBTC",
-      "contractName": "sbtc-token-v4",
-      "decimals": 8,
-      "initialMint": 1000000000000,
-      "diaOracleId": 3,
-      "risk": {
-        "minCollateralRatio": 150,
-        "liquidationRatio": 130,
-        "liquidationPenalty": 10,
-        "stabilityFee": 200,
-        "debtCeiling": 1000000000000,
-        "debtFloor": 1000000
-      }
-    },
-    {
-      "name": "Test STX",
-      "symbol": "STX",
-      "contractName": "stx-token-v4",
-      "decimals": 6,
-      "initialMint": 5000000000000,
-      "diaOracleId": 4,
-      "risk": {
-        "minCollateralRatio": 200,
-        "liquidationRatio": 170,
-        "liquidationPenalty": 12,
-        "stabilityFee": 300,
-        "debtCeiling": 5000000000000,
-        "debtFloor": 1000000
-      }
-    }
-  ],
 
   "oracles": {
     "dia": {
       "testnet": "ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle",
       "mainnet": "SP1G48FZ4Y7JY8G2Z0N51QTCYGBQ6F4J43J77BQC0.dia-oracle"
+    }
+  },
+
+  "networks": {
+    "testnet": {
+      "_comment": "Testnet stays on v7 (frozen, originally deployed 2026-05-12). vGLD is mainnet-only and is NOT added on testnet. The local contracts/vgld-token-v4.clar exists solely as a simnet stub for tests/vault-engine-v8.test.ts.",
+      "deployer": "ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF",
+      "governance": {
+        "admin": "SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF",
+        "guardian": "SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF",
+        "timelockDelayBlocks": 144
+      },
+      "deployContracts": [
+        "stablecoinEngineTokenTrait",
+        "oracleTrait",
+        "bridgeAdapterTrait",
+        "sseGovernance",
+        "sbtcToken",
+        "stxToken",
+        "stablecoinToken",
+        "stablecoinFactory",
+        "bridgeRegistry",
+        "collateralRegistry",
+        "stabilityPool",
+        "priceOracleDiaBtc",
+        "priceOracleDiaStx",
+        "multiAssetVaultEngine",
+        "liquidationEngine",
+        "xreserveAdapter",
+        "sseTimelock"
+      ],
+      "collaterals": [
+        {
+          "name": "Test sBTC",
+          "symbol": "sBTC",
+          "contractName": "sbtc-token-v4",
+          "decimals": 8,
+          "initialMint": 1000000000000,
+          "oracleKey": "priceOracleDiaBtc",
+          "diaOracleId": 3,
+          "risk": {
+            "minCollateralRatio": 150,
+            "liquidationRatio": 130,
+            "liquidationPenalty": 10,
+            "stabilityFee": 200,
+            "debtCeiling": 1000000000000,
+            "debtFloor": 1000000
+          }
+        },
+        {
+          "name": "Test STX",
+          "symbol": "STX",
+          "contractName": "stx-token-v4",
+          "decimals": 6,
+          "initialMint": 5000000000000,
+          "oracleKey": "priceOracleDiaStx",
+          "diaOracleId": 4,
+          "risk": {
+            "minCollateralRatio": 200,
+            "liquidationRatio": 170,
+            "liquidationPenalty": 12,
+            "stabilityFee": 300,
+            "debtCeiling": 5000000000000,
+            "debtFloor": 1000000
+          }
+        }
+      ]
+    },
+    "mainnet": {
+      "_comment": "Mainnet v2 (vGLD + v8 trait-based oracle dispatch). v1 contracts (factory/registry/pool/v7 engine/liquidation v7) are already on-chain and bootstrap-locked -- they CANNOT be redeployed. deployContracts here only lists the NEW contracts the deployer key needs to publish for this upgrade. All wiring on existing locked contracts (add-collateral-type for vGLD, set-vault-engine-authorized for v8, set-vault-engine on stablecoin-token-v4) MUST be queued through sse-timelock-v1 from the Asigna admin vault -- see docs/plans/add-vgld-collateral.md for the runbook. The deploy script will attempt those bootstrap calls from the deployer key and they will revert (logged as skipped); that is expected.",
+      "deployer": "SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0",
+      "governance": {
+        "admin": "SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX",
+        "guardian": "SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX",
+        "timelockDelayBlocks": 144
+      },
+      "factoryFeeMicroStx": 0,
+      "contractOverrides": {
+        "multiAssetVaultEngine": "multi-asset-vault-engine-v8",
+        "liquidationEngine": "liquidation-engine-v8",
+        "stabilityPool": "stability-pool-v7"
+      },
+      "deployContracts": [
+        "stabilityPool",
+        "multiAssetVaultEngine",
+        "liquidationEngine",
+        "priceOracleVgld"
+      ],
+      "collaterals": [
+        {
+          "_comment": "Already on-chain since 2026-05-17 mainnet launch. Listed so the bootstrap loop can re-issue add-collateral-type for the v8 engine wiring if ever re-run from an admin context. Real-mainnet flow does NOT re-add sBTC -- it is already configured under v7 and will continue to be priced via DIA BTC oracle on v8.",
+          "name": "sBTC",
+          "symbol": "sBTC",
+          "assetPrincipal": "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token",
+          "decimals": 8,
+          "oracleKey": "priceOracleDiaBtc",
+          "diaOracleId": 3,
+          "risk": {
+            "minCollateralRatio": 150,
+            "liquidationRatio": 130,
+            "liquidationPenalty": 10,
+            "stabilityFee": 200,
+            "debtCeiling": 1000000000000,
+            "debtFloor": 1000000
+          }
+        },
+        {
+          "_comment": "VoltFi vGLD on Stacks mainnet. Real on-chain principal SP183MTM6NNBG18YSKCQG7Y5P5HVTAK8WSXJNKYMW.vgld-token-v4 with FT asset name 'vGLDv4'. Hard-pegged to $1 USD -- priced via constant-$1 price-oracle-vgld-v1 (no DIA dependency). 1 / 10th sBTC debt ceiling for soft launch.",
+          "name": "VoltFi Gold",
+          "symbol": "vGLD",
+          "assetPrincipal": "SP183MTM6NNBG18YSKCQG7Y5P5HVTAK8WSXJNKYMW.vgld-token-v4",
+          "decimals": 8,
+          "oracleKey": "priceOracleVgld",
+          "risk": {
+            "minCollateralRatio": 150,
+            "liquidationRatio": 120,
+            "liquidationPenalty": 10,
+            "stabilityFee": 200,
+            "debtCeiling": 100000000000,
+            "debtFloor": 10000000
+          }
+        }
+      ]
     }
   }
 }

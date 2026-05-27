@@ -351,7 +351,17 @@ export interface CollateralType {
   debtCeiling: number;
   debtFloor: number;
   enabled: boolean;
+  /**
+   * Oracle contract principal registered for this asset. Required by the v8
+   * vault engine, which dispatches all pricing through a trait reference at
+   * mint/withdraw/liquidate time. Use this to look up the oracle to pass into
+   * those calls instead of hardcoding asset-symbol -> oracle mappings.
+   */
+  oraclePrincipal: string | null;
+  /** Live USD-per-token price (raw oracle value / 1e8), human-readable. */
   oraclePrice: number | null;
+  /** Raw oracle value scaled by 1e8 (PRICE-SCALE). Pass straight to read-only engine fns. */
+  oraclePriceRaw: number | null;
 }
 
 export function useCollateralTypes() {
@@ -430,9 +440,13 @@ export function useCollateralTypes() {
         const decoded = decodeClarityTuple(configResult.result);
         if (!decoded) continue;
 
-        // Fetch oracle price for this asset
+        // Fetch oracle price for this asset. v8 trait dispatch needs both:
+        //   - the principal (passed to mint/withdraw/liquidate as a trait ref)
+        //   - the raw uint price (passed into read-only health-factor fns)
         let oraclePrice: number | null = null;
+        let oraclePriceRaw: number | null = null;
         const oracleAddr = decoded.oracle as string | undefined;
+        const oraclePrincipal = oracleAddr ?? null;
         if (oracleAddr) {
           const [oracleContractAddr, oracleContractName] = oracleAddr.split(".");
           if (oracleContractAddr && oracleContractName) {
@@ -448,10 +462,9 @@ export function useCollateralTypes() {
               if (priceResp.ok) {
                 const priceResult = await priceResp.json();
                 if (priceResult.okay && priceResult.result) {
-                  // Use parseOkUint to handle (ok uint) response from oracles
                   const priceVal = parseOkUint(priceResult.result);
                   if (priceVal !== null) {
-                    // Price is scaled by 1e8 (PRICE-SCALE)
+                    oraclePriceRaw = priceVal;
                     oraclePrice = priceVal / 1e8;
                   }
                 }
@@ -476,7 +489,9 @@ export function useCollateralTypes() {
           debtCeiling: Number(decoded["debt-ceiling"] ?? 0),
           debtFloor: Number(decoded["debt-floor"] ?? 0),
           enabled: Boolean(decoded.enabled),
+          oraclePrincipal,
           oraclePrice,
+          oraclePriceRaw,
         });
       }
 
@@ -964,25 +979,81 @@ async function loadVaultForStablecoin(
       continue;
     }
 
+    // v8 read-only health factor takes (owner, stablecoin-id, asset, price).
+    // v7 took 3 args (no price). Detect which engine the frontend is pointing
+    // at and pass args accordingly. For v8 we fetch the registry-stored
+    // oracle's current price; if that read fails, fall back to u0 -- which
+    // is fine when debt-share == 0 (the engine short-circuits to the
+    // ZERO-DEBT-HEALTH-FACTOR constant before touching price).
+    const isV8 = CONTRACTS.MULTI_ASSET_VAULT_ENGINE.includes("-v8");
+    const hfArgs = [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))];
+    if (isV8) {
+      let priceRaw = 0;
+      try {
+        const oraclePrincipalHex = await readContract(
+          CONTRACTS.COLLATERAL_REGISTRY,
+          "get-oracle",
+          [cvToHex(principalCV(asset))],
+          userAddress
+        );
+        // get-oracle returns (optional principal); 0x09 = none
+        if (oraclePrincipalHex && !oraclePrincipalHex.startsWith("0x09")) {
+          // Strip the (some ...) wrapper to get the inner principal CV bytes.
+          // Easier path: decode and re-extract via cvToValue.
+          const cv = hexToCV(oraclePrincipalHex);
+          const oraclePrincipal = cvToValue(cv) as { value?: string } | string | null;
+          const oracleStr = typeof oraclePrincipal === "string"
+            ? oraclePrincipal
+            : (oraclePrincipal && typeof oraclePrincipal === "object" && "value" in oraclePrincipal)
+              ? String(oraclePrincipal.value)
+              : null;
+          if (oracleStr && oracleStr.includes(".")) {
+            const [oraAddr, oraName] = oracleStr.split(".");
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (API_KEY) headers["x-api-key"] = API_KEY;
+            const oResp = await fetch(
+              `${API_BASE}/v2/contracts/call-read/${oraAddr}/${oraName}/get-price`,
+              { method: "POST", headers, body: JSON.stringify({ sender: userAddress, arguments: [] }) }
+            );
+            if (oResp.ok) {
+              const oJson = await oResp.json();
+              const oCv = hexToCV(oJson.result);
+              const oVal = cvToValue(oCv);
+              // get-price returns (response uint); cvToValue unwraps ok
+              const parsed = typeof oVal === "object" && oVal && "value" in (oVal as any)
+                ? Number((oVal as any).value)
+                : Number(oVal);
+              if (!Number.isNaN(parsed)) priceRaw = parsed;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[SSE] oracle price lookup failed for asset=${asset}; using u0`, e);
+      }
+      hfArgs.push(cvToHex(uintCV(priceRaw)));
+    }
+
     const hfHex = await readContract(
       CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
       "get-position-health-factor-for-stablecoin",
-      [cvToHex(principalCV(userAddress)), cvToHex(uintCV(coin.id)), cvToHex(principalCV(asset))],
+      hfArgs,
       userAddress
     );
 
-    let healthFactor: number | null = null;
+    let healthFactor = 0;
     try {
       healthFactor = parseRequiredUint(
         hfHex,
         `health factor for owner=${userAddress} stablecoin=${coin.id} asset=${asset}`
       );
     } catch (e) {
-      console.error(
-        `[SSE] Skipping collateral position due to unreadable health factor: owner=${userAddress} stablecoin=${coin.id} asset=${asset} raw=${hfHex}`,
+      // Don't drop the position -- the UI needs the existence + amount even
+      // if the health read returned null. Default healthFactor=0 so the
+      // existing health-badge logic still renders.
+      console.warn(
+        `[SSE] health factor unreadable for owner=${userAddress} stablecoin=${coin.id} asset=${asset} raw=${hfHex}; defaulting to 0`,
         e
       );
-      continue;
     }
 
     positions.push({
@@ -1871,11 +1942,45 @@ export function useProtocolStats() {
             return { tvlUsd: 0, tvlPartial: true };
           }
 
+          // Read a function on a token contract at its OWN address (not the
+          // SSE deployer). External tokens like sBTC (SM3VDXK...) and vGLD
+          // (SP183M...) are deployed by third parties, so we must use the
+          // full asset principal here -- not CONTRACTS.DEPLOYER -- or every
+          // get-balance / get-decimals call silently returns null and TVL
+          // collapses to $0 even when collateral is correctly escrowed.
+          const readTokenContract = async (
+            assetPrincipal: string,
+            functionName: string,
+            args: string[]
+          ): Promise<string | null> => {
+            const [addr, name] = assetPrincipal.includes(".")
+              ? assetPrincipal.split(".")
+              : [CONTRACTS.DEPLOYER, assetPrincipal];
+            try {
+              const tokenHeaders: Record<string, string> = { "Content-Type": "application/json" };
+              if (API_KEY) tokenHeaders["x-api-key"] = API_KEY;
+              const resp = await fetch(
+                `${API_BASE}/v2/contracts/call-read/${addr}/${name}/${functionName}`,
+                {
+                  method: "POST",
+                  headers: tokenHeaders,
+                  signal,
+                  body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: args }),
+                }
+              );
+              if (!resp.ok) return null;
+              const data = await resp.json();
+              if (!data.okay) return null;
+              return data.result as string;
+            } catch {
+              return null;
+            }
+          };
+
           const decimalsCache = new Map<string, number>();
           const getAssetDecimals = async (assetPrincipal: string): Promise<number> => {
             if (decimalsCache.has(assetPrincipal)) return decimalsCache.get(assetPrincipal)!;
-            const contractName = assetPrincipal.includes(".") ? assetPrincipal.split(".")[1] : assetPrincipal;
-            const decimalsHex = await readContract(contractName, "get-decimals", [], CONTRACTS.DEPLOYER);
+            const decimalsHex = await readTokenContract(assetPrincipal, "get-decimals", []);
             const decimals = decimalsHex
               ? parseOkUint(decimalsHex) ?? getCollateralDecimals(assetPrincipal)
               : getCollateralDecimals(assetPrincipal);
@@ -1889,12 +1994,9 @@ export function useProtocolStats() {
           const results = await Promise.all(
             uniqueAssets.map(async (assetPrincipal) => {
               const contractName = assetPrincipal.includes(".") ? assetPrincipal.split(".")[1] : assetPrincipal;
-              const balHex = await readContract(
-                contractName,
-                "get-balance",
-                [cvToHex(principalCV(vaultEnginePrincipal))],
-                CONTRACTS.DEPLOYER
-              );
+              const balHex = await readTokenContract(assetPrincipal, "get-balance", [
+                cvToHex(principalCV(vaultEnginePrincipal)),
+              ]);
               if (!balHex) return { priced: false, value: 0 };
               const balRaw = parseOkUint(balHex);
               if (balRaw === null || balRaw === 0) return { priced: true, value: 0 };

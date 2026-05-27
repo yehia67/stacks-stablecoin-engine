@@ -59,9 +59,9 @@ User → VaultEngine → StablecoinToken
 
 ### Oracle Contracts
 - `oracle-trait.clar`: Trait defining `get-price`.
-- `dia-oracle-adapter.clar`: Forwards to the real DIA oracle on testnet/mainnet (`ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`).
+- `dia-oracle-adapter.clar` / `dia-oracle-adapter-mainnet.clar`: Forwards to the real DIA oracle. Testnet: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle`. Mainnet: `SP1G48FZ4Y7JY8G2Z0N51QTCYGBQ6F4J43J77BQC0.dia-oracle`.
 - `price-oracle-dia-btc-v2.clar` / `price-oracle-dia-stx-v2.clar`: `oracle-trait` implementations wrapping DIA with staleness guard and ms→s timestamp conversion.
-- `sip-010-trait.clar`: Local SIP-010 trait definition used by the token.
+- **SIP-010 trait**: All consumer contracts and the stablecoin token reference the canonical mainnet trait `SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait` (via Clarinet `requirements`). 4-arg `transfer` with `(optional (buff 34))` memo. No local trait file is deployed by SSE.
 
 ### Cross-Chain Bridge Contracts
 - `bridge-adapter-trait.clar`: Trait defining the interface for cross-chain bridge adapters (`mint-from-remote`, `burn-to-remote`).
@@ -209,10 +209,71 @@ This reads from `sse.config.json` to determine which contracts to deploy and whi
 
 Configure your deployer mnemonic/key in `settings/Testnet.toml` before running.
 
-## Testnet Deployment (current)
-Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF` · Deployed 2026-05-12.
+## Mainnet Deployment (live)
+Deployer: [`SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0`](https://explorer.hiro.so/address/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0?chain=mainnet) · Deployed 2026-05-17.
 
-**Governance**: pinned to Asigna multisig vault [`SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF`](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) (admin and guardian). Mainnet vault (when deploying): [`SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX`](https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard). Timelock delay = 144 blocks (~24h). All five governed contracts are bootstrap-locked. Frontend inspector: `/governance`.
+**Governance**: pinned to Asigna mainnet vault [`SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX`](https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard) (admin **and** guardian). Timelock delay = 144 blocks (~24h). All five governed contracts (`stablecoin-factory-v4`, `collateral-registry-v6`, `bridge-registry-v4`, `xreserve-adapter-v5`, `multi-asset-vault-engine-v7`) are bootstrap-locked. Deployer key has zero admin power.
+
+**Collateral**: real sBTC token [`SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token`](https://explorer.hiro.so/txid/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token?chain=mainnet) registered under `collateral-registry-v6` (min CR 150%, liq ratio 120%, liq penalty 10%, stability fee 2%, debt ceiling u100_000_000_000, debt floor u10_000_000, oracle = DIA BTC).
+
+**Factory**: registration fee = `u0` (free stablecoin creation for v1 mainnet launch). Treasury = Asigna vault.
+
+**SIP-010 compliance**: all consumer contracts and the stablecoin token impl-trait reference the canonical mainnet SIP-010 trait [`SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard`](https://explorer.hiro.so/txid/SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard?chain=mainnet). 4-arg `transfer` with `(optional (buff 34))` memo.
+
+### Contracts on-chain (mainnet):
+
+| Contract | Identifier |
+|---|---|
+| `sse-governance-v1` | [`SP3QMDAC….sse-governance-v1`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.sse-governance-v1?chain=mainnet) |
+| `sse-timelock-v1` | [`SP3QMDAC….sse-timelock-v1`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.sse-timelock-v1?chain=mainnet) |
+| `stablecoin-factory-v4` | [`SP3QMDAC….stablecoin-factory-v4`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.stablecoin-factory-v4?chain=mainnet) |
+| `stablecoin-token-v4` | [`SP3QMDAC….stablecoin-token-v4`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.stablecoin-token-v4?chain=mainnet) |
+| `collateral-registry-v6` | [`SP3QMDAC….collateral-registry-v6`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.collateral-registry-v6?chain=mainnet) |
+| `multi-asset-vault-engine-v7` | [`SP3QMDAC….multi-asset-vault-engine-v7`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.multi-asset-vault-engine-v7?chain=mainnet) (legacy, still authorized in registry) |
+| `multi-asset-vault-engine-v8` | [`SP3QMDAC….multi-asset-vault-engine-v8`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.multi-asset-vault-engine-v8?chain=mainnet) (active, trait-based oracle dispatch) |
+| `stability-pool-v6` | [`SP3QMDAC….stability-pool-v6`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.stability-pool-v6?chain=mainnet) (legacy v7 ecosystem) |
+| `stability-pool-v7` | [`SP3QMDAC….stability-pool-v7`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.stability-pool-v7?chain=mainnet) (active, used by v8 liquidation flow) |
+| `liquidation-engine-v7` | [`SP3QMDAC….liquidation-engine-v7`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.liquidation-engine-v7?chain=mainnet) (legacy) |
+| `liquidation-engine-v8` | [`SP3QMDAC….liquidation-engine-v8`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.liquidation-engine-v8?chain=mainnet) (active) |
+| `price-oracle-vgld-v1` | [`SP3QMDAC….price-oracle-vgld-v1`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.price-oracle-vgld-v1?chain=mainnet) (constant $1 for vGLD collateral) |
+| `bridge-registry-v4` | [`SP3QMDAC….bridge-registry-v4`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.bridge-registry-v4?chain=mainnet) |
+| `xreserve-adapter-v5` | [`SP3QMDAC….xreserve-adapter-v5`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.xreserve-adapter-v5?chain=mainnet) |
+| `dia-oracle-adapter` | [`SP3QMDAC….dia-oracle-adapter`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.dia-oracle-adapter?chain=mainnet) → forwards to `SP1G48FZ4Y7JY8G2Z0N51QTCYGBQ6F4J43J77BQC0.dia-oracle` |
+| `price-oracle-dia-btc-v2` | [`SP3QMDAC….price-oracle-dia-btc-v2`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.price-oracle-dia-btc-v2?chain=mainnet) |
+| `price-oracle-dia-stx-v2` | [`SP3QMDAC….price-oracle-dia-stx-v2`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.price-oracle-dia-stx-v2?chain=mainnet) |
+| `stablecoin-engine-token-trait` | [`SP3QMDAC….stablecoin-engine-token-trait`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.stablecoin-engine-token-trait?chain=mainnet) |
+| `oracle-trait` | [`SP3QMDAC….oracle-trait`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.oracle-trait?chain=mainnet) |
+| `bridge-adapter-trait` | [`SP3QMDAC….bridge-adapter-trait`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.bridge-adapter-trait?chain=mainnet) |
+
+**Note**: `sbtc-token-v4` and `stx-token-v4` are testnet-only fake tokens — they are **not** deployed on mainnet. Mainnet uses the real sBTC contract as collateral.
+
+### Mainnet upgrade — vGLD + v8 engine + stability-pool-v7 (live 2026-05-25)
+
+Four new contracts are live on mainnet, and VoltFi vGLD (`SP183MTM6NNBG18YSKCQG7Y5P5HVTAK8WSXJNKYMW.vgld-token-v4`, FT asset name `vGLDv4`, 8 decimals, hard $1 peg) is registered as a second approved collateral alongside sBTC:
+
+| Contract | Mainnet principal | Purpose |
+|---|---|---|
+| `price-oracle-vgld-v1` | [`SP3QMDAC….price-oracle-vgld-v1`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.price-oracle-vgld-v1?chain=mainnet) | Constant $1 USD oracle (implements `oracle-trait`) — canonical price for vGLD |
+| `stability-pool-v7` | [`SP3QMDAC….stability-pool-v7`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.stability-pool-v7?chain=mainnet) | Cross-reference bump from v6 (gates `distribute-liquidation-reward` on `.liquidation-engine-v8`) |
+| `multi-asset-vault-engine-v8` | [`SP3QMDAC….multi-asset-vault-engine-v8`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.multi-asset-vault-engine-v8?chain=mainnet) | Trait-based oracle dispatch — reads canonical oracle per-asset from `collateral-registry-v6`. Adding new collateral now requires only a timelocked `add-collateral-type` call |
+| `liquidation-engine-v8` | [`SP3QMDAC….liquidation-engine-v8`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.liquidation-engine-v8?chain=mainnet) | Validates passed oracle against registry-stored principal, fetches price, calls vault-engine-v8 |
+
+vGLD risk params: 150% min-cr / 120% liq-r / 10% liq-pen / 2% APR stability fee / 100k stablecoin debt ceiling / 10 stablecoin debt floor.
+
+Governance txids (Asigna multisig `SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX` via `sse-timelock-v1`):
+- Queue `execute-coll-set-vault-auth(v8, true)`: `0x532a011a9341f49e2f857a5f0cd18a537ef24fb9bedd4b3ac6df89ea2a2d1c0c`
+- Queue `execute-coll-add(vGLD, ...)`: `0xdedd33ae4da8f1df380beb0c315442f4ad4bd4fa3f49728482431f1241dd4447`
+- Execute `execute-coll-set-vault-auth(v8, true)`: `0xfa1643288a538aa4d41eca8337b2d33bc4c161bb10bacc13da8d8d2d98c755da`
+- Execute `execute-coll-add(vGLD, ...)`: `0xc8e15225e60c44ae4a5b6e589899eb1816dcd2eaf2430373a707fa09815955e7`
+
+Full plan + risk doc: `docs/plans/add-vgld-collateral.md`. Operational runbook: `docs/plans/timelock-operations.md`.
+
+## Testnet Deployment
+Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF` · Originally deployed 2026-05-12, vault engine upgraded to v8 + vGLD collateral added in a follow-up deploy.
+
+**Governance**: pinned to Asigna multisig vault [`SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF`](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) (admin and guardian). Timelock delay = 144 blocks (~24h). All governed contracts are bootstrap-locked. Frontend inspector: `/governance`.
+
+> ⚠️ Testnet on-chain contracts predate the canonical SIP-010 migration and still use a 3-arg local `sip-010-trait`. Repo source for these contracts now uses canonical SIP-010 — the originally deployed contracts are frozen at v4/v6, but the vault engine has since been re-deployed at v8 (alongside `liquidation-engine-v8`, `vgld-token-v4`, and `price-oracle-vgld-v1`) which uses trait-based oracle dispatch and the canonical SIP-010 trait. Mainnet remains on v7. Use the mainnet deployment above for production integration work; testnet v8 is the development surface for trait-dispatched oracles and new collateral assets.
 
 ### Contracts on-chain:
 
@@ -224,23 +285,25 @@ Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF` · Deployed 2026-05-12.
 | `stablecoin-token` | v4 | Native `define-fungible-token` for post-condition support |
 | `sbtc-token` | v4 | Native `define-fungible-token` for post-condition support |
 | `stx-token` | v4 | Native `define-fungible-token` for post-condition support |
-| `collateral-registry` | v6 | Governance-gated admin functions; updated refs to vault-engine-v7 |
-| `multi-asset-vault-engine` | v7 | Governance-gated `register-asset-oracle`; updated refs to token-v4, registry-v6, pool-v6, liquidation-v7 |
-| `stability-pool` | v6 | Updated refs to liquidation-engine-v7, factory-v4 |
-| `liquidation-engine` | v7 | Full orchestration with vault-engine-v7, pool-v6 references |
+| `vgld-token` | v4 | Mock VoltFi gold token (8 decimals); testnet-only stable-pegged collateral |
+| `collateral-registry` | v6 | Governance-gated admin functions; stores canonical oracle per asset |
+| `multi-asset-vault-engine` | **v8** | Trait-based oracle dispatch; reads canonical oracle from `collateral-registry-v6`; no `register-asset-oracle` function (replaced by per-asset oracle stored in registry) |
+| `stability-pool` | v6 | Updated refs to liquidation-engine, factory-v4 |
+| `liquidation-engine` | **v8** | Calls vault-engine-v8 `liquidate-position` with oracle trait + raw price |
 | `bridge-registry` | v4 | Governance-gated chain/token management |
 | `xreserve-adapter` | v5 | Governance-gated; `set-paused` on emergency whitelist |
 | `dia-oracle-adapter` | — | Forwards to `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` |
 | `price-oracle-dia-btc` | v2 | DIA-backed BTC price with staleness guard |
 | `price-oracle-dia-stx` | v2 | DIA-backed STX price with staleness guard |
+| `price-oracle-vgld` | **v1** | Constant $1 USD; implements `oracle-trait`; canonical oracle for vGLD |
 
 ### Bootstrap steps (run automatically by `npm run deploy`):
-- Authorizing `multi-asset-vault-engine-v7` in `stablecoin-token-v4`
-- Authorizing `multi-asset-vault-engine-v7` in `collateral-registry-v6`
-- Registering DIA oracle ID mappings (sBTC → oracle 3, STX → oracle 4) in `multi-asset-vault-engine-v7`
-- Adding collateral types (sBTC + STX) with DIA oracle contracts in `collateral-registry-v6`
-- Updating oracle principals in `collateral-registry-v6` to point to v2 DIA oracles
-- Wiring governance: `bootstrap-set-governance(sse-timelock-v1)` + `lock-bootstrap()` on each of factory-v4, bridge-registry-v4, collateral-registry-v6, multi-asset-vault-engine-v7, xreserve-adapter-v5
+- Authorizing `multi-asset-vault-engine-v8` in `stablecoin-token-v4`
+- Authorizing `multi-asset-vault-engine-v8` in `collateral-registry-v6`
+- ⊘ `register-asset-oracle` is **skipped on v8** — the engine reads the oracle from `collateral-registry-v6` directly
+- Adding collateral types (sBTC + STX + vGLD) with their canonical oracle contracts in `collateral-registry-v6`
+- Updating oracle principals in `collateral-registry-v6`
+- Wiring governance: `bootstrap-set-governance(sse-timelock-v1)` + `lock-bootstrap()` on each of factory-v4, bridge-registry-v4, collateral-registry-v6, xreserve-adapter-v5. The v8 vault engine has no governance var (admin surface is on the registry) so only `lock-bootstrap` runs on it.
 - Pinning admin/guardian/timelock in `sse-governance-v1` and locking it
 - Seeding emergency whitelist (set-collateral-enabled, set-token-enabled, set-paused) in `sse-timelock-v1` and locking it
 

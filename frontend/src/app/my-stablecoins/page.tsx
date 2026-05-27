@@ -36,8 +36,11 @@ import {
   CollateralType,
 } from "@/hooks/useContractRead";
 import { formatAddress, formatNumber, toHumanReadable } from "@/lib/utils";
+import { getCollateralSymbol } from "@/lib/constants";
 
 function formatAssetName(asset: string) {
+  // Kept for compatibility (full contract-name display); prefer
+  // getCollateralSymbol(asset) for chip-style labels.
   const [, contractName] = asset.split(".");
   return contractName || asset;
 }
@@ -219,7 +222,7 @@ function StablecoinCard({
                     return (
                       <tr key={row.asset} className="border-t">
                         <td className="px-3 py-2 font-medium">
-                          {formatAssetName(row.asset)}
+                          {getCollateralSymbol(row.asset)}
                           <p className="font-mono text-xs text-muted-foreground">
                             {formatAddress(row.asset.split(".")[0] ?? "", 4)}
                           </p>

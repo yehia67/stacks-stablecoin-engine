@@ -4,6 +4,27 @@
 
 ---
 
+## 0. Active Engine Versions (per network)
+
+| Network | Vault Engine | Liquidation Engine | Stability Pool | Notes |
+|---|---|---|---|---|
+| **Mainnet** | `multi-asset-vault-engine-v8` | `liquidation-engine-v8` | `stability-pool-v7` | Trait-based oracle dispatch (live 2026-05-25). Adds vGLD (`SP183MTM…vgld-token-v4`) via constant-$1 `price-oracle-vgld-v1`. v7 engine still authorized in registry (harmless; token only mints/burns via v8). |
+| **Testnet** | `multi-asset-vault-engine-v8` | `liquidation-engine-v8` | `stability-pool-v6` | Trait-based dispatch (no vGLD; mainnet-only). |
+
+The v8 engine reads the canonical oracle for an asset from `collateral-registry-v6` directly and takes the oracle as a trait reference at every pricing call site (`mint-against-asset`, `withdraw-collateral`, `liquidate-position`). Read-only price-aware functions take a `(price uint)` parameter directly (Clarity disallows trait dispatch from read-only context). See `frontend/src/lib/oracles.ts` for the registry-backed lookup helper.
+
+Onboarding a new collateral on v8 requires only a timelocked `add-collateral-type` call with the oracle principal (and, if no existing feed fits, a tiny new oracle wrapper). No engine redeploy is ever needed again.
+
+### Mainnet upgrade — vGLD + v8 + pool-v7 (executed 2026-05-25)
+
+Published `price-oracle-vgld-v1`, `stability-pool-v7`, `multi-asset-vault-engine-v8`, `liquidation-engine-v8`. Deployer key flipped `stablecoin-token-v4` to v8 (owner-gated). Asigna multisig queued + executed two `sse-timelock-v1` proposals:
+- `execute-coll-set-vault-auth(v8 engine, true)` — registry now authorizes v8 alongside v7
+- `execute-coll-add(vGLD, 150, 120, 10, 200, 100_000_000_000, 10_000_000, …price-oracle-vgld-v1)` — vGLD live as second collateral
+
+Execute txids: `0xfa1643288a538aa4d41eca8337b2d33bc4c161bb10bacc13da8d8d2d98c755da`, `0xc8e15225e60c44ae4a5b6e589899eb1816dcd2eaf2430373a707fa09815955e7`. Full plan + risk doc: `docs/plans/add-vgld-collateral.md`. Operational runbook: `docs/plans/timelock-operations.md`.
+
+---
+
 ## 1. Stablecoin Factory (Registration & Token Linking)
 
 ### Contract: `stablecoin-factory-v4` (governance-gated)
@@ -199,7 +220,15 @@ All data is **stub** — `TODO: Fetch from contracts` everywhere:
 - registration fee, treasury, global collateral management, oracle updates, vault engine authorization, bridge chain/token mgmt, xReserve pause/attestation
 - Frontend `/governance` is **read-only**: shows roles, delay, lock status, governed contracts, emergency whitelist, queued-action lookup. Write flows happen on `https://stx.asigna.io/`.
 
-### ✅ Contract-level TODOs (all completed, deployed 2026-05-12):
+### ✅ Mainnet launched 2026-05-17
+
+- **Deployer**: `SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0`
+- **Governance**: pinned to Asigna mainnet vault `SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX` (admin + guardian). 144-block timelock. All five governed contracts bootstrap-locked.
+- **Collateral**: real sBTC (`SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token`) registered. CR 150% / liq 120% / penalty 10% / fee 2%.
+- **Factory fee**: `u0` (free creation for v1).
+- **SIP-010**: canonical mainnet trait referenced directly; 4-arg `transfer` with memo across all contracts. Token template that the frontend deploys for new stablecoins also impl-traits canonical SIP-010.
+
+### ✅ Contract-level TODOs (all completed, originally deployed on testnet 2026-05-12, mainnet 2026-05-17):
 - **Governance**: Asigna multisig + 24h timelock (`sse-governance-v1`, `sse-timelock-v1`). All five governed contracts (`stablecoin-factory-v4`, `collateral-registry-v6`, `bridge-registry-v4`, `xreserve-adapter-v5`, `multi-asset-vault-engine-v7`) are bootstrap-locked. Deployer key has zero admin power. See [`adl/governance.md`](./adl/governance.md). Frontend inspector at `/governance`. Asigna vault dashboards: [testnet](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) · [mainnet](https://stx.asigna.io/vault/SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX/dashboard).
 - **Actual collateral custody**: `multi-asset-vault-engine-v7` deposit/withdraw perform real SIP-010 token transfers. Collateral tokens are transferred to contract custody on deposit and returned to user on withdrawal. Asset mismatch validation (`ERR_ASSET_MISMATCH`) ensures the correct token trait is passed.
 - **Stability pool custody**: `stability-pool-v6` performs real SIP-010 token transfers with stablecoin-scoped balances. Token validated against factory-linked contract (`ERR_TOKEN_MISMATCH`).

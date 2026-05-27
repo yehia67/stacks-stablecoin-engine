@@ -22,7 +22,7 @@ export function generateTokenContract(name: string, symbol: string): string {
 ;; Deployed via SSE Stablecoin Factory
 ;; Uses native define-fungible-token for post-condition support
 
-(impl-trait '${deployer}.sip-010-trait.sip-010-trait)
+(impl-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
 (impl-trait '${deployer}.stablecoin-engine-token-trait.stablecoin-engine-token-trait)
 
 (define-constant CONTRACT-OWNER tx-sender)
@@ -53,10 +53,12 @@ export function generateTokenContract(name: string, symbol: string): string {
   )
 )
 
-(define-public (transfer (amount uint) (sender principal) (recipient principal))
+(define-public (transfer (amount uint) (sender principal) (recipient principal) (memo (optional (buff 34))))
   (begin
     (asserts! (is-eq tx-sender sender) (err ERR_UNAUTHORIZED))
-    (ft-transfer? ${ftName} amount sender recipient)
+    (try! (ft-transfer? ${ftName} amount sender recipient))
+    (match memo to-print (print to-print) 0x)
+    (ok true)
   )
 )
 
