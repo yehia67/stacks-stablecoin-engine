@@ -1942,11 +1942,45 @@ export function useProtocolStats() {
             return { tvlUsd: 0, tvlPartial: true };
           }
 
+          // Read a function on a token contract at its OWN address (not the
+          // SSE deployer). External tokens like sBTC (SM3VDXK...) and vGLD
+          // (SP183M...) are deployed by third parties, so we must use the
+          // full asset principal here -- not CONTRACTS.DEPLOYER -- or every
+          // get-balance / get-decimals call silently returns null and TVL
+          // collapses to $0 even when collateral is correctly escrowed.
+          const readTokenContract = async (
+            assetPrincipal: string,
+            functionName: string,
+            args: string[]
+          ): Promise<string | null> => {
+            const [addr, name] = assetPrincipal.includes(".")
+              ? assetPrincipal.split(".")
+              : [CONTRACTS.DEPLOYER, assetPrincipal];
+            try {
+              const tokenHeaders: Record<string, string> = { "Content-Type": "application/json" };
+              if (API_KEY) tokenHeaders["x-api-key"] = API_KEY;
+              const resp = await fetch(
+                `${API_BASE}/v2/contracts/call-read/${addr}/${name}/${functionName}`,
+                {
+                  method: "POST",
+                  headers: tokenHeaders,
+                  signal,
+                  body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: args }),
+                }
+              );
+              if (!resp.ok) return null;
+              const data = await resp.json();
+              if (!data.okay) return null;
+              return data.result as string;
+            } catch {
+              return null;
+            }
+          };
+
           const decimalsCache = new Map<string, number>();
           const getAssetDecimals = async (assetPrincipal: string): Promise<number> => {
             if (decimalsCache.has(assetPrincipal)) return decimalsCache.get(assetPrincipal)!;
-            const contractName = assetPrincipal.includes(".") ? assetPrincipal.split(".")[1] : assetPrincipal;
-            const decimalsHex = await readContract(contractName, "get-decimals", [], CONTRACTS.DEPLOYER);
+            const decimalsHex = await readTokenContract(assetPrincipal, "get-decimals", []);
             const decimals = decimalsHex
               ? parseOkUint(decimalsHex) ?? getCollateralDecimals(assetPrincipal)
               : getCollateralDecimals(assetPrincipal);
@@ -1960,12 +1994,9 @@ export function useProtocolStats() {
           const results = await Promise.all(
             uniqueAssets.map(async (assetPrincipal) => {
               const contractName = assetPrincipal.includes(".") ? assetPrincipal.split(".")[1] : assetPrincipal;
-              const balHex = await readContract(
-                contractName,
-                "get-balance",
-                [cvToHex(principalCV(vaultEnginePrincipal))],
-                CONTRACTS.DEPLOYER
-              );
+              const balHex = await readTokenContract(assetPrincipal, "get-balance", [
+                cvToHex(principalCV(vaultEnginePrincipal)),
+              ]);
               if (!balHex) return { priced: false, value: 0 };
               const balRaw = parseOkUint(balHex);
               if (balRaw === null || balRaw === 0) return { priced: true, value: 0 };

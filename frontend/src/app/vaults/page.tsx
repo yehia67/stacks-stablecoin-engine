@@ -15,11 +15,13 @@ import { STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralSymbol } from 
 
 const ZERO_DEBT_SENTINEL = 1000000;
 
+// Contract returns health factor scaled by 100 (e.g. 11333 = 113.33%).
+// Thresholds here are in the same raw-scaled units: 20000 = 200%, 15000 = 150%.
 function getPositionStatus(hf: number, debtShare: number): "healthy" | "warning" | "danger" | "no-debt" {
   if (debtShare === 0) return "no-debt";
   if (hf >= ZERO_DEBT_SENTINEL) return "no-debt";
-  if (hf >= 200) return "healthy";
-  if (hf >= 150) return "warning";
+  if (hf >= 20000) return "healthy";
+  if (hf >= 15000) return "warning";
   return "danger";
 }
 
@@ -208,6 +210,7 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
               {vault.positions.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">Collateral Positions</p>
+                  <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
                   {vault.positions.map((pos) => {
                     const posStatus = getPositionStatus(pos.healthFactor, pos.debtShare);
                     return (
@@ -223,11 +226,12 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
                           posStatus === "warning" ? "text-yellow-500" :
                           posStatus === "danger" ? "text-red-500" : "text-muted-foreground"
                         }`}>
-                          {posStatus === "no-debt" ? "-" : `${pos.healthFactor}%`}
+                          {posStatus === "no-debt" ? "-" : `${(pos.healthFactor / 100).toFixed(0)}%`}
                         </span>
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               )}
 

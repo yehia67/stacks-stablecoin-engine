@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
+import { useProtocolStats } from "@/hooks/useContractRead";
 import { formatNumber, formatTokenAmount, getHealthFactorColor, getHealthFactorStatus } from "@/lib/utils";
 import { STABLECOIN_DECIMALS } from "@/lib/constants";
 
@@ -28,13 +29,6 @@ interface VaultData {
   healthFactor: number;
 }
 
-interface ProtocolStats {
-  tvl: number;
-  totalDebt: number;
-  activeVaults: number;
-  collateralRatio: number;
-}
-
 export default function DashboardPage() {
   const { isConnected, address } = useWallet();
   const [mounted, setMounted] = useState(false);
@@ -43,7 +37,11 @@ export default function DashboardPage() {
   const [userVaults, setUserVaults] = useState<VaultData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [protocolStats, setProtocolStats] = useState<ProtocolStats | null>(null);
+  // Live protocol-wide stats from on-chain reads (registry-driven).
+  // tvlUsd sums get-balance(vault-engine) * oracle-price across every
+  // collateral registered in collateral-registry-v6, so newly added
+  // assets like vGLD are counted automatically.
+  const { stats: protocolStats } = useProtocolStats();
 
   const [userStats, setUserStats] = useState<{
     totalCollateral: number;
@@ -105,10 +103,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {protocolStats ? `$${formatNumber(protocolStats.tvl, 0)}` : "—"}
+              {protocolStats && protocolStats.tvlUsd !== null ? `$${formatNumber(protocolStats.tvlUsd, 0)}` : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
-              Protocol TVL
+              {protocolStats?.tvlPartial ? "Protocol TVL (partial — some prices unavailable)" : "Protocol TVL"}
             </p>
           </CardContent>
         </Card>
@@ -122,7 +120,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {protocolStats ? `$${formatNumber(protocolStats.totalDebt, 0)}` : "—"}
+              {protocolStats ? `$${formatNumber(protocolStats.totalDebtUsd, 0)}` : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
               Across all stablecoins
@@ -139,10 +137,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {protocolStats ? formatNumber(protocolStats.activeVaults, 0) : "—"}
+              {protocolStats ? formatNumber(protocolStats.stablecoinCount, 0) : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
-              Total vaults
+              Registered stablecoins
             </p>
           </CardContent>
         </Card>
@@ -156,7 +154,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {protocolStats ? `${protocolStats.collateralRatio}%` : "—"}
+              {protocolStats && protocolStats.tvlUsd !== null && protocolStats.totalDebtUsd > 0
+                ? `${formatNumber((protocolStats.tvlUsd / protocolStats.totalDebtUsd) * 100, 0)}%`
+                : "—"}
             </div>
             <p className="text-xs text-muted-foreground">
               Protocol health
