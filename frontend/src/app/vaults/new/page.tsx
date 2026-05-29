@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices, useTokenDecimals, useUserVault } from "@/hooks/useContractRead";
-import { CONTRACTS, getCollateralSymbol, getCollateralUx } from "@/lib/constants";
+import { CONTRACTS, getCollateralSymbol, getCollateralUx, getExplorerTxUrl } from "@/lib/constants";
 import { getOraclePrincipalForAsset } from "@/lib/oracles";
 import { calculateHealthFactor, formatNumber, toSmallestUnits, toHumanReadable } from "@/lib/utils";
 
@@ -832,7 +832,7 @@ export default function NewVaultPage() {
 
                   {flowTxId && (
                     <a
-                      href={`https://explorer.hiro.so/txid/${flowTxId}?chain=testnet`}
+                      href={getExplorerTxUrl(flowTxId)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

@@ -2,6 +2,15 @@
 
 import { useCallback } from "react";
 import { request } from "@stacks/connect";
+// Xverse deploy channel. @stacks/connect's `request` resolves the Xverse
+// provider as `window.XverseProviders.StacksProvider`, whose `.request` is a
+// stub that throws "request function is not implemented". sats-connect instead
+// routes through `window.XverseProviders.BitcoinProvider` -- Xverse's unified
+// RPC channel that actually implements `.request` -- and its modern
+// `request("stx_deployContract", ...)` path sends clean JSON-RPC params (no
+// JWT transit token, unlike the legacy `openContractDeploy` helper that
+// produced an on-chain JWT source and `(err none)`).
+import SatsConnectWallet from "sats-connect";
 import {
   Pc,
   uintCV,
@@ -10,6 +19,7 @@ import {
   standardPrincipalCV,
   contractPrincipalCV,
 } from "@stacks/transactions";
+import { assertWalletSelected, getProviderObjectForWallet, getSelectedStacksWallet } from "@/lib/walletProvider";
 import { CONTRACTS, APP_CONFIG, FT_ASSET_NAMES, getContractId, VAULT_ENGINE_IS_V8 } from "@/lib/constants";
 import { networkName, getUserAddress } from "@/lib/stacks";
 import { generateTokenContract, deriveTokenContractName } from "@/lib/tokenTemplate";
@@ -314,12 +324,72 @@ export function useContract() {
         const contractName = deriveTokenContractName(stablecoinSymbol);
         const codeBody = generateTokenContract(stablecoinName, stablecoinSymbol);
 
-        const response: any = await request("stx_deployContract", {
+        // DIAGNOSTIC: log exactly what we hand to the wallet so we can see
+        // why the wallet validator says "Invalid input at clarityCode".
+        console.log("[SSE] deployTokenContract params:", {
           name: contractName,
-          clarityCode: codeBody,
+          nameLength: contractName.length,
+          stablecoinName,
+          stablecoinSymbol,
+          clarityCodeLength: codeBody.length,
+          clarityCodeFirst200: codeBody.slice(0, 200),
+          clarityCodeLast200: codeBody.slice(-200),
           network: networkName,
         });
-        const txId = response.txid || response.result?.txid || "";
+
+        // Dispatch per-wallet. Each wallet has different API surface:
+        //
+        //   Leather: exposes SIP-030 `request(method, params)` directly on
+        //   `window.LeatherProvider`. Calling it bypasses any
+        //   `window.StacksProvider` race and bypasses the @stacks/connect
+        //   wrapper's transforms (which were JWT-wrapping the source). Most
+        //   reliable path for Leather.
+        //
+        //   Xverse: route through the `sats-connect` SDK. Its `request`
+        //   resolves Xverse's unified `BitcoinProvider` (which implements
+        //   `.request`) and sends clean JSON-RPC -- NOT the old
+        //   `openContractDeploy` JWT path that published a JWT string as the
+        //   contract source. Do NOT switch Xverse to @stacks/connect's
+        //   `request`: it targets `XverseProviders.StacksProvider`, whose
+        //   `.request` is a stub that throws "request function is not implemented".
+        //
+        // Adding a new wallet: extend KNOWN_WALLETS in walletProvider.ts
+        // and add a branch here matching the wallet id.
+        const selected = assertWalletSelected();
+        console.log("[SSE] deploying via wallet provider:", selected.name, `(${selected.id})`);
+
+        let txId = "";
+
+        if (selected.id === "LeatherProvider") {
+          const provider = getProviderObjectForWallet(selected.id);
+          if (!provider) {
+            throw new Error("Leather provider disappeared between selection and deploy. Reconnect and retry.");
+          }
+          const resp: any = await provider.request("stx_deployContract", {
+            name: contractName,
+            clarityCode: codeBody,
+            network: networkName,
+          });
+          txId = resp?.txid || resp?.result?.txid || resp?.txId || "";
+        } else if (selected.id === "XverseProviders.StacksProvider") {
+          // sats-connect talks to Xverse's BitcoinProvider RPC channel. Its
+          // modern `request` sends clean params (no JWT). See import comment.
+          const resp: any = await SatsConnectWallet.request("stx_deployContract", {
+            name: contractName,
+            clarityCode: codeBody,
+          });
+          if (resp?.status === "error") {
+            const errMsg = resp?.error?.message || JSON.stringify(resp?.error);
+            throw new Error(`Xverse deploy rejected: ${errMsg}`);
+          }
+          txId = resp?.result?.txid || resp?.result?.transactionId || "";
+        } else {
+          throw new Error(`No deploy dispatch implemented for wallet "${selected.name}" (${selected.id})`);
+        }
+
+        if (!txId) {
+          throw new Error("Wallet returned no txid. Check console for the raw response.");
+        }
         console.log("Token deploy tx submitted:", txId);
         onSuccess?.(txId, contractName);
       } catch (error: any) {
