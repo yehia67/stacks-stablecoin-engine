@@ -166,6 +166,25 @@ export const COLLATERAL_DECIMALS: Record<string, number> = {
 /** All factory-created stablecoins use 6 decimals. */
 export const STABLECOIN_DECIMALS = 6;
 
+// --- Oracle staleness UX -------------------------------------------------
+// Hardcoded UI staleness threshold. Matches the DIA oracles' on-chain default
+// max-staleness (3600s); we intentionally do NOT read get-max-staleness on-chain.
+export const ORACLE_MAX_STALENESS_SECONDS = 3600; // 60 min
+// How long a cached oracle status is served before a background revalidation.
+export const ORACLE_CACHE_TTL_SECONDS = 60;
+// How long a cached token balance is served before a background revalidation.
+export const TOKEN_BALANCE_CACHE_TTL_SECONDS = 30;
+
+// Price-oracle contract name -> DIA adapter pair, used to read the price
+// timestamp for "updated Xm ago". Oracles absent here have no DIA timestamp.
+export const ORACLE_DIA_PAIRS: Record<string, string> = {
+  "price-oracle-dia-btc-v2": "BTC/USD",
+  "price-oracle-dia-stx-v2": "STX/USD",
+};
+
+// Oracle contract names that are constant / always-fresh feeds (no staleness).
+export const CONSTANT_ORACLE_NAMES = new Set<string>(["price-oracle-vgld-v1"]);
+
 /** Resolve the decimal count for a collateral asset principal or contract name. */
 export function getCollateralDecimals(assetOrPrincipal: string): number {
   const contractName = assetOrPrincipal.includes(".")

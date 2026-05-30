@@ -893,6 +893,40 @@ async function readContract(
   }
 }
 
+/**
+ * Read-only call against an ARBITRARY contract principal (vs `readContract`,
+ * which is pinned to CONTRACTS.DEPLOYER). Accepts either a full principal
+ * ("SP….contract-name") or a bare contract name (assumed under DEPLOYER).
+ * Returns the raw Clarity result hex, or null on any failure.
+ */
+async function callReadOnlyAt(
+  principal: string,
+  functionName: string,
+  args: string[]
+): Promise<string | null> {
+  const [addr, name] = principal.includes(".")
+    ? [principal.split(".")[0], principal.split(".").slice(1).join(".")]
+    : [CONTRACTS.DEPLOYER, principal];
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (API_KEY) headers["x-api-key"] = API_KEY;
+    const resp = await fetch(
+      `${API_BASE}/v2/contracts/call-read/${addr}/${name}/${functionName}`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: args }),
+      }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.okay) return null;
+    return data.result as string;
+  } catch {
+    return null;
+  }
+}
+
 async function loadVaultForStablecoin(
   userAddress: string,
   coin: Stablecoin

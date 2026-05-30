@@ -75,3 +75,17 @@ export function getHealthFactorStatus(healthFactor: number): string {
   if (healthFactor >= 150) return "Caution";
   return "At Risk";
 }
+
+/**
+ * Human-friendly elapsed-time label for oracle freshness.
+ * 45 -> "45s", 78*60 -> "1h 18m", 600 -> "10m".
+ */
+export function formatAge(seconds: number): string {
+  const s = seconds < 0 ? 0 : Math.floor(seconds);
+  if (s < 60) return `${s}s`;
+  const mins = Math.floor(s / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins ? `${hrs}h ${remMins}m` : `${hrs}h`;
+}
