@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useUserVaults, UserVault, CollateralPosition } from "@/hooks/useContractRead";
 import { formatTokenAmount } from "@/lib/utils";
-import { STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralSymbol } from "@/lib/constants";
+import { STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralDisplayDecimals, getCollateralSymbol } from "@/lib/constants";
 
 const ZERO_DEBT_SENTINEL = 1000000;
 
@@ -44,7 +44,7 @@ export default function VaultsPage() {
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { vaults, isLoading, refetch } = useUserVaults(address ?? null);
+  const { vaults, isLoading, isValidating, refetch } = useUserVaults(address ?? null);
 
   useEffect(() => {
     setMounted(true);
@@ -90,8 +90,8 @@ export default function VaultsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading || isValidating}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading || isValidating ? "animate-spin" : ""}`} />
             Refresh
           </Button>
           <Button asChild>
@@ -218,7 +218,7 @@ function VaultList({ vaults }: { vaults: UserVault[] }) {
                         <div>
                           <p className="font-medium">{getCollateralSymbol(pos.asset)}</p>
                           <p className="text-xs text-muted-foreground">
-                            {formatTokenAmount(pos.amount, getCollateralDecimals(pos.asset))} deposited · {formatTokenAmount(pos.debtShare, STABLECOIN_DECIMALS)} debt
+                            {formatTokenAmount(pos.amount, getCollateralDecimals(pos.asset), getCollateralDisplayDecimals(pos.asset))} deposited · {formatTokenAmount(pos.debtShare, STABLECOIN_DECIMALS)} debt
                           </p>
                         </div>
                         <span className={`text-xs font-medium ${

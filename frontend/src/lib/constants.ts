@@ -175,6 +175,17 @@ export function getCollateralDecimals(assetOrPrincipal: string): number {
 }
 
 /**
+ * Fraction digits to SHOW for a collateral amount (distinct from the token's
+ * on-chain decimals). High-value tokens like sBTC (8 decimals) hold meaningful
+ * balances well below 0.01, so a fixed 2-digit display rounded them to "0.00".
+ * We show the token's full precision, capped at 8, so e.g. sBTC renders
+ * "0.00012345" instead of "0.00".
+ */
+export function getCollateralDisplayDecimals(assetOrPrincipal: string): number {
+  return Math.min(getCollateralDecimals(assetOrPrincipal), 8);
+}
+
+/**
  * Short, user-facing symbol for a collateral asset, keyed by bare contract
  * name or full principal. Falls back to the contract-name slug if unknown.
  * Use this for any UI surface that needs a chip-style label rather than the

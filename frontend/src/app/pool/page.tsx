@@ -10,7 +10,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { useRegisteredStablecoins, useStabilityPoolState } from "@/hooks/useContractRead";
 import { formatNumber, formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
-import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
+import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralDisplayDecimals } from "@/lib/constants";
 
 const API_BASE = "/api/stacks";
 
@@ -411,7 +411,7 @@ export default function PoolPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="font-medium">{formatTokenAmount(reward.claimableAmount, getCollateralDecimals(reward.asset))}</p>
+                      <p className="font-medium">{formatTokenAmount(reward.claimableAmount, getCollateralDecimals(reward.asset), getCollateralDisplayDecimals(reward.asset))}</p>
                       <Button
                         size="sm"
                         variant="outline"

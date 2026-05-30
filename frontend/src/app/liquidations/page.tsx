@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
 import { formatNumber, formatTokenAmount, formatAddress, toHumanReadable } from "@/lib/utils";
-import { STABLECOIN_DECIMALS, getCollateralDecimals } from "@/lib/constants";
+import { STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralDisplayDecimals } from "@/lib/constants";
 
 interface LiquidatableVault {
   id: number;
@@ -211,7 +211,7 @@ export default function LiquidationsPage() {
                     <div>
                       <p className="text-muted-foreground">Collateral</p>
                       <p className="font-medium">
-                        {formatTokenAmount(vault.collateralAmount, getCollateralDecimals(vault.collateralAsset))} {vault.collateralType}
+                        {formatTokenAmount(vault.collateralAmount, getCollateralDecimals(vault.collateralAsset), getCollateralDisplayDecimals(vault.collateralAsset))} {vault.collateralType}
                       </p>
                     </div>
                     <div>

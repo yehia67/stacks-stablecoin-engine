@@ -38,14 +38,42 @@ function getFtAssetName(contractPrincipal: string): string | null {
     return FT_ASSET_NAMES[contractName];
   }
 
-  // Dynamic stablecoin tokens follow pattern: symbol-token-timestamp
-  // Their FT name is: symbol-ft (set in tokenTemplate.ts)
-  const match = contractName.match(/^([a-z]+)-token-\d+$/);
+  // Dynamic stablecoin tokens follow pattern: symbol-token-timestamp where the
+  // symbol is the lowercased stablecoin symbol and MAY contain digits
+  // (e.g. "btc01-token-1779913203"). Their FT name is `<symbol>-ft`
+  // (see deriveTokenContractName / generateTokenContract in tokenTemplate.ts).
+  // The symbol charset must include 0-9; a letters-only match dropped the
+  // post-condition for tokens like btc01-ft and deny mode rolled the tx back.
+  const match = contractName.match(/^([a-z0-9]+)-token-\d+$/);
   if (match) {
     return `${match[1]}-ft`;
   }
 
   return null;
+}
+
+/**
+ * Strict variant of getFtAssetName. Throws when the FT asset name can't be
+ * derived instead of returning null.
+ *
+ * Why this matters: every asset a contract call moves must be covered by a
+ * post-condition. When the name couldn't be derived the callers silently fell
+ * back to an EMPTY post-condition array, and under postConditionMode "deny" the
+ * wallet then rolled the transaction back on-chain -- AFTER the fee was charged
+ * (e.g. "btc01-ft was moved ... but not checked"). Failing fast here surfaces
+ * the naming gap in the UI before the user pays for a doomed tx.
+ */
+function requireFtAssetName(contractPrincipal: string): string {
+  const ftName = getFtAssetName(contractPrincipal);
+  if (!ftName) {
+    throw new Error(
+      `[SSE] Could not derive the fungible-token asset name for "${contractPrincipal}". ` +
+        "Add it to FT_ASSET_NAMES, or ensure the contract name follows the " +
+        "'<symbol>-token-<timestamp>' convention. Refusing to send a transaction " +
+        "with an unchecked asset movement."
+    );
+  }
+  return ftName;
 }
 
 export interface ContractCallOptions {
@@ -132,12 +160,16 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const sender = getUserAddress();
-      const ftName = getFtAssetName(collateralAsset);
-      const postConditions =
-        sender && ftName
-          ? [Pc.principal(sender).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const sender = getUserAddress();
+        if (!sender) throw new Error("[SSE] No connected wallet address; cannot build post-condition.");
+        const ftName = requireFtAssetName(collateralAsset);
+        postConditions = [Pc.principal(sender).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
@@ -209,12 +241,16 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const sender = getUserAddress();
-      const ftName = getFtAssetName(tokenContract);
-      const postConditions =
-        sender && ftName
-          ? [Pc.principal(sender).willSendLte(amount).ft(tokenContract as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const sender = getUserAddress();
+        if (!sender) throw new Error("[SSE] No connected wallet address; cannot build post-condition.");
+        const ftName = requireFtAssetName(tokenContract);
+        postConditions = [Pc.principal(sender).willSendLte(amount).ft(tokenContract as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
@@ -252,12 +288,15 @@ export function useContract() {
         onError?.(err);
         return Promise.reject(err);
       }
-      const ftName = getFtAssetName(collateralAsset);
       const vaultPrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE) as `${string}.${string}`;
-      const postConditions =
-        ftName
-          ? [Pc.principal(vaultPrincipal).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const ftName = requireFtAssetName(collateralAsset);
+        postConditions = [Pc.principal(vaultPrincipal).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       const v8ExtraArgs = VAULT_ENGINE_IS_V8 && oracleContract
         ? [parseContractPrincipal(oracleContract)]
@@ -549,12 +588,16 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const sender = getUserAddress();
-      const ftName = getFtAssetName(stablecoinTokenPrincipal);
-      const postConditions =
-        sender && ftName
-          ? [Pc.principal(sender).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const sender = getUserAddress();
+        if (!sender) throw new Error("[SSE] No connected wallet address; cannot build post-condition.");
+        const ftName = requireFtAssetName(stablecoinTokenPrincipal);
+        postConditions = [Pc.principal(sender).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,
@@ -581,12 +624,15 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const ftName = getFtAssetName(stablecoinTokenPrincipal);
       const poolPrincipal = getContractId(CONTRACTS.STABILITY_POOL) as `${string}.${string}`;
-      const postConditions =
-        ftName
-          ? [Pc.principal(poolPrincipal).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const ftName = requireFtAssetName(stablecoinTokenPrincipal);
+        postConditions = [Pc.principal(poolPrincipal).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,

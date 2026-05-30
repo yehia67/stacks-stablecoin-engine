@@ -1075,12 +1075,36 @@ async function loadVaultForStablecoin(
   };
 }
 
-export function useUserVaults(userAddress: string | null) {
-  const [vaults, setVaults] = useState<UserVault[]>([]);
-  const [isLoading, setIsLoading] = useState(!!userAddress);
-  const [error, setError] = useState<Error | null>(null);
+// Stale-while-revalidate cache for a user's vaults, keyed by owner address.
+// Lives at module scope so it survives in-session navigation (e.g.
+// /vaults -> manage a vault -> back is instant, no spinner) while a background
+// revalidation refreshes from chain. Cleared on a full page reload.
+const userVaultsCache = new Map<string, UserVault[]>();
 
+/**
+ * Drop cached vaults for an address (or all addresses). Call after a tx that
+ * mutates vault state so the next read can't serve stale data. `refetch()`
+ * already force-refreshes, so this is only needed when no refetch follows.
+ */
+export function invalidateUserVaultsCache(userAddress?: string) {
+  if (userAddress) userVaultsCache.delete(userAddress);
+  else userVaultsCache.clear();
+}
+
+export function useUserVaults(userAddress: string | null) {
   const { stablecoins } = useRegisteredStablecoins();
+
+  // Seed from cache so a revisit renders instantly instead of flashing a spinner.
+  const [vaults, setVaults] = useState<UserVault[]>(
+    () => (userAddress ? userVaultsCache.get(userAddress) ?? [] : [])
+  );
+  // Cold load (blocking spinner) only when we have an address but nothing cached.
+  const [isLoading, setIsLoading] = useState(
+    () => !!userAddress && !userVaultsCache.has(userAddress)
+  );
+  // Background refresh while cached data is already on screen.
+  const [isValidating, setIsValidating] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   const fetchVaults = useCallback(async () => {
     if (!userAddress || stablecoins.length === 0) {
@@ -1088,7 +1112,11 @@ export function useUserVaults(userAddress: string | null) {
       return;
     }
 
-    setIsLoading(true);
+    const hasCache = userVaultsCache.has(userAddress);
+    // Show the blocking spinner only when there's nothing cached to display;
+    // otherwise revalidate quietly in the background.
+    if (hasCache) setIsValidating(true);
+    else setIsLoading(true);
     setError(null);
 
     try {
@@ -1107,20 +1135,39 @@ export function useUserVaults(userAddress: string | null) {
         }
       }
 
+      userVaultsCache.set(userAddress, loadedVaults);
       setVaults(loadedVaults);
     } catch (err) {
       console.error("[SSE] Error fetching user vaults:", err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
+      setIsValidating(false);
     }
   }, [userAddress, stablecoins]);
+
+  // When the address changes, hydrate from cache immediately (or clear) so the
+  // displayed data always matches the current owner before revalidation lands.
+  useEffect(() => {
+    if (!userAddress) {
+      setVaults([]);
+      setIsLoading(false);
+      return;
+    }
+    const cached = userVaultsCache.get(userAddress);
+    if (cached) {
+      setVaults(cached);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
+  }, [userAddress]);
 
   useEffect(() => {
     fetchVaults();
   }, [fetchVaults]);
 
-  return { vaults, isLoading, error, refetch: fetchVaults };
+  return { vaults, isLoading, isValidating, error, refetch: fetchVaults };
 }
 
 export function useUserVault(userAddress: string | null, stablecoinId: number | null) {
