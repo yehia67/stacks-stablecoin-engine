@@ -2123,21 +2123,27 @@ export interface ProtocolStats {
 
 const PROTOCOL_STATS_CACHE_TTL_MS = 30_000;
 
+// Module-level SWR cache so protocol stats survive navigation/remount. The cache
+// used to live in a useRef, which resets on unmount -- so the landing-page stats
+// re-fetched (and re-spun their loaders) on every visit. At module scope they
+// persist for the session: seeded into state for an instant render, revalidated
+// in the background once the TTL lapses. Cleared on a full page reload.
+let protocolStatsCache: { value: ProtocolStats; cachedAt: number } | null = null;
+const protocolStatsOracleCache = new Map<string, string | null>();
+
 export function useProtocolStats() {
-  const [stats, setStats] = useState<ProtocolStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState<ProtocolStats | null>(() => protocolStatsCache?.value ?? null);
+  const [isLoading, setIsLoading] = useState(() => !protocolStatsCache);
   const [error, setError] = useState<Error | null>(null);
-  const collateralOracleCacheRef = useRef<Map<string, string | null>>(new Map());
-  const statsCacheRef = useRef<{ value: ProtocolStats; cachedAt: number } | null>(null);
 
   const fetchStats = useCallback(async (signal: AbortSignal, force = false) => {
     // Only show loading spinner on initial fetch, not on background refresh
     setError(null);
 
-    if (!force && statsCacheRef.current) {
-      const ageMs = Date.now() - statsCacheRef.current.cachedAt;
+    if (!force && protocolStatsCache) {
+      const ageMs = Date.now() - protocolStatsCache.cachedAt;
       if (ageMs < PROTOCOL_STATS_CACHE_TTL_MS) {
-        setStats(statsCacheRef.current.value);
+        setStats(protocolStatsCache.value);
         setIsLoading(false);
         return;
       }
@@ -2332,7 +2338,7 @@ export function useProtocolStats() {
               const decimals = await getAssetDecimals(assetPrincipal);
               const balHuman = balRaw / Math.pow(10, decimals);
 
-              let oraclePrincipal = collateralOracleCacheRef.current.get(assetPrincipal) ?? null;
+              let oraclePrincipal = protocolStatsOracleCache.get(assetPrincipal) ?? null;
 
               if (!oraclePrincipal) {
                 const configHex = await readContract(
@@ -2343,7 +2349,7 @@ export function useProtocolStats() {
                 );
                 const config = configHex ? decodeClarityTuple(configHex) : null;
                 oraclePrincipal = typeof config?.oracle === "string" ? config.oracle : null;
-                collateralOracleCacheRef.current.set(assetPrincipal, oraclePrincipal);
+                protocolStatsOracleCache.set(assetPrincipal, oraclePrincipal);
               }
 
               if (typeof oraclePrincipal !== "string") {
@@ -2373,7 +2379,7 @@ export function useProtocolStats() {
 
       if (!signal.aborted) {
         const nextStats: ProtocolStats = { stablecoinCount, totalDebtUsd, tvlUsd, tvlPartial };
-        statsCacheRef.current = { value: nextStats, cachedAt: Date.now() };
+        protocolStatsCache = { value: nextStats, cachedAt: Date.now() };
         setStats(nextStats);
       }
     } catch (err) {
