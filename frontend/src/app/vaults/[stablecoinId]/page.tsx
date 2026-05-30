@@ -18,7 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useCollateralTypes, useRegisteredStablecoins, useUserVault } from "@/hooks/useContractRead";
+import { useCollateralTypes, useRegisteredStablecoins, useUserVault, useOracleStatus } from "@/hooks/useContractRead";
+import { OracleStatusBanner } from "@/components/OracleStatusBanner";
 import { formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
 import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralDisplayDecimals, getCollateralSymbol } from "@/lib/constants";
 import { getOraclePrincipalForAsset } from "@/lib/oracles";
@@ -103,6 +104,14 @@ export default function VaultManagePage({
     () => vault?.positions.find((position) => position.asset === selectedAsset) ?? vault?.positions[0] ?? null,
     [selectedAsset, vault]
   );
+
+  // Oracle freshness for the selected position's collateral. Informational here
+  // (mint lives on /vaults/new); withdraw re-checks price on-chain, so this also
+  // explains a withdraw that the engine would reject on a stale feed.
+  const positionOraclePrincipal = selectedPosition
+    ? getOraclePrincipalForAsset(selectedPosition.asset, collateralTypes)
+    : null;
+  const positionOracleStatus = useOracleStatus(positionOraclePrincipal);
 
   // Human-readable input (e.g. user types "1000" meaning 1000 tokens)
   const repayHuman = parseFloat(repayAmount || "0");
@@ -431,6 +440,15 @@ export default function VaultManagePage({
             <CardContent className="space-y-3">
               {selectedPosition ? (
                 <>
+                  {positionOraclePrincipal && (
+                    <OracleStatusBanner
+                      state={positionOracleStatus.state}
+                      symbol={getCollateralSymbol(selectedPosition.asset)}
+                      ageSeconds={positionOracleStatus.ageSeconds}
+                      isValidating={positionOracleStatus.isValidating}
+                      onRefresh={positionOracleStatus.refetch}
+                    />
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Collateral Deposited</span>
                     <span className="font-medium">{formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset), getCollateralDisplayDecimals(selectedPosition.asset))}</span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS, ORACLE_MAX_STALENESS_SECONDS, ORACLE_CACHE_TTL_SECONDS, ORACLE_DIA_PAIRS, CONSTANT_ORACLE_NAMES } from "@/lib/constants";
+import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS, ORACLE_MAX_STALENESS_SECONDS, ORACLE_CACHE_TTL_SECONDS, ORACLE_DIA_PAIRS, CONSTANT_ORACLE_NAMES, TOKEN_BALANCE_CACHE_TTL_SECONDS } from "@/lib/constants";
 import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
 
 const API_BASE = "/api/stacks";
@@ -1126,7 +1126,7 @@ export function invalidateUserVaultsCache(userAddress?: string) {
 }
 
 export function useUserVaults(userAddress: string | null) {
-  const { stablecoins } = useRegisteredStablecoins();
+  const { stablecoins, isLoading: stablecoinsLoading } = useRegisteredStablecoins();
 
   // Seed from cache so a revisit renders instantly instead of flashing a spinner.
   const [vaults, setVaults] = useState<UserVault[]>(
@@ -1141,8 +1141,25 @@ export function useUserVaults(userAddress: string | null) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchVaults = useCallback(async () => {
-    if (!userAddress || stablecoins.length === 0) {
+    if (!userAddress) {
       setVaults([]);
+      return;
+    }
+
+    // Stablecoins list not ready yet. On a revisit it re-fetches and is briefly
+    // empty -- do NOT overwrite cache-hydrated vaults with [] (that flashes
+    // "No vaults found" for ~10s). Keep showing cached vaults; show the blocking
+    // spinner only on a cold load with nothing cached. Once the list arrives,
+    // this callback re-runs (stablecoins is a dependency) and loads for real.
+    if (stablecoins.length === 0) {
+      if (stablecoinsLoading) {
+        if (!userVaultsCache.has(userAddress)) setIsLoading(true);
+      } else {
+        // Genuinely zero registered stablecoins -> there can be no vaults.
+        userVaultsCache.set(userAddress, []);
+        setVaults([]);
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -1178,7 +1195,7 @@ export function useUserVaults(userAddress: string | null) {
       setIsLoading(false);
       setIsValidating(false);
     }
-  }, [userAddress, stablecoins]);
+  }, [userAddress, stablecoins, stablecoinsLoading]);
 
   // When the address changes, hydrate from cache immediately (or clear) so the
   // displayed data always matches the current owner before revalidation lands.
@@ -1582,6 +1599,80 @@ export function useOracleStatus(oraclePrincipal: string | null): OracleStatus {
     isValidating,
     refetch,
   };
+}
+
+interface TokenBalanceCacheEntry {
+  balance: number | null; // raw smallest units
+  fetchedAt: number;
+}
+
+const tokenBalanceCache = new Map<string, TokenBalanceCacheEntry>();
+
+export interface TokenBalanceResult {
+  balance: number | null;
+  isLoading: boolean;
+  isValidating: boolean;
+  refetch: () => Promise<void>;
+}
+
+async function loadTokenBalance(
+  tokenPrincipal: string,
+  userAddress: string
+): Promise<number | null> {
+  const hex = await callReadOnlyAt(tokenPrincipal, "get-balance", [
+    cvToHex(principalCV(userAddress)),
+  ]);
+  if (!hex) return null;
+  return parseOkUint(hex); // (ok uint) -> number | null
+}
+
+/**
+ * User's SIP-010 balance (raw smallest units) for a token, SWR-cached per
+ * token+owner. Read failure -> null (caller shows "—"; the chain post-condition
+ * still guards over-spend, so a failed read must not block deposits).
+ */
+export function useTokenBalance(
+  tokenPrincipal: string | null,
+  userAddress: string | null
+): TokenBalanceResult {
+  const key = tokenPrincipal && userAddress ? `${tokenPrincipal}:${userAddress}` : null;
+  const seed = key ? tokenBalanceCache.get(key) : undefined;
+  const [balance, setBalance] = useState<number | null>(seed?.balance ?? null);
+  const [isLoading, setIsLoading] = useState(!!key && !seed);
+  const [isValidating, setIsValidating] = useState(false);
+
+  const refetch = useCallback(async () => {
+    if (!tokenPrincipal || !userAddress || !key) return;
+    const hasCache = tokenBalanceCache.has(key);
+    if (hasCache) setIsValidating(true);
+    else setIsLoading(true);
+    try {
+      const next = await loadTokenBalance(tokenPrincipal, userAddress);
+      tokenBalanceCache.set(key, { balance: next, fetchedAt: Date.now() });
+      setBalance(next);
+    } finally {
+      setIsLoading(false);
+      setIsValidating(false);
+    }
+  }, [tokenPrincipal, userAddress, key]);
+
+  useEffect(() => {
+    if (!key) {
+      setBalance(null);
+      setIsLoading(false);
+      return;
+    }
+    const cached = tokenBalanceCache.get(key);
+    if (cached) {
+      setBalance(cached.balance);
+      setIsLoading(false);
+      const fresh = Date.now() - cached.fetchedAt < TOKEN_BALANCE_CACHE_TTL_SECONDS * 1000;
+      if (fresh) return;
+    }
+    refetch();
+  }, [key, refetch]);
+
+  return { balance, isLoading, isValidating, refetch };
 }
 
 /**
