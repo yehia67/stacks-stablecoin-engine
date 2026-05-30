@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
+import { SoftLaunchFeedback } from '@/components/layout/SoftLaunchFeedback'
 import { StacksProvider } from '@/components/providers/StacksProvider'
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({
         <StacksProvider>
           <div className="flex min-h-screen flex-col">
             <Navbar />
+            <SoftLaunchFeedback />
             <main className="flex-1">{children}</main>
             <Footer />
           </div>
