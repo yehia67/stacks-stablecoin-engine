@@ -18,9 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useCollateralTypes, useRegisteredStablecoins, useUserVault } from "@/hooks/useContractRead";
+import { useCollateralTypes, useRegisteredStablecoins, useUserVault, useOracleStatus } from "@/hooks/useContractRead";
+import { OracleStatusBanner } from "@/components/OracleStatusBanner";
 import { formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
-import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralSymbol } from "@/lib/constants";
+import { getExplorerTxUrl, STABLECOIN_DECIMALS, getCollateralDecimals, getCollateralDisplayDecimals, getCollateralSymbol } from "@/lib/constants";
 import { getOraclePrincipalForAsset } from "@/lib/oracles";
 
 const ZERO_DEBT_SENTINEL = 1000000;
@@ -103,6 +104,14 @@ export default function VaultManagePage({
     () => vault?.positions.find((position) => position.asset === selectedAsset) ?? vault?.positions[0] ?? null,
     [selectedAsset, vault]
   );
+
+  // Oracle freshness for the selected position's collateral. Informational here
+  // (mint lives on /vaults/new); withdraw re-checks price on-chain, so this also
+  // explains a withdraw that the engine would reject on a stale feed.
+  const positionOraclePrincipal = selectedPosition
+    ? getOraclePrincipalForAsset(selectedPosition.asset, collateralTypes)
+    : null;
+  const positionOracleStatus = useOracleStatus(positionOraclePrincipal);
 
   // Human-readable input (e.g. user types "1000" meaning 1000 tokens)
   const repayHuman = parseFloat(repayAmount || "0");
@@ -399,7 +408,7 @@ export default function VaultManagePage({
                   <div className="text-right text-sm">
                     <p>
                       <span className="text-muted-foreground">Deposited:</span>{" "}
-                      <span className="font-medium">{formatTokenAmount(position.amount, getCollateralDecimals(position.asset))}</span>
+                      <span className="font-medium">{formatTokenAmount(position.amount, getCollateralDecimals(position.asset), getCollateralDisplayDecimals(position.asset))}</span>
                     </p>
                     <p>
                       <span className="text-muted-foreground">Debt Share:</span>{" "}
@@ -431,9 +440,18 @@ export default function VaultManagePage({
             <CardContent className="space-y-3">
               {selectedPosition ? (
                 <>
+                  {positionOraclePrincipal && (
+                    <OracleStatusBanner
+                      state={positionOracleStatus.state}
+                      symbol={getCollateralSymbol(selectedPosition.asset)}
+                      ageSeconds={positionOracleStatus.ageSeconds}
+                      isValidating={positionOracleStatus.isValidating}
+                      onRefresh={positionOracleStatus.refetch}
+                    />
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Collateral Deposited</span>
-                    <span className="font-medium">{formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset))}</span>
+                    <span className="font-medium">{formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset), getCollateralDisplayDecimals(selectedPosition.asset))}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Debt Share</span>
@@ -529,7 +547,7 @@ export default function VaultManagePage({
                     />
                     <p className="mt-2 text-sm text-muted-foreground">
                       Available deposited collateral:{" "}
-                      {selectedPosition ? formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset)) : "0"}
+                      {selectedPosition ? formatTokenAmount(selectedPosition.amount, getCollateralDecimals(selectedPosition.asset), getCollateralDisplayDecimals(selectedPosition.asset)) : "0"}
                     </p>
                     <div className="mt-2 flex gap-2">
                       {[25, 50, 100].map((pct) => (

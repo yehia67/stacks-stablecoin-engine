@@ -11,10 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices, useTokenDecimals, useUserVault } from "@/hooks/useContractRead";
-import { CONTRACTS, getCollateralSymbol, getCollateralUx } from "@/lib/constants";
+import { useCollateralTypes, useContractRead, useRegisteredStablecoins, useStablecoinCollateralList, useDiaOraclePrices, useTokenDecimals, useUserVault, useOracleStatus, useTokenBalance } from "@/hooks/useContractRead";
+import { CONTRACTS, getCollateralSymbol, getCollateralUx, getCollateralDisplayDecimals, getExplorerTxUrl } from "@/lib/constants";
 import { getOraclePrincipalForAsset } from "@/lib/oracles";
-import { calculateHealthFactor, formatNumber, toSmallestUnits, toHumanReadable } from "@/lib/utils";
+import { calculateHealthFactor, formatNumber, formatTokenAmount, toSmallestUnits, toHumanReadable } from "@/lib/utils";
+import { OracleStatusBanner } from "@/components/OracleStatusBanner";
 
 type StepStatus = 'pending' | 'active' | 'done' | 'skipped' | 'error';
 
@@ -64,6 +65,33 @@ export default function NewVaultPage() {
 
   // Fetch token decimals dynamically from chain
   const { decimals: collateralDecimals } = useTokenDecimals(selectedCollateralAsset);
+
+  // Oracle freshness for the selected collateral. Minting is gated on a live
+  // price; the banner explains a stale/unavailable state instead of silently
+  // disabling the action.
+  const selectedOraclePrincipal = useMemo(
+    () =>
+      selectedCollateralAsset
+        ? getOraclePrincipalForAsset(selectedCollateralAsset, collateralTypes)
+        : null,
+    [selectedCollateralAsset, collateralTypes]
+  );
+  const oracleStatus = useOracleStatus(selectedOraclePrincipal);
+  const isOracleLive = oracleStatus.state === "live";
+
+  // Wallet balance for the selected collateral, so the user doesn't have to open
+  // their wallet to check before depositing.
+  const { balance: collateralBalanceRaw } = useTokenBalance(
+    selectedCollateralAsset,
+    address
+  );
+  const collateralBalanceHuman =
+    collateralBalanceRaw != null && collateralDecimals != null
+      ? toHumanReadable(collateralBalanceRaw, collateralDecimals)
+      : null;
+  const collateralSymbol = selectedCollateralAsset
+    ? getCollateralSymbol(selectedCollateralAsset)
+    : "";
   const stablecoinTokenContract = useMemo(() => {
     if (selectedStablecoinId === null) return null;
     const coin = stablecoins.find((c) => c.id === selectedStablecoinId);
@@ -111,6 +139,13 @@ export default function NewVaultPage() {
   const [borrowAmount, setBorrowAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+
+  // True when the user is trying to deposit more of the collateral than they hold.
+  // Only enforced when the balance is known (a failed read leaves it null and the
+  // chain post-condition still guards over-spend).
+  const insufficientBalance =
+    collateralBalanceHuman != null &&
+    parseFloat(collateralAmount || "0") > collateralBalanceHuman;
 
   // Vault flow execution state
   type FlowStep = 'idle' | 'checking' | 'opening' | 'depositing' | 'minting' | 'done' | 'error';
@@ -252,6 +287,8 @@ export default function NewVaultPage() {
     effectiveCollateralUnits > 0 &&
     borrowUnits > 0 &&
     !isBelowDebtFloor &&
+    isOracleLive &&
+    !insufficientBalance &&
     (oraclePrice == null || previewHealthFactor >= minRatio);
 
   const ownerPrincipal = address || CONTRACTS.DEPLOYER;
@@ -585,6 +622,17 @@ export default function NewVaultPage() {
                             </p>
                           </button>
                         )}
+                        {selectedOraclePrincipal && (
+                          <div className="mb-3">
+                            <OracleStatusBanner
+                              state={oracleStatus.state}
+                              symbol={symbol}
+                              ageSeconds={oracleStatus.ageSeconds}
+                              isValidating={oracleStatus.isValidating}
+                              onRefresh={oracleStatus.refetch}
+                            />
+                          </div>
+                        )}
                         <label className="mb-2 block text-sm font-medium">
                           {hasExistingCollateral ? `Additional deposit (${symbol}, 0 to skip)` : `Deposit Amount (${symbol})`}
                         </label>
@@ -596,6 +644,33 @@ export default function NewVaultPage() {
                           onChange={(e) => setCollateralAmount(e.target.value)}
                           className="text-lg"
                         />
+                        {collateralBalanceHuman != null && (
+                          <div className="mt-2 flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              Balance:{" "}
+                              <span className="font-medium text-foreground">
+                                {formatTokenAmount(
+                                  collateralBalanceRaw!,
+                                  collateralDecimals!,
+                                  getCollateralDisplayDecimals(selectedCollateralAsset!)
+                                )}{" "}
+                                {collateralSymbol}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-primary hover:underline"
+                              onClick={() => setCollateralAmount(String(collateralBalanceHuman))}
+                            >
+                              Max
+                            </button>
+                          </div>
+                        )}
+                        {insufficientBalance && (
+                          <p className="mt-1 text-sm text-red-500">
+                            Insufficient balance — you have {String(collateralBalanceHuman)} {collateralSymbol}.
+                          </p>
+                        )}
                         <div className="mt-2 space-y-1">
                           {oraclePrice !== null && oraclePrice > 0 ? (
                             <p className="text-sm text-muted-foreground">
@@ -832,7 +907,7 @@ export default function NewVaultPage() {
 
                   {flowTxId && (
                     <a
-                      href={`https://explorer.hiro.so/txid/${flowTxId}?chain=testnet`}
+                      href={getExplorerTxUrl(flowTxId)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

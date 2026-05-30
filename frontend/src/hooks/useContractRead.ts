@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS } from "@/lib/constants";
+import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS, ORACLE_MAX_STALENESS_SECONDS, ORACLE_CACHE_TTL_SECONDS, ORACLE_DIA_PAIRS, CONSTANT_ORACLE_NAMES, TOKEN_BALANCE_CACHE_TTL_SECONDS } from "@/lib/constants";
 import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
 
 const API_BASE = "/api/stacks";
@@ -893,6 +893,40 @@ async function readContract(
   }
 }
 
+/**
+ * Read-only call against an ARBITRARY contract principal (vs `readContract`,
+ * which is pinned to CONTRACTS.DEPLOYER). Accepts either a full principal
+ * ("SP….contract-name") or a bare contract name (assumed under DEPLOYER).
+ * Returns the raw Clarity result hex, or null on any failure.
+ */
+async function callReadOnlyAt(
+  principal: string,
+  functionName: string,
+  args: string[]
+): Promise<string | null> {
+  const [addr, name] = principal.includes(".")
+    ? [principal.split(".")[0], principal.split(".").slice(1).join(".")]
+    : [CONTRACTS.DEPLOYER, principal];
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (API_KEY) headers["x-api-key"] = API_KEY;
+    const resp = await fetch(
+      `${API_BASE}/v2/contracts/call-read/${addr}/${name}/${functionName}`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ sender: CONTRACTS.DEPLOYER, arguments: args }),
+      }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.okay) return null;
+    return data.result as string;
+  } catch {
+    return null;
+  }
+}
+
 async function loadVaultForStablecoin(
   userAddress: string,
   coin: Stablecoin
@@ -1075,20 +1109,65 @@ async function loadVaultForStablecoin(
   };
 }
 
+// Stale-while-revalidate cache for a user's vaults, keyed by owner address.
+// Lives at module scope so it survives in-session navigation (e.g.
+// /vaults -> manage a vault -> back is instant, no spinner) while a background
+// revalidation refreshes from chain. Cleared on a full page reload.
+const userVaultsCache = new Map<string, UserVault[]>();
+
+/**
+ * Drop cached vaults for an address (or all addresses). Call after a tx that
+ * mutates vault state so the next read can't serve stale data. `refetch()`
+ * already force-refreshes, so this is only needed when no refetch follows.
+ */
+export function invalidateUserVaultsCache(userAddress?: string) {
+  if (userAddress) userVaultsCache.delete(userAddress);
+  else userVaultsCache.clear();
+}
+
 export function useUserVaults(userAddress: string | null) {
-  const [vaults, setVaults] = useState<UserVault[]>([]);
-  const [isLoading, setIsLoading] = useState(!!userAddress);
+  const { stablecoins, isLoading: stablecoinsLoading } = useRegisteredStablecoins();
+
+  // Seed from cache so a revisit renders instantly instead of flashing a spinner.
+  const [vaults, setVaults] = useState<UserVault[]>(
+    () => (userAddress ? userVaultsCache.get(userAddress) ?? [] : [])
+  );
+  // Cold load (blocking spinner) only when we have an address but nothing cached.
+  const [isLoading, setIsLoading] = useState(
+    () => !!userAddress && !userVaultsCache.has(userAddress)
+  );
+  // Background refresh while cached data is already on screen.
+  const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const { stablecoins } = useRegisteredStablecoins();
-
   const fetchVaults = useCallback(async () => {
-    if (!userAddress || stablecoins.length === 0) {
+    if (!userAddress) {
       setVaults([]);
       return;
     }
 
-    setIsLoading(true);
+    // Stablecoins list not ready yet. On a revisit it re-fetches and is briefly
+    // empty -- do NOT overwrite cache-hydrated vaults with [] (that flashes
+    // "No vaults found" for ~10s). Keep showing cached vaults; show the blocking
+    // spinner only on a cold load with nothing cached. Once the list arrives,
+    // this callback re-runs (stablecoins is a dependency) and loads for real.
+    if (stablecoins.length === 0) {
+      if (stablecoinsLoading) {
+        if (!userVaultsCache.has(userAddress)) setIsLoading(true);
+      } else {
+        // Genuinely zero registered stablecoins -> there can be no vaults.
+        userVaultsCache.set(userAddress, []);
+        setVaults([]);
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    const hasCache = userVaultsCache.has(userAddress);
+    // Show the blocking spinner only when there's nothing cached to display;
+    // otherwise revalidate quietly in the background.
+    if (hasCache) setIsValidating(true);
+    else setIsLoading(true);
     setError(null);
 
     try {
@@ -1107,20 +1186,39 @@ export function useUserVaults(userAddress: string | null) {
         }
       }
 
+      userVaultsCache.set(userAddress, loadedVaults);
       setVaults(loadedVaults);
     } catch (err) {
       console.error("[SSE] Error fetching user vaults:", err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
+      setIsValidating(false);
     }
-  }, [userAddress, stablecoins]);
+  }, [userAddress, stablecoins, stablecoinsLoading]);
+
+  // When the address changes, hydrate from cache immediately (or clear) so the
+  // displayed data always matches the current owner before revalidation lands.
+  useEffect(() => {
+    if (!userAddress) {
+      setVaults([]);
+      setIsLoading(false);
+      return;
+    }
+    const cached = userVaultsCache.get(userAddress);
+    if (cached) {
+      setVaults(cached);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
+  }, [userAddress]);
 
   useEffect(() => {
     fetchVaults();
   }, [fetchVaults]);
 
-  return { vaults, isLoading, error, refetch: fetchVaults };
+  return { vaults, isLoading, isValidating, error, refetch: fetchVaults };
 }
 
 export function useUserVault(userAddress: string | null, stablecoinId: number | null) {
@@ -1345,6 +1443,236 @@ export function useDiaOraclePrices() {
   }, [fetchPrices]);
 
   return { prices, isLoading, error, refetch: fetchPrices };
+}
+
+export type OracleState = "loading" | "live" | "stale" | "unavailable";
+
+export interface OracleStatus {
+  state: OracleState;
+  priceUsd: number | null;
+  ageSeconds: number | null;
+  isValidating: boolean;
+  refetch: () => Promise<void>;
+}
+
+interface OracleStatusCacheEntry {
+  state: OracleState;
+  priceUsd: number | null;
+  ageSeconds: number | null;
+  fetchedAt: number; // ms epoch
+}
+
+// SWR cache keyed by oracle principal. Survives in-session navigation; cleared
+// on full reload. BTC barely moves, so a 60s TTL avoids redundant reads.
+const oracleStatusCache = new Map<string, OracleStatusCacheEntry>();
+
+function oracleContractName(principal: string): string {
+  return principal.includes(".") ? principal.split(".").slice(1).join(".") : principal;
+}
+
+// Classify a get-price (response uint uint) result hex.
+function classifyGetPrice(hex: string | null): { ok: boolean; price?: number; errCode?: number } {
+  if (!hex) return { ok: false };
+  if (hex.startsWith("0x07")) {
+    const price = parseOkUint(hex);
+    return { ok: true, price: price ?? undefined };
+  }
+  if (hex.startsWith("0x08")) {
+    try {
+      const parsed = cvToValue(hexToCV(hex)) as any;
+      const inner = parsed?.value;
+      const code =
+        typeof inner === "bigint" ? Number(inner)
+        : typeof inner === "number" ? inner
+        : inner && typeof inner === "object" && inner.value !== undefined ? Number(inner.value)
+        : NaN;
+      return { ok: false, errCode: Number.isNaN(code) ? undefined : code };
+    } catch {
+      return { ok: false };
+    }
+  }
+  return { ok: false };
+}
+
+// Read the DIA adapter timestamp (ms) for a pair; returns age in seconds or null.
+async function fetchOracleAgeSeconds(pair: string): Promise<number | null> {
+  const adapterPrincipal = getContractId(CONTRACTS.DIA_ORACLE_ADAPTER);
+  const hex = await callReadOnlyAt(adapterPrincipal, "get-value", [
+    cvToHex(stringAsciiCV(pair)),
+  ]);
+  if (!hex || hex.startsWith("0x09") /* none */) return null;
+  try {
+    const parsed = cvToValue(hexToCV(hex)) as any;
+    const tuple = parsed?.type === "ok" ? parsed.value : parsed;
+    const tsField = tuple?.timestamp ?? tuple?.value?.timestamp;
+    const tsMs =
+      typeof tsField === "bigint" ? Number(tsField)
+      : typeof tsField === "number" ? tsField
+      : tsField && typeof tsField === "object" && tsField.value !== undefined ? Number(tsField.value)
+      : NaN;
+    if (Number.isNaN(tsMs) || tsMs <= 0) return null;
+    const ageSec = Math.floor(Date.now() / 1000 - tsMs / 1000);
+    return ageSec < 0 ? 0 : ageSec;
+  } catch {
+    return null;
+  }
+}
+
+async function loadOracleStatus(oraclePrincipal: string): Promise<OracleStatusCacheEntry> {
+  const name = oracleContractName(oraclePrincipal);
+  const now = Date.now();
+
+  if (CONSTANT_ORACLE_NAMES.has(name)) {
+    const hex = await callReadOnlyAt(oraclePrincipal, "get-price", []);
+    const cls = classifyGetPrice(hex);
+    return {
+      state: "live",
+      priceUsd: cls.ok && cls.price != null ? cls.price / 1e8 : null,
+      ageSeconds: null,
+      fetchedAt: now,
+    };
+  }
+
+  const priceHex = await callReadOnlyAt(oraclePrincipal, "get-price", []);
+  const cls = classifyGetPrice(priceHex);
+
+  const pair = ORACLE_DIA_PAIRS[name];
+  const ageSeconds = pair ? await fetchOracleAgeSeconds(pair) : null;
+
+  if (!cls.ok && (cls.errCode === 602 || cls.errCode === undefined)) {
+    return { state: "unavailable", priceUsd: null, ageSeconds, fetchedAt: now };
+  }
+  const ageStale = ageSeconds != null && ageSeconds > ORACLE_MAX_STALENESS_SECONDS;
+  if ((!cls.ok && cls.errCode === 601) || ageStale) {
+    return {
+      state: "stale",
+      priceUsd: cls.ok && cls.price != null ? cls.price / 1e8 : null,
+      ageSeconds,
+      fetchedAt: now,
+    };
+  }
+  return {
+    state: "live",
+    priceUsd: cls.price != null ? cls.price / 1e8 : null,
+    ageSeconds,
+    fetchedAt: now,
+  };
+}
+
+export function useOracleStatus(oraclePrincipal: string | null): OracleStatus {
+  const seed = oraclePrincipal ? oracleStatusCache.get(oraclePrincipal) : undefined;
+  const [entry, setEntry] = useState<OracleStatusCacheEntry | null>(seed ?? null);
+  const [isValidating, setIsValidating] = useState(false);
+
+  const refetch = useCallback(async () => {
+    if (!oraclePrincipal) return;
+    setIsValidating(true);
+    try {
+      const next = await loadOracleStatus(oraclePrincipal);
+      oracleStatusCache.set(oraclePrincipal, next);
+      setEntry(next);
+    } finally {
+      setIsValidating(false);
+    }
+  }, [oraclePrincipal]);
+
+  useEffect(() => {
+    if (!oraclePrincipal) {
+      setEntry(null);
+      return;
+    }
+    const cached = oracleStatusCache.get(oraclePrincipal);
+    if (cached) {
+      setEntry(cached);
+      const fresh = Date.now() - cached.fetchedAt < ORACLE_CACHE_TTL_SECONDS * 1000;
+      if (fresh) return;
+    }
+    refetch();
+    const interval = setInterval(refetch, ORACLE_CACHE_TTL_SECONDS * 1000);
+    return () => clearInterval(interval);
+  }, [oraclePrincipal, refetch]);
+
+  return {
+    state: oraclePrincipal ? (entry?.state ?? "loading") : "loading",
+    priceUsd: entry?.priceUsd ?? null,
+    ageSeconds: entry?.ageSeconds ?? null,
+    isValidating,
+    refetch,
+  };
+}
+
+interface TokenBalanceCacheEntry {
+  balance: number | null; // raw smallest units
+  fetchedAt: number;
+}
+
+const tokenBalanceCache = new Map<string, TokenBalanceCacheEntry>();
+
+export interface TokenBalanceResult {
+  balance: number | null;
+  isLoading: boolean;
+  isValidating: boolean;
+  refetch: () => Promise<void>;
+}
+
+async function loadTokenBalance(
+  tokenPrincipal: string,
+  userAddress: string
+): Promise<number | null> {
+  const hex = await callReadOnlyAt(tokenPrincipal, "get-balance", [
+    cvToHex(principalCV(userAddress)),
+  ]);
+  if (!hex) return null;
+  return parseOkUint(hex); // (ok uint) -> number | null
+}
+
+/**
+ * User's SIP-010 balance (raw smallest units) for a token, SWR-cached per
+ * token+owner. Read failure -> null (caller shows "—"; the chain post-condition
+ * still guards over-spend, so a failed read must not block deposits).
+ */
+export function useTokenBalance(
+  tokenPrincipal: string | null,
+  userAddress: string | null
+): TokenBalanceResult {
+  const key = tokenPrincipal && userAddress ? `${tokenPrincipal}:${userAddress}` : null;
+  const seed = key ? tokenBalanceCache.get(key) : undefined;
+  const [balance, setBalance] = useState<number | null>(seed?.balance ?? null);
+  const [isLoading, setIsLoading] = useState(!!key && !seed);
+  const [isValidating, setIsValidating] = useState(false);
+
+  const refetch = useCallback(async () => {
+    if (!tokenPrincipal || !userAddress || !key) return;
+    const hasCache = tokenBalanceCache.has(key);
+    if (hasCache) setIsValidating(true);
+    else setIsLoading(true);
+    try {
+      const next = await loadTokenBalance(tokenPrincipal, userAddress);
+      tokenBalanceCache.set(key, { balance: next, fetchedAt: Date.now() });
+      setBalance(next);
+    } finally {
+      setIsLoading(false);
+      setIsValidating(false);
+    }
+  }, [tokenPrincipal, userAddress, key]);
+
+  useEffect(() => {
+    if (!key) {
+      setBalance(null);
+      setIsLoading(false);
+      return;
+    }
+    const cached = tokenBalanceCache.get(key);
+    if (cached) {
+      setBalance(cached.balance);
+      setIsLoading(false);
+      const fresh = Date.now() - cached.fetchedAt < TOKEN_BALANCE_CACHE_TTL_SECONDS * 1000;
+      if (fresh) return;
+    }
+    refetch();
+  }, [key, refetch]);
+
+  return { balance, isLoading, isValidating, refetch };
 }
 
 /**

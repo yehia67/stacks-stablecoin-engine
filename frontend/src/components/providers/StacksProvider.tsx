@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useEffect, useState } from "react";
 import { connectWallet, disconnectWallet, isConnected, getUserAddress } from "@/lib/stacks";
+import { getActiveStacksWallet, getInstalledStacksWallets, getSelectedStacksWallet, selectStacksWallet } from "@/lib/walletProvider";
 
 export interface WalletState {
   isConnected: boolean;
@@ -38,6 +39,24 @@ export function StacksProvider({ children }: StacksProviderProps) {
   useEffect(() => {
     setMounted(true);
     if (isConnected()) {
+      // Restore session. Also ensure a wallet provider is pinned: a returning
+      // user has an address in localStorage but @stacks/connect doesn't
+      // always persist setSelectedProviderId across sessions, so subsequent
+      // signing actions (deploy especially) would otherwise hit
+      // "No wallet selected". If there's exactly one installed wallet,
+      // pin it now so every later request() routes deterministically.
+      if (!getSelectedStacksWallet()) {
+        // Prefer whichever wallet `window.StacksProvider` actually points
+        // at -- that's the wallet answering this session's RPC calls
+        // regardless of how many extensions are installed.
+        const active = getActiveStacksWallet();
+        if (active) {
+          selectStacksWallet(active.id);
+        } else {
+          const installed = getInstalledStacksWallets();
+          if (installed.length === 1) selectStacksWallet(installed[0].id);
+        }
+      }
       setState({
         isConnected: true,
         isConnecting: false,
@@ -50,6 +69,22 @@ export function StacksProvider({ children }: StacksProviderProps) {
     setState((prev) => ({ ...prev, isConnecting: true }));
     try {
       await connectWallet();
+      // @stacks/connect's `connect()` shows its own picker for multi-wallet
+      // setups and pins the choice. For single-wallet setups it may skip
+      // the picker and leave the pinned provider unset, which breaks later
+      // signing actions. Pin the only installed wallet as a fallback.
+      if (!getSelectedStacksWallet()) {
+        // Prefer whichever wallet `window.StacksProvider` actually points
+        // at -- that's the wallet answering this session's RPC calls
+        // regardless of how many extensions are installed.
+        const active = getActiveStacksWallet();
+        if (active) {
+          selectStacksWallet(active.id);
+        } else {
+          const installed = getInstalledStacksWallets();
+          if (installed.length === 1) selectStacksWallet(installed[0].id);
+        }
+      }
       setState({
         isConnected: true,
         isConnecting: false,

@@ -2,6 +2,15 @@
 
 import { useCallback } from "react";
 import { request } from "@stacks/connect";
+// Xverse deploy channel. @stacks/connect's `request` resolves the Xverse
+// provider as `window.XverseProviders.StacksProvider`, whose `.request` is a
+// stub that throws "request function is not implemented". sats-connect instead
+// routes through `window.XverseProviders.BitcoinProvider` -- Xverse's unified
+// RPC channel that actually implements `.request` -- and its modern
+// `request("stx_deployContract", ...)` path sends clean JSON-RPC params (no
+// JWT transit token, unlike the legacy `openContractDeploy` helper that
+// produced an on-chain JWT source and `(err none)`).
+import SatsConnectWallet from "sats-connect";
 import {
   Pc,
   uintCV,
@@ -10,6 +19,7 @@ import {
   standardPrincipalCV,
   contractPrincipalCV,
 } from "@stacks/transactions";
+import { assertWalletSelected, getProviderObjectForWallet, getSelectedStacksWallet } from "@/lib/walletProvider";
 import { CONTRACTS, APP_CONFIG, FT_ASSET_NAMES, getContractId, VAULT_ENGINE_IS_V8 } from "@/lib/constants";
 import { networkName, getUserAddress } from "@/lib/stacks";
 import { generateTokenContract, deriveTokenContractName } from "@/lib/tokenTemplate";
@@ -28,14 +38,42 @@ function getFtAssetName(contractPrincipal: string): string | null {
     return FT_ASSET_NAMES[contractName];
   }
 
-  // Dynamic stablecoin tokens follow pattern: symbol-token-timestamp
-  // Their FT name is: symbol-ft (set in tokenTemplate.ts)
-  const match = contractName.match(/^([a-z]+)-token-\d+$/);
+  // Dynamic stablecoin tokens follow pattern: symbol-token-timestamp where the
+  // symbol is the lowercased stablecoin symbol and MAY contain digits
+  // (e.g. "btc01-token-1779913203"). Their FT name is `<symbol>-ft`
+  // (see deriveTokenContractName / generateTokenContract in tokenTemplate.ts).
+  // The symbol charset must include 0-9; a letters-only match dropped the
+  // post-condition for tokens like btc01-ft and deny mode rolled the tx back.
+  const match = contractName.match(/^([a-z0-9]+)-token-\d+$/);
   if (match) {
     return `${match[1]}-ft`;
   }
 
   return null;
+}
+
+/**
+ * Strict variant of getFtAssetName. Throws when the FT asset name can't be
+ * derived instead of returning null.
+ *
+ * Why this matters: every asset a contract call moves must be covered by a
+ * post-condition. When the name couldn't be derived the callers silently fell
+ * back to an EMPTY post-condition array, and under postConditionMode "deny" the
+ * wallet then rolled the transaction back on-chain -- AFTER the fee was charged
+ * (e.g. "btc01-ft was moved ... but not checked"). Failing fast here surfaces
+ * the naming gap in the UI before the user pays for a doomed tx.
+ */
+function requireFtAssetName(contractPrincipal: string): string {
+  const ftName = getFtAssetName(contractPrincipal);
+  if (!ftName) {
+    throw new Error(
+      `[SSE] Could not derive the fungible-token asset name for "${contractPrincipal}". ` +
+        "Add it to FT_ASSET_NAMES, or ensure the contract name follows the " +
+        "'<symbol>-token-<timestamp>' convention. Refusing to send a transaction " +
+        "with an unchecked asset movement."
+    );
+  }
+  return ftName;
 }
 
 export interface ContractCallOptions {
@@ -122,12 +160,16 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const sender = getUserAddress();
-      const ftName = getFtAssetName(collateralAsset);
-      const postConditions =
-        sender && ftName
-          ? [Pc.principal(sender).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const sender = getUserAddress();
+        if (!sender) throw new Error("[SSE] No connected wallet address; cannot build post-condition.");
+        const ftName = requireFtAssetName(collateralAsset);
+        postConditions = [Pc.principal(sender).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
@@ -199,12 +241,16 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const sender = getUserAddress();
-      const ftName = getFtAssetName(tokenContract);
-      const postConditions =
-        sender && ftName
-          ? [Pc.principal(sender).willSendLte(amount).ft(tokenContract as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const sender = getUserAddress();
+        if (!sender) throw new Error("[SSE] No connected wallet address; cannot build post-condition.");
+        const ftName = requireFtAssetName(tokenContract);
+        postConditions = [Pc.principal(sender).willSendLte(amount).ft(tokenContract as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.MULTI_ASSET_VAULT_ENGINE,
@@ -242,12 +288,15 @@ export function useContract() {
         onError?.(err);
         return Promise.reject(err);
       }
-      const ftName = getFtAssetName(collateralAsset);
       const vaultPrincipal = getContractId(CONTRACTS.MULTI_ASSET_VAULT_ENGINE) as `${string}.${string}`;
-      const postConditions =
-        ftName
-          ? [Pc.principal(vaultPrincipal).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const ftName = requireFtAssetName(collateralAsset);
+        postConditions = [Pc.principal(vaultPrincipal).willSendLte(amount).ft(collateralAsset as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       const v8ExtraArgs = VAULT_ENGINE_IS_V8 && oracleContract
         ? [parseContractPrincipal(oracleContract)]
@@ -314,12 +363,72 @@ export function useContract() {
         const contractName = deriveTokenContractName(stablecoinSymbol);
         const codeBody = generateTokenContract(stablecoinName, stablecoinSymbol);
 
-        const response: any = await request("stx_deployContract", {
+        // DIAGNOSTIC: log exactly what we hand to the wallet so we can see
+        // why the wallet validator says "Invalid input at clarityCode".
+        console.log("[SSE] deployTokenContract params:", {
           name: contractName,
-          clarityCode: codeBody,
+          nameLength: contractName.length,
+          stablecoinName,
+          stablecoinSymbol,
+          clarityCodeLength: codeBody.length,
+          clarityCodeFirst200: codeBody.slice(0, 200),
+          clarityCodeLast200: codeBody.slice(-200),
           network: networkName,
         });
-        const txId = response.txid || response.result?.txid || "";
+
+        // Dispatch per-wallet. Each wallet has different API surface:
+        //
+        //   Leather: exposes SIP-030 `request(method, params)` directly on
+        //   `window.LeatherProvider`. Calling it bypasses any
+        //   `window.StacksProvider` race and bypasses the @stacks/connect
+        //   wrapper's transforms (which were JWT-wrapping the source). Most
+        //   reliable path for Leather.
+        //
+        //   Xverse: route through the `sats-connect` SDK. Its `request`
+        //   resolves Xverse's unified `BitcoinProvider` (which implements
+        //   `.request`) and sends clean JSON-RPC -- NOT the old
+        //   `openContractDeploy` JWT path that published a JWT string as the
+        //   contract source. Do NOT switch Xverse to @stacks/connect's
+        //   `request`: it targets `XverseProviders.StacksProvider`, whose
+        //   `.request` is a stub that throws "request function is not implemented".
+        //
+        // Adding a new wallet: extend KNOWN_WALLETS in walletProvider.ts
+        // and add a branch here matching the wallet id.
+        const selected = assertWalletSelected();
+        console.log("[SSE] deploying via wallet provider:", selected.name, `(${selected.id})`);
+
+        let txId = "";
+
+        if (selected.id === "LeatherProvider") {
+          const provider = getProviderObjectForWallet(selected.id);
+          if (!provider) {
+            throw new Error("Leather provider disappeared between selection and deploy. Reconnect and retry.");
+          }
+          const resp: any = await provider.request("stx_deployContract", {
+            name: contractName,
+            clarityCode: codeBody,
+            network: networkName,
+          });
+          txId = resp?.txid || resp?.result?.txid || resp?.txId || "";
+        } else if (selected.id === "XverseProviders.StacksProvider") {
+          // sats-connect talks to Xverse's BitcoinProvider RPC channel. Its
+          // modern `request` sends clean params (no JWT). See import comment.
+          const resp: any = await SatsConnectWallet.request("stx_deployContract", {
+            name: contractName,
+            clarityCode: codeBody,
+          });
+          if (resp?.status === "error") {
+            const errMsg = resp?.error?.message || JSON.stringify(resp?.error);
+            throw new Error(`Xverse deploy rejected: ${errMsg}`);
+          }
+          txId = resp?.result?.txid || resp?.result?.transactionId || "";
+        } else {
+          throw new Error(`No deploy dispatch implemented for wallet "${selected.name}" (${selected.id})`);
+        }
+
+        if (!txId) {
+          throw new Error("Wallet returned no txid. Check console for the raw response.");
+        }
         console.log("Token deploy tx submitted:", txId);
         onSuccess?.(txId, contractName);
       } catch (error: any) {
@@ -479,12 +588,16 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const sender = getUserAddress();
-      const ftName = getFtAssetName(stablecoinTokenPrincipal);
-      const postConditions =
-        sender && ftName
-          ? [Pc.principal(sender).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const sender = getUserAddress();
+        if (!sender) throw new Error("[SSE] No connected wallet address; cannot build post-condition.");
+        const ftName = requireFtAssetName(stablecoinTokenPrincipal);
+        postConditions = [Pc.principal(sender).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,
@@ -511,12 +624,15 @@ export function useContract() {
       onSuccess?: (txId: string) => void,
       onError?: (error: Error) => void
     ) => {
-      const ftName = getFtAssetName(stablecoinTokenPrincipal);
       const poolPrincipal = getContractId(CONTRACTS.STABILITY_POOL) as `${string}.${string}`;
-      const postConditions =
-        ftName
-          ? [Pc.principal(poolPrincipal).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)]
-          : [];
+      let postConditions;
+      try {
+        const ftName = requireFtAssetName(stablecoinTokenPrincipal);
+        postConditions = [Pc.principal(poolPrincipal).willSendLte(amount).ft(stablecoinTokenPrincipal as `${string}.${string}`, ftName)];
+      } catch (err) {
+        onError?.(err as Error);
+        return Promise.reject(err);
+      }
 
       return callContract({
         contractName: CONTRACTS.STABILITY_POOL,

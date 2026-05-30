@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/hooks/useWallet";
 import { useContract } from "@/hooks/useContract";
-import { CONTRACTS, DEFAULTS } from "@/lib/constants";
+import { CONTRACTS, DEFAULTS, STABLECOIN_DECIMALS, getExplorerTxUrl } from "@/lib/constants";
+import { getSelectedStacksWallet, getActiveStacksWallet } from "@/lib/walletProvider";
+import { toHumanReadable, toSmallestUnits } from "@/lib/utils";
 import { useRegistrationFee, useRegisteredStablecoins, useIsNameTaken, useIsSymbolTaken, useCollateralTypes, useStablecoinCollateralList } from "@/hooks/useContractRead";
 
 // Per-collateral config state for the factory form
@@ -21,15 +23,19 @@ interface CollateralConfigEntry {
   liquidationRatio: number;
   liquidationPenalty: number;
   stabilityFee: number;
-  debtCeiling: number;
-  debtFloor: number;
+  // debtCeiling / debtFloor are kept as strings of HUMAN-readable stablecoin
+  // amounts so the user can type decimals (e.g. "0.000001") without losing
+  // precision while typing. They are converted to raw on-chain micro-units
+  // (10^STABLECOIN_DECIMALS) only at the contract-call boundary.
+  debtCeiling: string;
+  debtFloor: string;
   // Global defaults for reference
   globalMinCollateralRatio: number;
   globalLiquidationRatio: number;
   globalLiquidationPenalty: number;
   globalStabilityFee: number;
-  globalDebtCeiling: number;
-  globalDebtFloor: number;
+  globalDebtCeiling: string;
+  globalDebtFloor: string;
 }
 
 export default function FactoryPage() {
@@ -62,6 +68,24 @@ export default function FactoryPage() {
   const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'failed' | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
 
+  // Which wallet is signing this session. Xverse's current build mishandles
+  // `stx_deployContract` -- it JWT-wraps the Clarity source and mis-binds it to
+  // the contract name/source, so every Xverse deploy aborts on-chain with
+  // `(err none)` / "name too long" AFTER burning the mainnet fee. Until Xverse
+  // fixes deploy, we block the action for Xverse-active users and tell them to
+  // switch to Leather (which deploys correctly). Contract CALLS are unaffected.
+  const XVERSE_ID = "XverseProviders.StacksProvider";
+  const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isConnected) {
+      setActiveWalletId(null);
+      return;
+    }
+    const wallet = getSelectedStacksWallet() ?? getActiveStacksWallet();
+    setActiveWalletId(wallet?.id ?? null);
+  }, [isConnected]);
+  const isXverseActive = activeWalletId === XVERSE_ID;
+
   // Collateral configuration state
   const { collateralTypes, isLoading: collateralTypesLoading } = useCollateralTypes();
   const [configuringCoinId, setConfiguringCoinId] = useState<number | null>(null);
@@ -89,14 +113,20 @@ export default function FactoryPage() {
         liquidationRatio: existingByAsset.get(ct.asset)?.liquidationRatio ?? ct.liquidationRatio,
         liquidationPenalty: existingByAsset.get(ct.asset)?.liquidationPenalty ?? ct.liquidationPenalty,
         stabilityFee: existingByAsset.get(ct.asset)?.stabilityFee ?? ct.stabilityFee,
-        debtCeiling: existingByAsset.get(ct.asset)?.debtCeiling ?? ct.debtCeiling,
-        debtFloor: existingByAsset.get(ct.asset)?.debtFloor ?? ct.debtFloor,
+        debtCeiling: toHumanReadable(
+          existingByAsset.get(ct.asset)?.debtCeiling ?? ct.debtCeiling,
+          STABLECOIN_DECIMALS
+        ).toString(),
+        debtFloor: toHumanReadable(
+          existingByAsset.get(ct.asset)?.debtFloor ?? ct.debtFloor,
+          STABLECOIN_DECIMALS
+        ).toString(),
         globalMinCollateralRatio: ct.minCollateralRatio,
         globalLiquidationRatio: ct.liquidationRatio,
         globalLiquidationPenalty: ct.liquidationPenalty,
         globalStabilityFee: ct.stabilityFee,
-        globalDebtCeiling: ct.debtCeiling,
-        globalDebtFloor: ct.debtFloor,
+        globalDebtCeiling: toHumanReadable(ct.debtCeiling, STABLECOIN_DECIMALS).toString(),
+        globalDebtFloor: toHumanReadable(ct.debtFloor, STABLECOIN_DECIMALS).toString(),
       }));
       setCollateralConfigs(merged);
     }
@@ -139,13 +169,16 @@ export default function FactoryPage() {
       try {
         // Step 1: Submit transaction and get txId
         const txId = await new Promise<string>((resolve, reject) => {
+          // Convert human-readable stablecoin amounts back to raw on-chain
+          // micro-units at the contract-call boundary. Empty / NaN inputs
+          // become 0 (which the contract treats as "no floor / no ceiling").
           const params = {
             minCollateralRatio: config.minCollateralRatio,
             liquidationRatio: config.liquidationRatio,
             liquidationPenalty: config.liquidationPenalty,
             stabilityFee: config.stabilityFee,
-            debtCeiling: config.debtCeiling,
-            debtFloor: config.debtFloor,
+            debtCeiling: toSmallestUnits(parseFloat(config.debtCeiling) || 0, STABLECOIN_DECIMALS),
+            debtFloor: toSmallestUnits(parseFloat(config.debtFloor) || 0, STABLECOIN_DECIMALS),
           };
 
           const onSuccess = (txId: string) => resolve(txId);
@@ -374,6 +407,15 @@ export default function FactoryPage() {
   }, [deployTxId, deployedContractName, deployStatus, deployingCoinId, address, checkTxStatus, setTokenContract, refetchCoins]);
 
   const handleDeployAndLink = async (coin: { id: number; name: string; symbol: string }) => {
+    // Hard stop for Xverse: its broken `stx_deployContract` would burn the
+    // mainnet fee on a tx that aborts on-chain. Block before dispatching.
+    const wallet = getSelectedStacksWallet() ?? getActiveStacksWallet();
+    if (wallet?.id === XVERSE_ID) {
+      setDeployingCoinId(coin.id);
+      setDeployStatus('error');
+      setDeployError('Xverse cannot deploy token contracts (the transaction aborts on-chain and burns the fee). Switch to Leather to deploy & link.');
+      return;
+    }
     setDeployingCoinId(coin.id);
     setDeployTxId(null);
     setDeployedContractName(null);
@@ -450,7 +492,7 @@ export default function FactoryPage() {
               <span className="text-sm text-muted-foreground">Waiting for confirmation...</span>
             </div>
             <a
-              href={`https://explorer.hiro.so/txid/${txId}?chain=testnet`}
+              href={getExplorerTxUrl(txId)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -483,7 +525,7 @@ export default function FactoryPage() {
             )}
             {txId && (
               <a
-                href={`https://explorer.hiro.so/txid/${txId}?chain=testnet`}
+                href={getExplorerTxUrl(txId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -518,7 +560,7 @@ export default function FactoryPage() {
             </p>
             {txId && (
               <a
-                href={`https://explorer.hiro.so/txid/${txId}?chain=testnet`}
+                href={getExplorerTxUrl(txId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -822,24 +864,26 @@ export default function FactoryPage() {
                                           <p className="mt-0.5 text-xs text-muted-foreground">{(config.stabilityFee / 100).toFixed(2)}% annual</p>
                                         </div>
                                         <div>
-                                          <label className="mb-1 block text-xs font-medium">Debt Ceiling</label>
+                                          <label className="mb-1 block text-xs font-medium">Debt Ceiling (in stablecoin)</label>
                                           <Input
                                             type="number"
+                                            step="any"
                                             value={config.debtCeiling}
                                             min={0}
                                             disabled={config.existsOnChain && !config.enabledOnChain}
-                                            onChange={(e) => updateCollateralConfig(config.asset, { debtCeiling: parseInt(e.target.value) || 0 })}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { debtCeiling: e.target.value })}
                                             className="h-8 text-sm"
                                           />
                                         </div>
                                         <div>
-                                          <label className="mb-1 block text-xs font-medium">Debt Floor</label>
+                                          <label className="mb-1 block text-xs font-medium">Debt Floor (in stablecoin)</label>
                                           <Input
                                             type="number"
+                                            step="any"
                                             value={config.debtFloor}
                                             min={0}
                                             disabled={config.existsOnChain && !config.enabledOnChain}
-                                            onChange={(e) => updateCollateralConfig(config.asset, { debtFloor: parseInt(e.target.value) || 0 })}
+                                            onChange={(e) => updateCollateralConfig(config.asset, { debtFloor: e.target.value })}
                                             className="h-8 text-sm"
                                           />
                                         </div>
@@ -935,7 +979,7 @@ export default function FactoryPage() {
                                   Deploying token contract...
                                 </div>
                                 <a
-                                  href={`https://explorer.hiro.so/txid/${deployTxId}?chain=testnet`}
+                                  href={getExplorerTxUrl(deployTxId)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -970,15 +1014,31 @@ export default function FactoryPage() {
                               </div>
                             )}
                             {(deployingCoinId !== coin.id || deployStatus === null) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="w-full"
-                                disabled={deployStatus === 'deploying' || deployStatus === 'linking'}
-                                onClick={() => handleDeployAndLink(coin)}
-                              >
-                                <Coins className="mr-1 h-3 w-3" /> Deploy & Link Token
-                              </Button>
+                              isXverseActive ? (
+                                <div className="space-y-1 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2">
+                                  <div className="flex items-center gap-2 text-xs font-medium text-yellow-600">
+                                    <Info className="h-3 w-3" /> Xverse can&apos;t deploy tokens
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    Xverse&apos;s current build corrupts contract deploys (the tx
+                                    aborts on-chain and burns the fee). Switch to Leather to deploy
+                                    &amp; link this token.
+                                  </p>
+                                  <Button size="sm" variant="outline" className="w-full" disabled>
+                                    <Coins className="mr-1 h-3 w-3" /> Deploy &amp; Link Token
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="w-full"
+                                  disabled={deployStatus === 'deploying' || deployStatus === 'linking'}
+                                  onClick={() => handleDeployAndLink(coin)}
+                                >
+                                  <Coins className="mr-1 h-3 w-3" /> Deploy & Link Token
+                                </Button>
+                              )
                             )}
                           </>
                         )}
