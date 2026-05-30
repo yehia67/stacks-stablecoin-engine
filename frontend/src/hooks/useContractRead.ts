@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS } from "@/lib/constants";
+import { CONTRACTS, getContractId, getCollateralDecimals, STABLECOIN_DECIMALS, ORACLE_MAX_STALENESS_SECONDS, ORACLE_CACHE_TTL_SECONDS, ORACLE_DIA_PAIRS, CONSTANT_ORACLE_NAMES } from "@/lib/constants";
 import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
 
 const API_BASE = "/api/stacks";
@@ -1426,6 +1426,162 @@ export function useDiaOraclePrices() {
   }, [fetchPrices]);
 
   return { prices, isLoading, error, refetch: fetchPrices };
+}
+
+export type OracleState = "loading" | "live" | "stale" | "unavailable";
+
+export interface OracleStatus {
+  state: OracleState;
+  priceUsd: number | null;
+  ageSeconds: number | null;
+  isValidating: boolean;
+  refetch: () => Promise<void>;
+}
+
+interface OracleStatusCacheEntry {
+  state: OracleState;
+  priceUsd: number | null;
+  ageSeconds: number | null;
+  fetchedAt: number; // ms epoch
+}
+
+// SWR cache keyed by oracle principal. Survives in-session navigation; cleared
+// on full reload. BTC barely moves, so a 60s TTL avoids redundant reads.
+const oracleStatusCache = new Map<string, OracleStatusCacheEntry>();
+
+function oracleContractName(principal: string): string {
+  return principal.includes(".") ? principal.split(".").slice(1).join(".") : principal;
+}
+
+// Classify a get-price (response uint uint) result hex.
+function classifyGetPrice(hex: string | null): { ok: boolean; price?: number; errCode?: number } {
+  if (!hex) return { ok: false };
+  if (hex.startsWith("0x07")) {
+    const price = parseOkUint(hex);
+    return { ok: true, price: price ?? undefined };
+  }
+  if (hex.startsWith("0x08")) {
+    try {
+      const parsed = cvToValue(hexToCV(hex)) as any;
+      const inner = parsed?.value;
+      const code =
+        typeof inner === "bigint" ? Number(inner)
+        : typeof inner === "number" ? inner
+        : inner && typeof inner === "object" && inner.value !== undefined ? Number(inner.value)
+        : NaN;
+      return { ok: false, errCode: Number.isNaN(code) ? undefined : code };
+    } catch {
+      return { ok: false };
+    }
+  }
+  return { ok: false };
+}
+
+// Read the DIA adapter timestamp (ms) for a pair; returns age in seconds or null.
+async function fetchOracleAgeSeconds(pair: string): Promise<number | null> {
+  const adapterPrincipal = getContractId(CONTRACTS.DIA_ORACLE_ADAPTER);
+  const hex = await callReadOnlyAt(adapterPrincipal, "get-value", [
+    cvToHex(stringAsciiCV(pair)),
+  ]);
+  if (!hex || hex.startsWith("0x09") /* none */) return null;
+  try {
+    const parsed = cvToValue(hexToCV(hex)) as any;
+    const tuple = parsed?.type === "ok" ? parsed.value : parsed;
+    const tsField = tuple?.timestamp ?? tuple?.value?.timestamp;
+    const tsMs =
+      typeof tsField === "bigint" ? Number(tsField)
+      : typeof tsField === "number" ? tsField
+      : tsField && typeof tsField === "object" && tsField.value !== undefined ? Number(tsField.value)
+      : NaN;
+    if (Number.isNaN(tsMs) || tsMs <= 0) return null;
+    const ageSec = Math.floor(Date.now() / 1000 - tsMs / 1000);
+    return ageSec < 0 ? 0 : ageSec;
+  } catch {
+    return null;
+  }
+}
+
+async function loadOracleStatus(oraclePrincipal: string): Promise<OracleStatusCacheEntry> {
+  const name = oracleContractName(oraclePrincipal);
+  const now = Date.now();
+
+  if (CONSTANT_ORACLE_NAMES.has(name)) {
+    const hex = await callReadOnlyAt(oraclePrincipal, "get-price", []);
+    const cls = classifyGetPrice(hex);
+    return {
+      state: "live",
+      priceUsd: cls.ok && cls.price != null ? cls.price / 1e8 : null,
+      ageSeconds: null,
+      fetchedAt: now,
+    };
+  }
+
+  const priceHex = await callReadOnlyAt(oraclePrincipal, "get-price", []);
+  const cls = classifyGetPrice(priceHex);
+
+  const pair = ORACLE_DIA_PAIRS[name];
+  const ageSeconds = pair ? await fetchOracleAgeSeconds(pair) : null;
+
+  if (!cls.ok && (cls.errCode === 602 || cls.errCode === undefined)) {
+    return { state: "unavailable", priceUsd: null, ageSeconds, fetchedAt: now };
+  }
+  const ageStale = ageSeconds != null && ageSeconds > ORACLE_MAX_STALENESS_SECONDS;
+  if ((!cls.ok && cls.errCode === 601) || ageStale) {
+    return {
+      state: "stale",
+      priceUsd: cls.ok && cls.price != null ? cls.price / 1e8 : null,
+      ageSeconds,
+      fetchedAt: now,
+    };
+  }
+  return {
+    state: "live",
+    priceUsd: cls.price != null ? cls.price / 1e8 : null,
+    ageSeconds,
+    fetchedAt: now,
+  };
+}
+
+export function useOracleStatus(oraclePrincipal: string | null): OracleStatus {
+  const seed = oraclePrincipal ? oracleStatusCache.get(oraclePrincipal) : undefined;
+  const [entry, setEntry] = useState<OracleStatusCacheEntry | null>(seed ?? null);
+  const [isValidating, setIsValidating] = useState(false);
+
+  const refetch = useCallback(async () => {
+    if (!oraclePrincipal) return;
+    setIsValidating(true);
+    try {
+      const next = await loadOracleStatus(oraclePrincipal);
+      oracleStatusCache.set(oraclePrincipal, next);
+      setEntry(next);
+    } finally {
+      setIsValidating(false);
+    }
+  }, [oraclePrincipal]);
+
+  useEffect(() => {
+    if (!oraclePrincipal) {
+      setEntry(null);
+      return;
+    }
+    const cached = oracleStatusCache.get(oraclePrincipal);
+    if (cached) {
+      setEntry(cached);
+      const fresh = Date.now() - cached.fetchedAt < ORACLE_CACHE_TTL_SECONDS * 1000;
+      if (fresh) return;
+    }
+    refetch();
+    const interval = setInterval(refetch, ORACLE_CACHE_TTL_SECONDS * 1000);
+    return () => clearInterval(interval);
+  }, [oraclePrincipal, refetch]);
+
+  return {
+    state: oraclePrincipal ? (entry?.state ?? "loading") : "loading",
+    priceUsd: entry?.priceUsd ?? null,
+    ageSeconds: entry?.ageSeconds ?? null,
+    isValidating,
+    refetch,
+  };
 }
 
 /**
