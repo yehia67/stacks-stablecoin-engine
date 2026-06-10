@@ -53,9 +53,9 @@ User → VaultEngine → StablecoinToken
 - `stablecoin-token-v4.clar`: SIP-010 token using native `define-fungible-token` with mint/burn restricted to vault engines and cross-chain bridge hooks. Enables proper Stacks post-condition enforcement.
 - `sbtc-token-v4.clar` / `stx-token-v4.clar`: Collateral tokens using native `define-fungible-token` for post-condition support.
 - `collateral-registry-v6.clar`: Extended registry for collateral configurations including min ratio, liquidation ratio, liquidation penalty, stability fee, debt ceiling/floor, enabled status, per-asset oracles, and per-stablecoin overrides. Admin functions governance-gated.
-- `multi-asset-vault-engine-v7.clar`: **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers. `register-asset-oracle` governance-gated.
-- `stability-pool-v6.clar`: Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution.
-- `liquidation-engine-v7.clar`: Full liquidation orchestrator (health check → vault-engine seize → pool distribute).
+- `multi-asset-vault-engine-v8.clar` (**active**): **Multi-asset CDP engine** supporting multiple collateral types per vault with per-asset positions, health factors, debt tracking, and real SIP-010 custody transfers. Uses **trait-based oracle dispatch** — reads the canonical oracle per asset from `collateral-registry-v6`, so `mint-against-asset*` and `withdraw-collateral*` take an `<oracle-trait>` argument and there is no `register-asset-oracle` function. Legacy `multi-asset-vault-engine-v7.clar` (DIA-id oracle mapping via `register-asset-oracle`) remains on-chain and authorized but is deprecated.
+- `stability-pool-v7.clar` (**active**): Stablecoin-scoped deposit/withdraw with product-based accounting and reward-per-token for liquidation collateral distribution; gates `distribute-liquidation-reward` on `liquidation-engine-v8`. Legacy `stability-pool-v6.clar` (wired to `liquidation-engine-v7`) remains on-chain but is deprecated.
+- `liquidation-engine-v8.clar` (**active**): Full liquidation orchestrator (health check → vault-engine-v8 seize → pool distribute); validates the passed oracle against the registry-stored principal. Legacy `liquidation-engine-v7.clar` (paired with the v7 engine and `stability-pool-v6`) remains on-chain but is deprecated.
 
 ### Oracle Contracts
 - `oracle-trait.clar`: Trait defining `get-price`.
@@ -273,7 +273,7 @@ Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF` · Originally deployed 202
 
 **Governance**: pinned to Asigna multisig vault [`SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF`](https://stx.asigna.io/vault/SN32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8K3EJAEF/dashboard) (admin and guardian). Timelock delay = 144 blocks (~24h). All governed contracts are bootstrap-locked. Frontend inspector: `/governance`.
 
-> ⚠️ Testnet on-chain contracts predate the canonical SIP-010 migration and still use a 3-arg local `sip-010-trait`. Repo source for these contracts now uses canonical SIP-010 — the originally deployed contracts are frozen at v4/v6, but the vault engine has since been re-deployed at v8 (alongside `liquidation-engine-v8`, `vgld-token-v4`, and `price-oracle-vgld-v1`) which uses trait-based oracle dispatch and the canonical SIP-010 trait. Mainnet remains on v7. Use the mainnet deployment above for production integration work; testnet v8 is the development surface for trait-dispatched oracles and new collateral assets.
+> ⚠️ Testnet on-chain contracts predate the canonical SIP-010 migration and still use a 3-arg local `sip-010-trait`. Repo source for these contracts now uses canonical SIP-010 — the originally deployed contracts are frozen at v4/v6, but the vault engine has since been re-deployed at v8 (alongside `liquidation-engine-v8`, `vgld-token-v4`, and `price-oracle-vgld-v1`) which uses trait-based oracle dispatch and the canonical SIP-010 trait. Mainnet has also been upgraded to v8 — the active mainnet engine/liquidation pair is `multi-asset-vault-engine-v8` + `liquidation-engine-v8` with `stability-pool-v7` (see the mainnet table above); the v7/v6/v7 contracts remain on-chain as deprecated legacy. Use the mainnet deployment above for production integration work; testnet v8 is the development surface for trait-dispatched oracles and new collateral assets.
 
 ### Contracts on-chain:
 
@@ -326,8 +326,8 @@ Then verify:
 ### 2) Oracle sensitivity check
 On testnet, prices come from DIA oracles (`price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`). To test health factor changes, observe the live DIA price feed and check:
 
-1. Re-check `multi-asset-vault-engine-v7::get-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID>`.
-2. If health factor is below the liquidation ratio, call `liquidation-engine-v7::liquidate`.
+1. Re-check `multi-asset-vault-engine-v8::get-position-health-factor-for-stablecoin '<YOUR_TESTNET_PRINCIPAL> <STABLECOIN_ID> <ASSET> <PRICE>`.
+2. If health factor is below the liquidation ratio, call `liquidation-engine-v8::liquidate` (pass the asset's `<oracle-trait>`).
 
 Expected behavior:
 - Healthy vault: `liquidate` returns `(err u300)`
@@ -366,24 +366,25 @@ As deployer:
   'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4      ;; asset
   u150 u120 u10 u200 u1000000 u100)                             ;; min-cr / liq-ratio / penalty / fee / ceiling / floor
 
-;; 3. Open vault and deposit
-(contract-call? .multi-asset-vault-engine-v7 open-vault-for-stablecoin u0)
-(contract-call? .multi-asset-vault-engine-v7 deposit-collateral-for-stablecoin
+;; 3. Open vault and deposit (engine = active multi-asset-vault-engine-v8)
+(contract-call? .multi-asset-vault-engine-v8 open-vault-for-stablecoin u0)
+(contract-call? .multi-asset-vault-engine-v8 deposit-collateral-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .sbtc-token-v4 u1000000)
 
-;; 4. Mint against the position (validates health factor)
-(contract-call? .multi-asset-vault-engine-v7 mint-against-asset-for-stablecoin
+;; 4. Mint against the position (validates health factor).
+;; v8 takes the oracle trait for the asset (sBTC -> price-oracle-dia-btc-v2).
+(contract-call? .multi-asset-vault-engine-v8 mint-against-asset-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
-  .<your-linked-token> u500)
+  .<your-linked-token> .price-oracle-dia-btc-v2 u500)
 
-;; 5. Repay and withdraw
-(contract-call? .multi-asset-vault-engine-v7 repay-against-asset-for-stablecoin
+;; 5. Repay and withdraw (withdraw re-checks health factor, so it needs the oracle)
+(contract-call? .multi-asset-vault-engine-v8 repay-against-asset-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
   .<your-linked-token> u200)
-(contract-call? .multi-asset-vault-engine-v7 withdraw-collateral-for-stablecoin
+(contract-call? .multi-asset-vault-engine-v8 withdraw-collateral-for-stablecoin
   u0 'ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.sbtc-token-v4
-  .sbtc-token-v4 u300)
+  .sbtc-token-v4 .price-oracle-dia-btc-v2 u300)
 ```
 
 See [`docs/getting_started.md`](./docs/getting_started.md) for complete sequence diagrams and function reference.

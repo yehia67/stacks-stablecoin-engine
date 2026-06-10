@@ -41,11 +41,13 @@ SSE is multi-sided. Five roles interact with the protocol:
 
 | Persona | What they do | Primary frontend | Primary contracts |
 |---|---|---|---|
-| **Vault Owner** | Deposit collateral, mint stablecoins, repay, withdraw | `/vaults`, `/vaults/new`, `/vaults/[id]` | `multi-asset-vault-engine-v7` |
-| **Stablecoin Creator** | Register stablecoin, deploy & link token, configure per-stablecoin collateral, set stability-pool reward % | `/factory` | `stablecoin-factory-v4`, `collateral-registry-v6`, `stability-pool-v6` |
-| **Pool Depositor** | Deposit stablecoins into the stability pool, claim seized collateral from liquidations | `/pool` | `stability-pool-v6` |
-| **Liquidator** | Call `liquidate` on undercollateralized vaults; net profit comes from reward bonus to the pool they deposited in | `/liquidations` | `liquidation-engine-v7` |
-| **Protocol Admin** | Set registration fee, treasury, add global collateral types, register oracle mappings, authorize engines | none (scripts only) | `stablecoin-factory-v4`, `collateral-registry-v6`, `multi-asset-vault-engine-v7`, `stablecoin-token-v4` |
+| **Vault Owner** | Deposit collateral, mint stablecoins, repay, withdraw | `/vaults`, `/vaults/new`, `/vaults/[id]` | `multi-asset-vault-engine-v8` |
+| **Stablecoin Creator** | Register stablecoin, deploy & link token, configure per-stablecoin collateral, set stability-pool reward % | `/factory` | `stablecoin-factory-v4`, `collateral-registry-v6`, `stability-pool-v7` |
+| **Pool Depositor** | Deposit stablecoins into the stability pool, claim seized collateral from liquidations | `/pool` | `stability-pool-v7` |
+| **Liquidator** | Call `liquidate` on undercollateralized vaults; net profit comes from reward bonus to the pool they deposited in | `/liquidations` | `liquidation-engine-v8` |
+| **Protocol Admin** | Set registration fee, treasury, add global collateral types (per-asset oracle stored in registry), authorize engines | none (scripts only) | `stablecoin-factory-v4`, `collateral-registry-v6`, `multi-asset-vault-engine-v8`, `stablecoin-token-v4` |
+
+> **Active vs legacy versions.** The active contract set is `multi-asset-vault-engine-v8`, `stability-pool-v7`, and `liquidation-engine-v8`. The pre-upgrade `multi-asset-vault-engine-v7`, `stability-pool-v6`, and `liquidation-engine-v7` remain on-chain (and v7 is still authorized) but are **deprecated legacy** — integrate against the v8 set. The key behavior change: v8 uses **trait-based oracle dispatch** (oracle read from `collateral-registry-v6`), so `mint-against-asset*` / `withdraw-collateral*` take an `<oracle-trait>` argument and the old `register-asset-oracle` admin function no longer exists.
 
 ### Capability matrix
 
@@ -64,7 +66,7 @@ SSE is multi-sided. Five roles interact with the protocol:
 | Add global collateral type | | | | | Yes |
 | Set registration fee / treasury | | | | | Yes |
 | Authorize vault engines | | | | | Yes |
-| Register asset→oracle mapping | | | | | Yes |
+| Register asset→oracle mapping (legacy v7 only; v8 reads oracle from registry) | | | | | Yes |
 
 ---
 
@@ -75,9 +77,9 @@ graph LR
   U[User Wallet] -->|connect| FE[Frontend Next.js app]
   FE -->|read/write| F[stablecoin-factory-v4]
   FE -->|read/write| CR[collateral-registry-v6]
-  FE -->|read/write| VE[multi-asset-vault-engine-v7]
-  FE -->|read/write| SP[stability-pool-v6]
-  FE -->|write| LE[liquidation-engine-v7]
+  FE -->|read/write| VE[multi-asset-vault-engine-v8]
+  FE -->|read/write| SP[stability-pool-v7]
+  FE -->|write| LE[liquidation-engine-v8]
   VE -->|mint/burn| ST[stablecoin-token-v4 per-registration]
   VE -->|SIP-010 transfers| COL[Collateral Tokens sBTC-v4 STX-v4]
   VE -->|price| OW[price-oracle-dia-btc-v2 price-oracle-dia-stx-v2]
@@ -138,7 +140,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant VE as multi-asset-vault-engine-v7
+  participant VE as multi-asset-vault-engine-v8
   participant CT as Collateral Token SIP-010
   participant OR as price-oracle-dia
   participant DIA as dia-oracle-adapter to DIA
@@ -154,7 +156,7 @@ sequenceDiagram
   DIA-->>OR: price
   OR-->>VE: price
   VE->>VE: compute health factor
-  U->>VE: mint-against-asset-for-stablecoin(id, asset, token, amount)
+  U->>VE: mint-against-asset-for-stablecoin(id, asset, token, oracle, amount)
   VE->>VE: validate min-collateral-ratio
   VE->>ST: mint(amount, user)
   ST-->>U: stablecoin balance up
@@ -165,7 +167,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant VE as multi-asset-vault-engine-v7
+  participant VE as multi-asset-vault-engine-v8
   participant ST as stablecoin-token
   participant CT as Collateral Token
   participant OR as price-oracle
@@ -173,7 +175,7 @@ sequenceDiagram
   U->>VE: repay-against-asset-for-stablecoin(id, asset, token, amount)
   VE->>ST: burn(amount, user)
   VE-->>U: ok
-  U->>VE: withdraw-collateral-for-stablecoin(id, asset, token, amount)
+  U->>VE: withdraw-collateral-for-stablecoin(id, asset, token, oracle, amount)
   VE->>OR: get-price
   OR-->>VE: price
   VE->>VE: re-check health factor post-withdraw
@@ -186,9 +188,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant D as Depositor
-  participant SP as stability-pool-v6
+  participant SP as stability-pool-v7
   participant ST as stablecoin-token
-  participant LE as liquidation-engine-v7
+  participant LE as liquidation-engine-v8
   participant CT as Collateral Token
 
   D->>SP: deposit(id, stablecoin-token, amount)
@@ -207,9 +209,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant L as Liquidator
-  participant LE as liquidation-engine-v7
-  participant VE as multi-asset-vault-engine-v7
-  participant SP as stability-pool-v6
+  participant LE as liquidation-engine-v8
+  participant VE as multi-asset-vault-engine-v8
+  participant SP as stability-pool-v7
   participant ST as stablecoin-token
   participant CT as Collateral Token
 
@@ -292,19 +294,20 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-collateral-count` / `get-collateral-at-index(index)` | read-only | Iterate global list. |
 | `get-stablecoin-collateral-count-ro(id)` / `get-stablecoin-collateral-at-index(id, index)` / `get-stablecoin-collateral-debt-ro(id, asset)` | read-only | Iterate per-stablecoin list. |
 
-### `multi-asset-vault-engine-v7`
+### `multi-asset-vault-engine-v8` (active)
+
+> Legacy `multi-asset-vault-engine-v7` (with `register-asset-oracle` and no oracle-trait args on mint/withdraw) remains on-chain but is deprecated. v8 uses trait-based oracle dispatch: the oracle is read from `collateral-registry-v6`, callers pass the matching `<oracle-trait>` to `mint`/`withdraw`, and `register-asset-oracle` no longer exists.
 
 | Function | Access | Description |
 |---|---|---|
-| `register-asset-oracle(asset, oracle-id)` | admin | Map asset to DIA oracle ID (3=BTC, 4=STX). |
 | `open-vault` | public | Open legacy (stablecoin-id=0) vault. |
 | `open-vault-for-stablecoin(id)` | public | Open vault scoped to a stablecoin. |
 | `deposit-collateral(asset, token, amount)` | public | Legacy deposit. |
 | `deposit-collateral-for-stablecoin(id, asset, token, amount)` | public | Stablecoin-scoped deposit (SIP-010 transfer to engine custody). |
-| `withdraw-collateral(asset, token, amount)` | public | Legacy withdraw. |
-| `withdraw-collateral-for-stablecoin(id, asset, token, amount)` | public | Withdraw with post-check health factor. |
-| `mint-against-asset(asset, amount)` | public | Legacy mint. |
-| `mint-against-asset-for-stablecoin(id, asset, token-trait, amount)` | public | Mint stablecoin against specific collateral, validates `min-collateral-ratio`. |
+| `withdraw-collateral(asset, token, oracle, amount)` | public | Legacy withdraw. |
+| `withdraw-collateral-for-stablecoin(id, asset, token, oracle, amount)` | public | Withdraw with post-check health factor (oracle validated against registry). |
+| `mint-against-asset(asset, oracle, amount)` | public | Legacy mint. |
+| `mint-against-asset-for-stablecoin(id, asset, token-trait, oracle, amount)` | public | Mint stablecoin against specific collateral, validates `min-collateral-ratio`. |
 | `repay-against-asset(asset, amount)` | public | Legacy repay. |
 | `repay-against-asset-for-stablecoin(id, asset, token-trait, amount)` | public | Repay debt on a specific position. |
 | `liquidate-position(...)` | engine (liquidation-engine only) | Seize collateral to pool + burn pool stablecoins. |
@@ -316,7 +319,9 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-max-mintable(...)` / `get-max-mintable-for-stablecoin(...)` | read-only | Remaining mint capacity. |
 | `get-total-vault-value(...)` / `get-total-vault-value-for-stablecoin(...)` | read-only | Collateral value in stablecoin units. |
 
-### `stability-pool-v6`
+### `stability-pool-v7` (active)
+
+> Gates `distribute-liquidation-reward` on `liquidation-engine-v8`. Legacy `stability-pool-v6` (wired to `liquidation-engine-v7`) remains on-chain but is deprecated.
 
 | Function | Access | Description |
 |---|---|---|
@@ -331,11 +336,13 @@ Access legend: **public** = anyone can call; **read-only** = view function; **ad
 | `get-pool-product-value(id)` | read-only | Internal product accumulator. |
 | `get-claimable-collateral-reward(owner, id, asset)` | read-only | Claimable collateral for depositor. |
 
-### `liquidation-engine-v7`
+### `liquidation-engine-v8` (active)
+
+> Validates the passed oracle against the registry-stored principal, then calls `multi-asset-vault-engine-v8`. Legacy `liquidation-engine-v7` (paired with the v7 engine and `stability-pool-v6`) remains on-chain but is deprecated.
 
 | Function | Access | Description |
 |---|---|---|
-| `liquidate(owner, stablecoin-id, asset, collateral-token, stablecoin-token)` | public | Orchestrates health check → vault-engine seize → pool distribute. |
+| `liquidate(owner, stablecoin-id, asset, collateral-token, stablecoin-token, oracle)` | public | Orchestrates health check → vault-engine-v8 seize → pool distribute. |
 
 ### Oracles
 
@@ -466,8 +473,8 @@ Same flow, with:
 - **DIA oracle (testnet)**: `ST1S5ZGRZV5K4S9205RWPRTX9RGS9JV40KQMR4G1J.dia-oracle` (IDs 3=BTC, 4=STX).
 - **Current deployed versions** (see [`sse.config.json`](../sse.config.json) for canonical list):
   - `stablecoin-factory-v4`, `stablecoin-token-v4`
-  - `collateral-registry-v6`, `stability-pool-v6`
-  - `multi-asset-vault-engine-v7`, `liquidation-engine-v7`
+  - `collateral-registry-v6`, `stability-pool-v7` (active; `stability-pool-v6` legacy)
+  - `multi-asset-vault-engine-v8`, `liquidation-engine-v8` (active; `multi-asset-vault-engine-v7` / `liquidation-engine-v7` legacy)
   - `price-oracle-dia-btc-v2`, `price-oracle-dia-stx-v2`, `dia-oracle-adapter`
   - `sbtc-token-v4`, `stx-token-v4`
   - `bridge-registry-v4`, `xreserve-adapter-v5`, `bridge-adapter-trait`
@@ -515,9 +522,12 @@ All contracts are deployed under the same principal. Click any link to view cont
 | `stablecoin-factory-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-factory-v4?chain=testnet) |
 | `stablecoin-token-v4` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token-v4](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stablecoin-token-v4?chain=testnet) |
 | `collateral-registry-v6` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry-v6](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.collateral-registry-v6?chain=testnet) |
-| `multi-asset-vault-engine-v7` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v7?chain=testnet) |
-| `stability-pool-v6` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v6](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v6?chain=testnet) |
-| `liquidation-engine-v7` | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v7?chain=testnet) |
+| `multi-asset-vault-engine-v8` (active) | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v8](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v8?chain=testnet) |
+| `stability-pool-v7` (active) | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v7?chain=testnet) |
+| `liquidation-engine-v8` (active) | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v8](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v8?chain=testnet) |
+| `multi-asset-vault-engine-v7` (legacy) | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.multi-asset-vault-engine-v7?chain=testnet) |
+| `stability-pool-v6` (legacy) | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v6](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.stability-pool-v6?chain=testnet) |
+| `liquidation-engine-v7` (legacy) | [ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v7](https://explorer.hiro.so/address/ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF.liquidation-engine-v7?chain=testnet) |
 
 ### Oracles
 
