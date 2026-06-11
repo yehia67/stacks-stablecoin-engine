@@ -268,6 +268,19 @@ Governance txids (Asigna multisig `SM32SVN2P08XVZ6FT0WRRJKJNQ49KQ1EB8HF1YTDX` vi
 
 Full plan + risk doc: `docs/plans/add-vgld-collateral.md`. Operational runbook: `docs/plans/timelock-operations.md`.
 
+### Mainnet upgrade — EGP Bond A (EGPB) collateral (in rollout)
+
+EGP Bond A (`SP3QMDAC….egpb-token-v1`, FT asset name `EGPBv1`, 8 decimals, hard $1.00 standard price) is the third approved collateral alongside sBTC and vGLD. SSE is the sole issuer: `mint`/`burn` are owner-gated to the deployer key (with a `set-owner` handoff path). Zero engine changes — registered purely via a timelocked `execute-coll-add`.
+
+| Contract | Mainnet principal | Purpose |
+|---|---|---|
+| `egpb-token-v1` | [`SP3QMDAC….egpb-token-v1`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.egpb-token-v1?chain=mainnet) | EGP Bond A SIP-010 token — owner-gated mint/burn, SSE-issued |
+| `price-oracle-egpb-v1` | [`SP3QMDAC….price-oracle-egpb-v1`](https://explorer.hiro.so/txid/SP3QMDACSJPCZQTBM5RZWQSE5561ZTFYV63J8ZMY0.price-oracle-egpb-v1?chain=mainnet) | Constant $1 USD oracle (implements `oracle-trait`) — canonical price for EGPB |
+
+EGPB risk params: 150% min-cr / 120% liq-r / 10% liq-pen / 2% APR stability fee / 100k stablecoin debt ceiling / 10 stablecoin debt floor (same as vGLD soft launch).
+
+Full plan: `docs/plans/add-egpb-collateral.md` (governance txids recorded there as rollout completes).
+
 ## Testnet Deployment
 Deployer: `ST3DGG4B53XA12A6NQTXWK4346YPTC3B2B0ATA6HF` · Originally deployed 2026-05-12, vault engine upgraded to v8 + vGLD collateral added in a follow-up deploy.
 

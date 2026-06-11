@@ -66,6 +66,7 @@ export const CONTRACTS = {
   PRICE_ORACLE_DIA_BTC: "price-oracle-dia-btc-v2",
   PRICE_ORACLE_DIA_STX: "price-oracle-dia-stx-v2",
   PRICE_ORACLE_VGLD: "price-oracle-vgld-v1",
+  PRICE_ORACLE_EGPB: "price-oracle-egpb-v1",
   DIA_ORACLE_ADAPTER: "dia-oracle-adapter",
   STABLECOIN_ENGINE_TOKEN_TRAIT: "stablecoin-engine-token-trait",
   BRIDGE_ADAPTER_TRAIT: "bridge-adapter-trait",
@@ -94,6 +95,9 @@ export const FT_ASSET_NAMES: Record<string, string> = {
   // real vgld-token-v4 contract on mainnet. The testnet simnet stub in
   // contracts/vgld-token-v4.clar uses the same name for parity.
   "vgld-token-v4": "vGLDv4",
+  // EGPB's on-chain FT asset name is "EGPBv1" — required for Pc.ft()
+  // post-conditions. Token is deployer-owned (owner-gated mint/burn).
+  "egpb-token-v1": "EGPBv1",
   "stablecoin-token-v4": "sse-stablecoin",
   // Real mainnet sBTC native fungible token name
   [MAINNET_SBTC_ASSET_PRINCIPAL]: "sbtc-token",
@@ -156,6 +160,7 @@ export const COLLATERAL_DECIMALS: Record<string, number> = {
   "sbtc-token-v4": 8,
   "stx-token-v4": 6,
   "vgld-token-v4": 8,
+  "egpb-token-v1": 8,
   // Real mainnet sBTC — looked up by either bare name or full principal
   "sbtc-token": 8,
   [MAINNET_SBTC_ASSET_PRINCIPAL]: 8,
@@ -183,7 +188,10 @@ export const ORACLE_DIA_PAIRS: Record<string, string> = {
 };
 
 // Oracle contract names that are constant / always-fresh feeds (no staleness).
-export const CONSTANT_ORACLE_NAMES = new Set<string>(["price-oracle-vgld-v1"]);
+export const CONSTANT_ORACLE_NAMES = new Set<string>([
+  "price-oracle-vgld-v1",
+  "price-oracle-egpb-v1",
+]);
 
 /** Resolve the decimal count for a collateral asset principal or contract name. */
 export function getCollateralDecimals(assetOrPrincipal: string): number {
@@ -214,6 +222,7 @@ export const COLLATERAL_SYMBOLS: Record<string, string> = {
   "sbtc-token-v4": "sBTC",
   "stx-token-v4": "STX",
   "vgld-token-v4": "vGLD",
+  "egpb-token-v1": "EGPB",
   "sbtc-token": "sBTC",
   [MAINNET_SBTC_ASSET_PRINCIPAL]: "sBTC",
   [MAINNET_VGLD_ASSET_PRINCIPAL]: "vGLD",

@@ -93,6 +93,41 @@ const proposalB = {
 };
 proposalB.hash = computeHash(proposalB.target, proposalB.fn, proposalB.argsTuple);
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Proposal C — execute-coll-add for EGP Bond A (EGPB). Same wrapper/fn as
+// proposal B; v8 engine is already authorized so this is the ONLY proposal
+// needed for the EGPB rollout (docs/plans/add-egpb-collateral.md).
+// ──────────────────────────────────────────────────────────────────────────────
+const EGPB_ASSET = `${DEPLOYER}.egpb-token-v1`;
+const oracleEgpb = `${DEPLOYER}.price-oracle-egpb-v1`;
+const proposalC = {
+  label: "Add EGPB (EGP Bond A) as collateral type in collateral-registry-v6",
+  executeFn: "execute-coll-add",
+  target: TARGET_COLLATERAL,
+  fn: FN_COLL_ADD,
+  args: {
+    asset: EGPB_ASSET,
+    "min-cr": 150n,
+    "liq-r": 120n,
+    "liq-pen": 10n,
+    fee: 200n,
+    ceiling: 100_000_000_000n,
+    "floor-amt": 10_000_000n,
+    oracle: oracleEgpb,
+  },
+  argsTuple: t.tupleCV({
+    asset: t.principalCV(EGPB_ASSET),
+    "min-cr": t.uintCV(150),
+    "liq-r": t.uintCV(120),
+    "liq-pen": t.uintCV(10),
+    fee: t.uintCV(200),
+    ceiling: t.uintCV(100_000_000_000n),
+    "floor-amt": t.uintCV(10_000_000),
+    oracle: t.principalCV(oracleEgpb),
+  }),
+};
+proposalC.hash = computeHash(proposalC.target, proposalC.fn, proposalC.argsTuple);
+
 async function fetchTip() {
   const r = await fetch(`${API_URL}/extended/v1/block`, {
     headers: process.env.HIRO_API_KEY ? { "x-api-key": process.env.HIRO_API_KEY } : {},
@@ -114,7 +149,7 @@ async function fetchTip() {
   const recommendedEta = tip != null ? tip + TIMELOCK_DELAY_BLOCKS + ETA_BUFFER : null;
 
   console.log("\n══════════════════════════════════════════════════════════════════");
-  console.log(" SSE timelock proposals — vGLD + v8 mainnet rollout");
+  console.log(" SSE timelock proposals — vGLD + v8 + EGPB mainnet rollout");
   console.log("══════════════════════════════════════════════════════════════════");
   if (tip != null) {
     console.log(` Mainnet tip:          ${tip}`);
@@ -124,12 +159,12 @@ async function fetchTip() {
   console.log(` Timelock contract:    ${DEPLOYER}.sse-timelock-v1`);
   console.log("");
 
-  for (const [name, p] of [["A", proposalA], ["B", proposalB]]) {
+  for (const [name, p] of [["A", proposalA], ["B", proposalB], ["C", proposalC]]) {
     console.log(`── Proposal ${name} ─────────────────────────────────────────────────`);
     console.log(` Purpose:        ${p.label}`);
     console.log(` Action hash:    0x${p.hash}`);
     console.log(` Queue call:     ${DEPLOYER}.sse-timelock-v1 :: queue`);
-    console.log(`   id            uint  (choose any unused, e.g. u${name === "A" ? 1001 : 1002})`);
+    console.log(`   id            uint  (choose any unused, e.g. u${{ A: 1001, B: 1002, C: 1003 }[name]})`);
     console.log(`   action-hash   (buff 32)  0x${p.hash}`);
     console.log(`   target        uint  u${p.target}`);
     console.log(`   fn            uint  u${p.fn}`);
