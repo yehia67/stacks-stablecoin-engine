@@ -97,6 +97,11 @@ plan:
             path: contracts/dia-oracle-adapter-simnet.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: egpb-token-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/egpb-token-v1.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: oracle-trait
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/oracle-trait.clar
@@ -150,6 +155,11 @@ plan:
             contract-name: liquidation-engine-v8
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidation-engine-v8.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-egpb-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-egpb-v1.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: price-oracle-vgld-v1

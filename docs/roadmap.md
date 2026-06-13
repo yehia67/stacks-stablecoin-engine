@@ -23,6 +23,10 @@ Published `price-oracle-vgld-v1`, `stability-pool-v7`, `multi-asset-vault-engine
 
 Execute txids: `0xfa1643288a538aa4d41eca8337b2d33bc4c161bb10bacc13da8d8d2d98c755da`, `0xc8e15225e60c44ae4a5b6e589899eb1816dcd2eaf2430373a707fa09815955e7`. Full plan + risk doc: `docs/plans/add-vgld-collateral.md`. Operational runbook: `docs/plans/timelock-operations.md`.
 
+### Mainnet upgrade — EGPB (EGP Bond A) collateral (2026-06, in rollout)
+
+Third mainnet collateral, exercising the v8 "zero engine changes" path for the first time: published `egpb-token-v1` (SSE-issued bond token, owner-gated mint/burn, hard $1.00 standard price, FT asset name `EGPBv1`) + `price-oracle-egpb-v1` (constant $1). One Asigna proposal only — `execute-coll-add(EGPB, 150, 120, 10, 200, 100_000_000_000, 10_000_000, …price-oracle-egpb-v1)` (v8 was already authorized). Full plan: `docs/plans/add-egpb-collateral.md`.
+
 ---
 
 ## 1. Stablecoin Factory (Registration & Token Linking)

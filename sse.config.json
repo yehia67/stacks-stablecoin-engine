@@ -26,7 +26,9 @@
     "diaOracleAdapter": "dia-oracle-adapter",
     "priceOracleDiaBtc": "price-oracle-dia-btc-v2",
     "priceOracleDiaStx": "price-oracle-dia-stx-v2",
-    "priceOracleVgld": "price-oracle-vgld-v1"
+    "priceOracleVgld": "price-oracle-vgld-v1",
+    "egpbToken": "egpb-token-v1",
+    "priceOracleEgpb": "price-oracle-egpb-v1"
   },
 
   "contractCosts": {
@@ -52,7 +54,9 @@
     "dia-oracle-adapter": 25000,
     "price-oracle-dia-btc-v2": 30000,
     "price-oracle-dia-stx-v2": 30000,
-    "price-oracle-vgld-v1": 15000
+    "price-oracle-vgld-v1": 15000,
+    "egpb-token-v1": 25000,
+    "price-oracle-egpb-v1": 15000
   },
 
   "oracles": {
@@ -145,7 +149,9 @@
         "stabilityPool",
         "multiAssetVaultEngine",
         "liquidationEngine",
-        "priceOracleVgld"
+        "priceOracleVgld",
+        "egpbToken",
+        "priceOracleEgpb"
       ],
       "collaterals": [
         {
@@ -172,6 +178,22 @@
           "assetPrincipal": "SP183MTM6NNBG18YSKCQG7Y5P5HVTAK8WSXJNKYMW.vgld-token-v4",
           "decimals": 8,
           "oracleKey": "priceOracleVgld",
+          "risk": {
+            "minCollateralRatio": 150,
+            "liquidationRatio": 120,
+            "liquidationPenalty": 10,
+            "stabilityFee": 200,
+            "debtCeiling": 100000000000,
+            "debtFloor": 10000000
+          }
+        },
+        {
+          "_comment": "EGP Bond A -- SSE-issued bond token, owner-gated mint/burn (owner = deployer key). Hard $1.00 standard price via constant price-oracle-egpb-v1. Registered on-chain via timelock execute-coll-add (see docs/plans/add-egpb-collateral.md); the deploy script's bootstrap add-collateral-type call will revert as skipped -- expected.",
+          "name": "EGP Bond A",
+          "symbol": "EGPB",
+          "contractName": "egpb-token-v1",
+          "decimals": 8,
+          "oracleKey": "priceOracleEgpb",
           "risk": {
             "minCollateralRatio": 150,
             "liquidationRatio": 120,

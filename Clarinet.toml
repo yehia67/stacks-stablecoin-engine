@@ -69,6 +69,13 @@ path = "contracts/price-oracle-vgld-v1.clar"
 epoch = "3.1"
 depends_on = ["oracle-trait"]
 
+# Constant $1 oracle for EGP Bond A (EGPB). Implements oracle-trait,
+# returns u100000000 (= $1.00 at 8-decimal PRICE-SCALE) unconditionally.
+[contracts.price-oracle-egpb-v1]
+path = "contracts/price-oracle-egpb-v1.clar"
+epoch = "3.1"
+depends_on = ["oracle-trait"]
+
 [contracts.sbtc-token-v4]
 path = "contracts/sbtc-token-v4.clar"
 epoch = "3.1"
@@ -83,6 +90,13 @@ depends_on = ["sip-010-trait"]
 # sse.config.json on mainnet).
 [contracts.vgld-token-v4]
 path = "contracts/vgld-token-v4.clar"
+epoch = "3.1"
+depends_on = ["sip-010-trait"]
+
+# EGP Bond A (EGPB) -- SSE-issued bond token, owner-gated mint/burn.
+# Ships to mainnet as-is (unlike vgld-token-v4, which is a testnet stub).
+[contracts.egpb-token-v1]
+path = "contracts/egpb-token-v1.clar"
 epoch = "3.1"
 depends_on = ["sip-010-trait"]
 
