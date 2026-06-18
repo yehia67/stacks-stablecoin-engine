@@ -84,18 +84,64 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-async function proxy(request: NextRequest, method: "GET" | "POST", path: string, search: string) {
-  let bodyText = "";
-  if (method === "POST") {
-    bodyText = await request.text();
-  }
+// --- Read caching + request coalescing ----------------------------------
+//
+// All client RPC funnels through this proxy, so it's the one place to cut
+// duplicate upstream load that triggers Hiro 429s. Two mechanisms:
+//   1. Coalescing: identical reads firing concurrently (e.g. on page mount)
+//      share a single in-flight upstream request.
+//   2. Short-TTL cache: identical reads within the TTL window are served from
+//      memory instead of hitting upstream again.
+//
+// SAFETY: only idempotent, read-only requests are eligible (allowlist below).
+// Broadcasts (POST /v2/transactions), nonce reads (/v2/accounts/...) and tx
+// status (/extended/v1/tx/...) are NEVER cached or coalesced — caching those
+// would risk replayed transactions, wrong nonces, or a stuck "pending" view.
 
+type CacheEntry = { status: number; text: string; contentType: string; expires: number };
+
+const CACHE_TTL_MS = 15_000;
+const CACHE_MAX_ENTRIES = 500;
+const responseCache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<ProxyResult>>();
+
+/** TTL in ms for a cacheable request, or 0 if it must always hit upstream. */
+function cacheTtlMs(method: "GET" | "POST", path: string): number {
+  // Read-only contract calls: the dominant traffic, change only per block.
+  if (method === "POST" && path.startsWith("/v2/contracts/call-read/")) return CACHE_TTL_MS;
+  // Wallet balances. Note: nonce lives at /v2/accounts/... and is intentionally
+  // excluded so signing always sees a fresh nonce.
+  if (method === "GET" && /^\/extended\/v1\/address\/[^/]+\/balances$/.test(path)) return CACHE_TTL_MS;
+  return 0;
+}
+
+function pruneCache() {
+  const now = Date.now();
+  responseCache.forEach((entry, key) => {
+    if (entry.expires <= now) responseCache.delete(key);
+  });
+  // Hard cap: drop oldest insertions if still over budget (Map preserves order).
+  while (responseCache.size > CACHE_MAX_ENTRIES) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest === undefined) break;
+    responseCache.delete(oldest);
+  }
+}
+
+type ProxyResult = { status: number; text: string; contentType: string };
+
+/** Run the request against the provider chain. Throws only if all providers fail. */
+async function fetchFromProviders(
+  method: "GET" | "POST",
+  path: string,
+  search: string,
+  bodyText: string
+): Promise<ProxyResult> {
   let lastError: unknown = null;
-  let fallbackResponse: Response | null = null;
+  let fallback: ProxyResult | null = null;
+
   for (const provider of FILTERED_PROVIDERS) {
-    if (isCircuitOpen(provider.id)) {
-      continue;
-    }
+    if (isCircuitOpen(provider.id)) continue;
 
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -108,48 +154,88 @@ async function proxy(request: NextRequest, method: "GET" | "POST", path: string,
         cache: "no-store",
       });
 
+      const result: ProxyResult = {
+        status: upstream.status,
+        text: await upstream.text(),
+        contentType: upstream.headers.get("content-type") || "application/json",
+      };
+
       if (upstream.ok) {
         markSuccess(provider.id);
-        const text = await upstream.text();
-        return new NextResponse(text, {
-          status: upstream.status,
-          headers: { "content-type": upstream.headers.get("content-type") || "application/json" },
-        });
+        return result;
       }
 
+      markFailure(provider.id);
       if (isRetryableStatus(upstream.status)) {
-        markFailure(provider.id);
         lastError = new Error(`Retryable status ${upstream.status}`);
         continue;
       }
-
-      // Keep non-retryable response as fallback, but still try other providers.
-      // This avoids provider-specific 404/401 responses short-circuiting the entire request.
-      markFailure(provider.id);
-      if (!fallbackResponse) {
-        fallbackResponse = upstream;
-      }
+      // Keep non-retryable response as fallback, but still try other providers
+      // so provider-specific 404/401 don't short-circuit the whole request.
+      if (!fallback) fallback = result;
     } catch (err) {
       markFailure(provider.id);
       lastError = err;
     }
   }
 
-  if (fallbackResponse) {
-    const text = await fallbackResponse.text();
-    return new NextResponse(text, {
-      status: fallbackResponse.status,
-      headers: { "content-type": fallbackResponse.headers.get("content-type") || "application/json" },
-    });
+  if (fallback) return fallback;
+  throw new Error(lastError instanceof Error ? lastError.message : "unknown error");
+}
+
+function toResponse(result: ProxyResult): NextResponse {
+  return new NextResponse(result.text, {
+    status: result.status,
+    headers: { "content-type": result.contentType },
+  });
+}
+
+async function proxy(request: NextRequest, method: "GET" | "POST", path: string, search: string) {
+  const bodyText = method === "POST" ? await request.text() : "";
+  const ttl = cacheTtlMs(method, path);
+
+  // Non-cacheable (broadcasts, nonce, tx status, ...): straight passthrough.
+  if (ttl === 0) {
+    try {
+      return toResponse(await fetchFromProviders(method, path, search, bodyText));
+    } catch (err) {
+      return NextResponse.json(
+        { error: "All RPC providers failed", details: err instanceof Error ? err.message : "unknown error" },
+        { status: 502 }
+      );
+    }
   }
 
-  return NextResponse.json(
-    {
-      error: "All RPC providers failed",
-      details: lastError instanceof Error ? lastError.message : "unknown error",
-    },
-    { status: 502 }
-  );
+  const key = `${method} ${path}${search}\n${bodyText}`;
+  const now = Date.now();
+
+  const cached = responseCache.get(key);
+  if (cached && cached.expires > now) return toResponse(cached);
+
+  // Coalesce concurrent identical reads onto one upstream request.
+  let pending = inflight.get(key);
+  if (!pending) {
+    pending = fetchFromProviders(method, path, search, bodyText)
+      .then((result) => {
+        // Only cache successful reads; never persist an error/429/5xx.
+        if (result.status === 200) {
+          responseCache.set(key, { ...result, expires: Date.now() + ttl });
+          pruneCache();
+        }
+        return result;
+      })
+      .finally(() => inflight.delete(key));
+    inflight.set(key, pending);
+  }
+
+  try {
+    return toResponse(await pending);
+  } catch (err) {
+    return NextResponse.json(
+      { error: "All RPC providers failed", details: err instanceof Error ? err.message : "unknown error" },
+      { status: 502 }
+    );
+  }
 }
 
 export async function GET(
