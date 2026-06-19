@@ -4,6 +4,11 @@ const HIRO_MAINNET = "https://api.mainnet.hiro.so";
 const HIRO_TESTNET = "https://api.testnet.hiro.so";
 const ALLTHATNODE_TESTNET = process.env.ALLTHATNODE_TESTNET_API_BASE || "";
 
+// QuickNode Stacks mainnet endpoint. Auth token is embedded in the URL path,
+// so no API-key header is sent. Configured via env only (no hardcoded secret).
+// Trailing slash stripped so `base + "/extended/..."` does not double up.
+const QUICKNODE_MAINNET = (process.env.QUICKNODE_MAINNET_API_BASE || "").replace(/\/+$/, "");
+
 const NETWORK = process.env.NEXT_PUBLIC_NETWORK === "mainnet" ? "mainnet" : "testnet";
 
 type RpcProvider = {
@@ -15,6 +20,7 @@ type RpcProvider = {
 
 const PROVIDERS: RpcProvider[] = NETWORK === "mainnet"
   ? [
+      { id: "quicknode-mainnet", base: QUICKNODE_MAINNET, keyHeader: "x-api-key", key: "" },
       { id: "hiro-mainnet-auth", base: HIRO_MAINNET, keyHeader: "x-api-key", key: process.env.HIRO_API_KEY || "" },
       { id: "hiro-mainnet-public", base: HIRO_MAINNET, keyHeader: "x-api-key", key: "" },
       {
