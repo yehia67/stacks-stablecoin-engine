@@ -97,6 +97,13 @@ function isRetryableStatus(status: number): boolean {
 // Broadcasts (POST /v2/transactions), nonce reads (/v2/accounts/...) and tx
 // status (/extended/v1/tx/...) are NEVER cached or coalesced — caching those
 // would risk replayed transactions, wrong nonces, or a stuck "pending" view.
+//
+// SCOPE: these Maps are module-scoped, i.e. per warm serverless instance. On a
+// horizontally-scaled host (Netlify/Lambda) each instance keeps its own cache,
+// so dedup is per-instance, not global — it reduces duplicate upstream load but
+// does not eliminate 429s across many cold instances. The durable fix for high
+// concurrency is a shared store (e.g. Upstash Redis) behind the same allowlist;
+// the in-memory layer here is the cheap first line that covers the common case.
 
 type CacheEntry = { status: number; text: string; contentType: string; expires: number };
 
@@ -109,9 +116,10 @@ const inflight = new Map<string, Promise<ProxyResult>>();
 function cacheTtlMs(method: "GET" | "POST", path: string): number {
   // Read-only contract calls: the dominant traffic, change only per block.
   if (method === "POST" && path.startsWith("/v2/contracts/call-read/")) return CACHE_TTL_MS;
-  // Wallet balances. Note: nonce lives at /v2/accounts/... and is intentionally
-  // excluded so signing always sees a fresh nonce.
-  if (method === "GET" && /^\/extended\/v1\/address\/[^/]+\/balances$/.test(path)) return CACHE_TTL_MS;
+  // Wallet balances are intentionally NOT cached: after a deposit/mint/repay/
+  // withdraw the UI refetches balances immediately and must see post-tx values,
+  // not a stale pre-tx snapshot. (Nonce at /v2/accounts/... is excluded too so
+  // signing always sees a fresh nonce.)
   return 0;
 }
 
@@ -165,8 +173,13 @@ async function fetchFromProviders(
         return result;
       }
 
-      markFailure(provider.id);
       if (isRetryableStatus(upstream.status)) {
+        // Only retryable failures (429/5xx/timeout) count against the provider's
+        // circuit breaker. A non-retryable 4xx (e.g. 404 for a not-yet-indexed
+        // tx during status polling) is a valid upstream answer, not a provider
+        // fault — penalizing it would wrongly open the circuit and pile load on
+        // the remaining providers, causing the very 429s we're avoiding.
+        markFailure(provider.id);
         lastError = new Error(`Retryable status ${upstream.status}`);
         continue;
       }
@@ -217,8 +230,14 @@ async function proxy(request: NextRequest, method: "GET" | "POST", path: string,
   if (!pending) {
     pending = fetchFromProviders(method, path, search, bodyText)
       .then((result) => {
-        // Only cache successful reads; never persist an error/429/5xx.
-        if (result.status === 200) {
+        // Only cache successful reads; never persist an error/429/5xx. Hiro's
+        // call-read returns HTTP 200 even on a logical failure ({"okay":false}),
+        // so exclude those too — otherwise a transient read failure is replayed
+        // for the whole TTL window.
+        if (result.status === 200 && !result.text.includes('"okay":false')) {
+          // delete+set so a refreshed (hot) key moves to the newest position;
+          // pruneCache evicts oldest-inserted first under the hard cap.
+          responseCache.delete(key);
           responseCache.set(key, { ...result, expires: Date.now() + ttl });
           pruneCache();
         }
