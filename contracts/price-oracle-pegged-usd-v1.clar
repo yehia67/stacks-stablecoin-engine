@@ -144,8 +144,9 @@
       (ok (var-get peg-price))
       (let (
           (now (current-time))
-          (lu (var-get last-update))
-          (age (if (>= now lu) (- now lu) u0))
+          ;; last-update is u0 or a past block's time, and now = time(height-1)
+          ;; is monotonic, so now >= last-update always -- no underflow here.
+          (age (- now (var-get last-update)))
         )
         (asserts! (<= age staleness) (err ERR_STALE_PRICE))
         (ok (var-get peg-price))
@@ -168,7 +169,8 @@
       (now (current-time))
       (lu (var-get last-update))
       (staleness (var-get max-staleness))
-      (age (if (>= now lu) (- now lu) u0))
+      ;; now >= lu always (see get-price), so no underflow.
+      (age (- now lu))
     )
     {
       price: (var-get peg-price),
