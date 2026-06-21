@@ -1,0 +1,29 @@
+# Fixes ChunkLoadError / white-screen in production.
+#
+# Cause: Netlify Edge was serving a stale, per-accept-encoding (brotli) HTML
+# variant of pages. That stale document referenced hashed JS chunks that later
+# deploys had deleted (chunk hashes rotate every build, and /_next/static is
+# served "immutable"). The browser loaded the old HTML, requested the dead
+# chunk, got a 404, and React crashed to a blank page.
+#
+# Fix: never let the CDN durably cache HTML documents / RSC payloads, so they
+# always reflect the current deploy and can never name a removed chunk. The
+# content-addressed build assets under /_next/static are safe to cache forever.
+#
+# Note: Netlify-CDN-Cache-Control controls only Netlify's edge; browser caching
+# is still governed by the Cache-Control headers the Next runtime emits.
+# More-specific paths take precedence, so the immutable rule below wins for
+# /_next/static even though the /* rule also matches it.
+
+# Content-addressed build assets: safe to cache forever at the edge.
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Netlify-CDN-Cache-Control = "public, max-age=31536000, immutable"
+
+# HTML documents and RSC payloads: never durably edge-cache, or a stale doc can
+# point at a chunk hash that a newer deploy removed.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Netlify-CDN-Cache-Control = "no-store"

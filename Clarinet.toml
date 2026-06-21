@@ -25,6 +25,25 @@ epoch = "3.1"
 path = "contracts/bridge-adapter-trait.clar"
 epoch = "3.1"
 
+# ── SSE Finance (fresh, self-contained package) ───────────────────────────────
+# SSE Finance is deployed clean with its own trait set so nothing points at an
+# externally-deployed trait contract. Borrow tokens + collateral are plain
+# SIP-010 (no mint/burn) -- SSE Finance never mints.
+
+[contracts.sse-finance-oracle-trait]
+path = "contracts/sse-finance-oracle-trait.clar"
+epoch = "3.1"
+
+[contracts.sse-finance-sip-010-trait]
+path = "contracts/sse-finance-sip-010-trait.clar"
+epoch = "3.1"
+
+# Reusable governance-pegged ~$1 oracle shared by every USD stablecoin market.
+[contracts.price-oracle-pegged-usd-v1]
+path = "contracts/price-oracle-pegged-usd-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-finance-oracle-trait"]
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]
