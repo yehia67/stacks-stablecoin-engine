@@ -24,14 +24,24 @@
 ;; can only pull what the pool actually holds idle, never principal that is lent
 ;; out.
 ;;
-;; FEE NOTE: borrow-out moves cash and updates total-borrows here. The one-time
-;; borrow-fee split (protocol vs LP share into treasury-accrued) is layered on in
-;; the "Pool: borrow/repay cash management + borrow fee" task.
+;; BORROW FEE -- convention (b) "netted from disbursed" (matches the architecture
+;; flow diagram and the vault): on borrow-out the debt principal is `amount`, the
+;; borrower receives `amount - fee`, and the fee stays in the pool. The fee is
+;; split by the market's borrow-fee-lp-share-bps:
+;;   - protocol-part -> recorded in the registry's treasury-accrued (the pool must
+;;     be an authorized caller in sse-finance-market-registry-v1); the tokens stay
+;;     in pool cash, earmarked, until sweep-fees moves them to the treasury.
+;;   - lp-part -> credited pro-rata to all LP shares by bumping the pool product
+;;     (the mirror of the liquidation-loss shrink), so existing LPs' effective
+;;     balance grows by their share of the fee.
+;; This keeps the invariant cash + total-borrows == total-supplied + treasury-accrued.
+;; repay-in charges no fee (the optional early-repay fee is a fixed-term feature).
 
 (use-trait sse-finance-sip-010-trait .sse-finance-sip-010-trait.sse-finance-sip-010-trait)
 
 (define-constant CONTRACT-OWNER tx-sender)
 (define-constant SCALE_FACTOR u1000000000000)
+(define-constant BPS_DENOM u10000)
 
 ;; ============================================
 ;; Error Constants
@@ -279,13 +289,39 @@
 ;; ============================================
 ;; Cash management (vault-only): borrow-out / repay-in
 ;; ============================================
-;; NOTE: the one-time borrow-fee split is added in the next task. Here borrow-out
-;; only moves cash and updates total-borrows.
 
-;; Lend cash out to a recipient. Vault-only. Reverts if amount > cash.
+;; Quote the borrow fee for an amount on a market (for the vault / UI to show the
+;; net-received amount). borrowed = debt principal; disbursed = what the borrower
+;; actually receives = borrowed - fee.
+(define-read-only (get-borrow-fee-quote (market-id uint) (amount uint))
+  (let (
+      (fc (contract-call? .sse-finance-market-registry-v1 get-fee-config market-id))
+      (fee-bps (match fc cfg (get borrow-fee-bps cfg) u0))
+      (lp-share-bps (match fc cfg (get borrow-fee-lp-share-bps cfg) u0))
+    )
+    (let (
+        (fee (/ (* amount fee-bps) BPS_DENOM))
+      )
+      (let ((lp-part (/ (* fee lp-share-bps) BPS_DENOM)))
+        {
+          borrowed: amount,
+          fee: fee,
+          lp-fee: lp-part,
+          protocol-fee: (- fee lp-part),
+          disbursed: (- amount fee)
+        }
+      )
+    )
+  )
+)
+
+;; Lend cash out to a recipient, charging the one-time borrow fee (netted from the
+;; disbursed amount). Vault-only. `amount` is the debt principal; the recipient
+;; receives `amount - fee`. Reverts if amount > cash.
 (define-public (borrow-out (market-id uint) (token <sse-finance-sip-010-trait>) (recipient principal) (amount uint))
   (let (
       (expected (market-borrow-token market-id))
+      (fc (contract-call? .sse-finance-market-registry-v1 get-fee-config market-id))
       (state (get-state market-id))
     )
     (asserts! (is-authorized-caller) (err ERR_UNAUTHORIZED))
@@ -294,16 +330,62 @@
     (asserts! (is-eq (contract-of token) (unwrap-panic expected)) (err ERR_TOKEN_MISMATCH))
     (asserts! (>= (get cash state) amount) (err ERR_INSUFFICIENT_CASH))
 
-    (try! (as-contract (contract-call? token transfer amount tx-sender recipient none)))
+    (let (
+        (fee-bps (match fc cfg (get borrow-fee-bps cfg) u0))
+        (lp-share-bps (match fc cfg (get borrow-fee-lp-share-bps cfg) u0))
+        (supplied (get total-supplied state))
+        (current-product (get-current-product market-id))
+      )
+      (let (
+          (fee (/ (* amount fee-bps) BPS_DENOM))
+        )
+        (let (
+            (lp-part (/ (* fee lp-share-bps) BPS_DENOM))
+          )
+          (let (
+              (protocol-part (- fee lp-part))
+              (disbursed (- amount fee))
+            )
+            ;; transfer the net amount to the borrower
+            (try! (as-contract (contract-call? token transfer disbursed tx-sender recipient none)))
 
-    (map-set pool-state {market-id: market-id}
-      (merge state {
-        total-borrows: (+ (get total-borrows state) amount),
-        cash: (- (get cash state) amount)
-      })
+            ;; record the protocol fee in the registry's treasury-accrued
+            (if (> protocol-part u0)
+              (try! (contract-call? .sse-finance-market-registry-v1 accrue-fee market-id (contract-of token) protocol-part))
+              u0
+            )
+
+            ;; credit the LP fee share pro-rata via a product bump (gain mirror of
+            ;; the liquidation-loss shrink)
+            (if (and (> lp-part u0) (> supplied u0))
+              (map-set pool-product {market-id: market-id}
+                {product: (/ (* current-product (+ supplied lp-part)) supplied)}
+              )
+              false
+            )
+
+            (map-set pool-state {market-id: market-id}
+              (merge state {
+                total-borrows: (+ (get total-borrows state) amount),
+                cash: (- (get cash state) disbursed),
+                total-supplied: (+ supplied lp-part)
+              })
+            )
+            (print {
+              event: "pool-borrow-out",
+              market-id: market-id,
+              recipient: recipient,
+              borrowed: amount,
+              disbursed: disbursed,
+              fee: fee,
+              protocol-fee: protocol-part,
+              lp-fee: lp-part
+            })
+            (ok disbursed)
+          )
+        )
+      )
     )
-    (print {event: "pool-borrow-out", market-id: market-id, recipient: recipient, amount: amount})
-    (ok amount)
   )
 )
 

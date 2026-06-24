@@ -77,7 +77,7 @@ function setup() {
       Cl.principal(borrowToken),
       Cl.principal(borrowToken), // oracle (stand-in; pool ignores it)
       Cl.uint(1_000_000_000),
-      Cl.uint(50),
+      Cl.uint(0), // borrow-fee-bps: 0 for the pure cash-management tests
       Cl.uint(0),
       Cl.uint(2000),
       Cl.uint(0),
@@ -301,5 +301,90 @@ describe("pool: governance gating", () => {
       simnet.callPublicFn(POOL, "set-authorized-caller", [Cl.principal(borrower), Cl.bool(true)], borrower)
         .result
     ).toBeErr(Cl.uint(ERR_UNAUTHORIZED));
+  });
+});
+
+describe("pool: one-time borrow fee (netted from disbursed)", () => {
+  // Registry error: accrue-fee rejects a pool that isn't an authorized caller.
+  const REG_ERR_UNAUTHORIZED = 800;
+
+  // Set market 0's fee config and authorize the pool to record fees in the registry.
+  function setFeeAndAuthorizePool(borrowBps: number, lpShareBps: number, authorize = true) {
+    const { deployer } = accounts();
+    const { poolAddr } = principals();
+    simnet.callPublicFn(
+      REG,
+      "set-fee-config",
+      [Cl.uint(0), Cl.uint(borrowBps), Cl.uint(lpShareBps), Cl.uint(2000), Cl.uint(0)],
+      deployer
+    );
+    if (authorize) {
+      simnet.callPublicFn(REG, "set-authorized-caller", [Cl.principal(poolAddr), Cl.bool(true)], deployer);
+    }
+  }
+  const treasuryAccrued = () => {
+    const { deployer } = accounts();
+    const { borrowToken } = principals();
+    return Number(
+      (simnet.callReadOnlyFn(REG, "get-treasury-accrued", [Cl.uint(0), Cl.principal(borrowToken)], deployer)
+        .result as any).value as bigint
+    );
+  };
+  const quote = (amount: number) => {
+    const { deployer } = accounts();
+    const q = (simnet.callReadOnlyFn(POOL, "get-borrow-fee-quote", [Cl.uint(0), Cl.uint(amount)], deployer)
+      .result as any).value;
+    return {
+      borrowed: Number(q["borrowed"].value),
+      fee: Number(q["fee"].value),
+      lpFee: Number(q["lp-fee"].value),
+      protocolFee: Number(q["protocol-fee"].value),
+      disbursed: Number(q["disbursed"].value),
+    };
+  };
+
+  beforeEach(setup);
+
+  it("LP-share 0 (launch): whole fee -> protocol treasury-accrued; borrower nets amount-fee", () => {
+    const { lp1, vault, borrower } = accounts();
+    setFeeAndAuthorizePool(200, 0); // 2% borrow fee, 0 to LPs
+    mintBorrow(lp1, 10_000);
+    supply(lp1, 10_000);
+
+    expect(quote(1000)).toEqual({ borrowed: 1000, fee: 20, lpFee: 0, protocolFee: 20, disbursed: 980 });
+
+    // returns the net disbursed amount
+    expect(borrowOut(vault, borrower, 1000).result).toBeOk(Cl.uint(980));
+    expect(tokenBalance(BORROW_TOKEN, borrower)).toBe(980);
+    expect(state()).toEqual({ supplied: 10_000, borrows: 1000, cash: 9020 });
+    expect(treasuryAccrued()).toBe(20); // whole fee to protocol
+    // LPs unchanged (lp-share 0)
+    expect(readUint("balance-of", [Cl.principal(lp1), Cl.uint(0)])).toBe(10_000);
+  });
+
+  it("LP-share 50%: fee split protocol/LP; LP claim grows by its share", () => {
+    const { lp1, vault, borrower } = accounts();
+    setFeeAndAuthorizePool(200, 5000); // 2% fee, 50% of it to LPs
+    mintBorrow(lp1, 10_000);
+    supply(lp1, 10_000);
+
+    expect(quote(1000)).toEqual({ borrowed: 1000, fee: 20, lpFee: 10, protocolFee: 10, disbursed: 980 });
+
+    expect(borrowOut(vault, borrower, 1000).result).toBeOk(Cl.uint(980));
+    expect(treasuryAccrued()).toBe(10); // protocol half
+    // LP half (10) credited pro-rata: lone LP's claim grows 10000 -> 10010
+    expect(readUint("balance-of", [Cl.principal(lp1), Cl.uint(0)])).toBe(10_010);
+    expect(state()).toEqual({ supplied: 10_010, borrows: 1000, cash: 9020 });
+    // invariant: cash + borrows == supplied + treasury-accrued
+    expect(9020 + 1000).toBe(10_010 + 10);
+  });
+
+  it("borrow-out reverts when the pool is not an authorized fee recorder in the registry", () => {
+    const { lp1, vault, borrower } = accounts();
+    setFeeAndAuthorizePool(200, 0, /* authorize */ false);
+    mintBorrow(lp1, 10_000);
+    supply(lp1, 10_000);
+    // fee>0 triggers registry accrue-fee, which rejects the unauthorized pool
+    expect(borrowOut(vault, borrower, 1000).result).toBeErr(Cl.uint(REG_ERR_UNAUTHORIZED));
   });
 });
