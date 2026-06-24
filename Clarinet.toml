@@ -79,6 +79,13 @@ path = "contracts/sse-finance-liquidation-v1.clar"
 epoch = "3.1"
 depends_on = ["sse-finance-sip-010-trait", "sse-finance-oracle-trait", "sse-finance-collateral-matrix-v1", "sse-finance-market-registry-v1", "sse-finance-pool-v1", "sse-finance-vault-v1"]
 
+# Fresh SSE Finance timelock: wraps the whole admin surface; every contract's
+# governance var points here. Reuses sse-governance-v1 for admin/guardian roles.
+[contracts.sse-finance-timelock-v1]
+path = "contracts/sse-finance-timelock-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-governance-v1", "price-oracle-pegged-usd-v1", "sse-finance-market-registry-v1", "sse-finance-collateral-matrix-v1", "sse-finance-pool-v1", "sse-finance-vault-v1", "sse-finance-liquidation-v1"]
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]
