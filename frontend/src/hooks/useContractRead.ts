@@ -7,6 +7,65 @@ import { cvToValue, hexToCV, cvToHex, principalCV, uintCV, stringAsciiCV } from 
 const API_BASE = "/api/stacks";
 const API_KEY: string | undefined = undefined;
 
+// Poll cadences. Stacks anchor blocks land ~every 10 min, so on-chain reads
+// (prices, TVL, debt) only change per block — a 60s interval was ~10x
+// oversampling and the dominant source of upstream /v2/contracts/call-read load
+// (each protocol-stats poll fans out ~20+ reads). These align cadence closer to
+// the block rate; the short-TTL proxy cache + module-level caches absorb the rest.
+//
+// Tunable via env (NEXT_PUBLIC_ so they inline into the client bundle). Defaults
+// apply when unset/invalid. Bump these if upstream rate limits tighten.
+const envInt = (raw: string | undefined, fallback: number): number => {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const DIA_PRICE_POLL_MS = envInt(process.env.NEXT_PUBLIC_DIA_PRICE_POLL_MS, 180_000); // 3 min
+const PROTOCOL_STATS_POLL_MS = envInt(process.env.NEXT_PUBLIC_PROTOCOL_STATS_POLL_MS, 300_000); // 5 min
+
+/**
+ * Run `tick` every `intervalMs`, but only while the browser tab is visible.
+ *
+ * Background tabs polling on a timer were the single biggest RPC drain: a left-
+ * open dashboard kept fanning out call-reads 24/7 with zero users watching. When
+ * the tab is hidden we tear the interval down entirely (no upstream traffic);
+ * when it returns to the foreground we revalidate once immediately, then resume.
+ *
+ * Does NOT fire an initial tick — callers do their own seeded/cached first load.
+ * Returns a cleanup function for useEffect.
+ */
+function startVisiblePolling(tick: () => void, intervalMs: number): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  let interval: ReturnType<typeof setInterval> | null = null;
+
+  const start = () => {
+    if (interval !== null) return;
+    interval = setInterval(tick, intervalMs);
+  };
+  const stop = () => {
+    if (interval !== null) {
+      clearInterval(interval);
+      interval = null;
+    }
+  };
+  const onVisibility = () => {
+    if (document.hidden) {
+      stop();
+    } else {
+      tick(); // revalidate immediately on return to foreground
+      start();
+    }
+  };
+
+  if (!document.hidden) start();
+  document.addEventListener("visibilitychange", onVisibility);
+
+  return () => {
+    stop();
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
+}
+
 
 interface ReadContractOptions {
   contractName: string;
@@ -1437,9 +1496,8 @@ export function useDiaOraclePrices() {
 
   useEffect(() => {
     fetchPrices();
-    // Refresh prices every 60 seconds
-    const interval = setInterval(fetchPrices, 60000);
-    return () => clearInterval(interval);
+    // Refresh on a block-aware cadence, paused while the tab is backgrounded.
+    return startVisiblePolling(fetchPrices, DIA_PRICE_POLL_MS);
   }, [fetchPrices]);
 
   return { prices, isLoading, error, refetch: fetchPrices };
@@ -1588,8 +1646,7 @@ export function useOracleStatus(oraclePrincipal: string | null): OracleStatus {
       if (fresh) return;
     }
     refetch();
-    const interval = setInterval(refetch, ORACLE_CACHE_TTL_SECONDS * 1000);
-    return () => clearInterval(interval);
+    return startVisiblePolling(refetch, ORACLE_CACHE_TTL_SECONDS * 1000);
   }, [oraclePrincipal, refetch]);
 
   return {
@@ -2397,12 +2454,12 @@ export function useProtocolStats() {
   useEffect(() => {
     const controller = new AbortController();
     fetchStats(controller.signal);
-    const interval = setInterval(() => {
-      fetchStats(controller.signal, true);
-    }, 60000);
+    // 5-min cadence, paused in background tabs. This poll fans out ~20+ call-reads,
+    // so it was the dominant RPC drain — gating + slower cadence is the main fix.
+    const stop = startVisiblePolling(() => fetchStats(controller.signal, true), PROTOCOL_STATS_POLL_MS);
     return () => {
       controller.abort();
-      clearInterval(interval);
+      stop();
     };
   }, [fetchStats]);
 
