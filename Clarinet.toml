@@ -58,6 +58,13 @@ path = "contracts/sse-finance-collateral-matrix-v1.clar"
 epoch = "3.1"
 depends_on = ["sse-finance-market-registry-v1"]
 
+# Liquidity pool: LP supply/withdraw + share accounting, cash management, and the
+# stability-pool product/snapshot loss + collateral-reward distribution engine.
+[contracts.sse-finance-pool-v1]
+path = "contracts/sse-finance-pool-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-finance-sip-010-trait", "sse-finance-market-registry-v1"]
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]
