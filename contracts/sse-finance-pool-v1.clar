@@ -498,3 +498,35 @@
     (ok total-claimable)
   )
 )
+
+;; ============================================
+;; Treasury fee sweep (permissionless)
+;; ============================================
+;; Move the accrued protocol fees for a {market, token} -- which physically sit in
+;; this pool (borrow fee in cash; liquidation penalty cut in collateral) -- to the
+;; governance-set treasury, and zero the accrual. Anyone can call; funds can only
+;; ever land at the registry's current treasury principal. When sweeping the
+;; borrow-token, the fee was counted in `cash`, so cash is reduced too (keeping the
+;; invariant cash + total-borrows == total-supplied + treasury-accrued).
+(define-public (sweep-fees (market-id uint) (token <sse-finance-sip-010-trait>))
+  (let (
+      (treasury (contract-call? .sse-finance-market-registry-v1 get-treasury))
+      (token-principal (contract-of token))
+      (state (get-state market-id))
+    )
+    (let ((amount (try! (contract-call? .sse-finance-market-registry-v1 clear-treasury-accrued market-id token-principal))))
+      (if (> amount u0)
+        (begin
+          (try! (as-contract (contract-call? token transfer amount tx-sender treasury none)))
+          (if (is-eq (some token-principal) (market-borrow-token market-id))
+            (map-set pool-state {market-id: market-id} (merge state {cash: (- (get cash state) amount)}))
+            true
+          )
+        )
+        true
+      )
+      (print {event: "fees-swept", market-id: market-id, token: token-principal, amount: amount, treasury: treasury})
+      (ok amount)
+    )
+  )
+)
