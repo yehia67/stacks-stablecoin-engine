@@ -51,6 +51,13 @@ path = "contracts/sse-finance-market-registry-v1.clar"
 epoch = "3.1"
 depends_on = []
 
+# Collateral<->market risk matrix ("the matrix"): per {market, collateral} risk
+# params. Absence of a row = pair not borrowable. Keyed off registry market-ids.
+[contracts.sse-finance-collateral-matrix-v1]
+path = "contracts/sse-finance-collateral-matrix-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-finance-market-registry-v1"]
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]
