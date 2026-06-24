@@ -17,7 +17,7 @@ externally-deployed trait contract.
 |---|---|---|
 | `price-oracle-pegged-usd-v1` | `sse-finance-oracle-trait` | — |
 | `sse-finance-market-registry-v1` | — | — (stores `borrow-token` & `oracle` as **plain principals**, mirroring how `collateral-registry-v6` stores its oracle; trait typing happens at the vault/pool call sites that actually invoke `transfer` / `get-price`) |
-| `sse-finance-pool-v1` *(later)* | — | `sse-finance-sip-010-trait` (borrow token) |
+| `sse-finance-pool-v1` | — | `sse-finance-sip-010-trait` (borrow token on supply/withdraw/borrow-out/repay-in, collateral on claim). Reads the market's borrow-token principal via `contract-call?` to `sse-finance-market-registry-v1`. |
 | `sse-finance-vault-v1` *(later)* | — | `sse-finance-sip-010-trait` (collateral), `sse-finance-oracle-trait` (pricing) |
 | `sse-finance-liquidation-v1` *(later)* | — | `sse-finance-sip-010-trait`, `sse-finance-oracle-trait` |
 
