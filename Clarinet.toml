@@ -44,6 +44,13 @@ path = "contracts/price-oracle-pegged-usd-v1.clar"
 epoch = "3.1"
 depends_on = ["sse-finance-oracle-trait"]
 
+# Market registry: the standard import path by which any SIP-010 stablecoin
+# becomes borrowable. Markets + a separate capped fee-config + treasury accrual.
+[contracts.sse-finance-market-registry-v1]
+path = "contracts/sse-finance-market-registry-v1.clar"
+epoch = "3.1"
+depends_on = []
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]

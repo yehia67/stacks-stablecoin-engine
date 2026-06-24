@@ -182,6 +182,11 @@ plan:
             path: contracts/sbtc-token-v4.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: sse-finance-market-registry-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sse-finance-market-registry-v1.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: sse-finance-sip-010-trait
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sse-finance-sip-010-trait.clar
@@ -191,14 +196,14 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sse-governance-v1.clar
             clarity-version: 3
+      epoch: "3.1"
+    - id: 2
+      transactions:
         - emulated-contract-publish:
             contract-name: xreserve-adapter-v5
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/xreserve-adapter-v5.clar
             clarity-version: 3
-      epoch: "3.1"
-    - id: 2
-      transactions:
         - emulated-contract-publish:
             contract-name: sse-timelock-v1
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
