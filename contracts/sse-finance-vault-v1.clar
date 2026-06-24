@@ -6,10 +6,10 @@
 ;; multi-asset-vault-engine-v8 (stablecoin-id -> market-id).
 ;;
 ;; INTEREST-FREE: debt is a flat principal (borrow-principal); it never grows on
-;; its own. This file implements collateral deposit/withdraw only -- borrow &
-;; repay (which move borrow-principal and call the pool) land in the next task,
-;; and liquidate-position in the liquidation task. Until then debt-share is 0, so
-;; the withdraw health check is a no-op and any withdraw within balance succeeds.
+;; its own -- it changes ONLY on borrow / repay / liquidate. borrow draws from the
+;; pool (which charges the one-time borrow fee, netted from the disbursed amount)
+;; and records the full principal as debt; repay returns principal to the pool.
+;; liquidate-position lands in the liquidation task.
 ;;
 ;; Pricing: each collateral asset has a GLOBAL oracle registered in
 ;; sse-finance-collateral-matrix-v1. Every pricing call validates the caller's
@@ -38,6 +38,9 @@
 (define-constant ERR_INVALID_AMOUNT u307)
 (define-constant ERR_UNAUTHORIZED u308)
 (define-constant ERR_BOOTSTRAP_LOCKED u309)
+(define-constant ERR_INSUFFICIENT_DEBT u310)
+(define-constant ERR_BELOW_DEBT_FLOOR u311)
+(define-constant ERR_BORROW_CAP u312)
 
 ;; ============================================
 ;; Governance (for the wiring the borrow/liquidation tasks add later)
@@ -245,6 +248,126 @@
           )
         )
       (err ERR_NO_COLLATERAL_POSITION)
+    )
+  )
+)
+
+;; ============================================
+;; Borrow / repay (flat principal)
+;; ============================================
+
+;; Borrow against an existing collateral position. Reverts if the draw would push
+;; the position below the min ratio, over the market's borrow cap, or below the
+;; debt floor. The one-time borrow fee is charged by the pool at draw (netted from
+;; the disbursed amount); the FULL principal `amount` is recorded as flat debt.
+(define-public (borrow
+    (market-id uint)
+    (asset principal)
+    (borrow-token <sse-finance-sip-010-trait>)
+    (oracle <sse-finance-oracle-trait>)
+    (amount uint)
+  )
+  (begin
+    (asserts! (> amount u0) (err ERR_INVALID_AMOUNT))
+    (asserts! (oracle-matches asset oracle) (err ERR_ORACLE_MISMATCH))
+    (match (map-get? vaults {owner: tx-sender, market-id: market-id})
+      vault
+        (match (map-get? vault-collateral {owner: tx-sender, market-id: market-id, asset: asset})
+          position
+            (match (get-pair-status market-id asset)
+              status
+                (begin
+                  (asserts! (get enabled status) (err ERR_PAIR_NOT_ENABLED))
+                  (let (
+                      (new-debt-share (+ (get debt-share position) amount))
+                      (collateral-value (compute-collateral-value (price-asset-via asset oracle) (get amount position)))
+                      (min-ratio (get min-collateral-ratio status))
+                      (debt-floor (get debt-floor status))
+                      (cap (default-to u0 (contract-call? .sse-finance-market-registry-v1 get-borrow-cap market-id)))
+                      (current-borrows (contract-call? .sse-finance-pool-v1 get-total-borrows market-id))
+                    )
+                    (asserts!
+                      (>= (calculate-position-health-factor collateral-value new-debt-share min-ratio) RATIO-SCALE)
+                      (err ERR_UNSAFE_HEALTH_FACTOR)
+                    )
+                    (asserts! (>= new-debt-share debt-floor) (err ERR_BELOW_DEBT_FLOOR))
+                    (asserts! (<= (+ current-borrows amount) cap) (err ERR_BORROW_CAP))
+
+                    ;; draw from the pool: charges the one-time fee, transfers the
+                    ;; net amount to the borrower, bumps pool total-borrows
+                    (try! (contract-call? .sse-finance-pool-v1 borrow-out market-id borrow-token tx-sender amount))
+
+                    (map-set vault-collateral {owner: tx-sender, market-id: market-id, asset: asset}
+                      {amount: (get amount position), debt-share: new-debt-share})
+                    (map-set vaults {owner: tx-sender, market-id: market-id}
+                      (merge vault {borrow-principal: (+ (get borrow-principal vault) amount)}))
+                    (print {
+                      event: "borrow",
+                      owner: tx-sender,
+                      market-id: market-id,
+                      asset: asset,
+                      amount: amount,
+                      debt-share: new-debt-share
+                    })
+                    (ok new-debt-share)
+                  )
+                )
+              (err ERR_PAIR_NOT_ENABLED)
+            )
+          (err ERR_NO_COLLATERAL_POSITION)
+        )
+      (err ERR_NO_VAULT)
+    )
+  )
+)
+
+;; Repay flat principal. Owed = the position's debt-share. Returns borrow-token to
+;; the pool and reduces the principal by exactly the repaid amount. The remaining
+;; debt must be 0 or stay at/above the debt floor.
+(define-public (repay
+    (market-id uint)
+    (asset principal)
+    (borrow-token <sse-finance-sip-010-trait>)
+    (amount uint)
+  )
+  (begin
+    (asserts! (> amount u0) (err ERR_INVALID_AMOUNT))
+    (match (map-get? vaults {owner: tx-sender, market-id: market-id})
+      vault
+        (match (map-get? vault-collateral {owner: tx-sender, market-id: market-id, asset: asset})
+          position
+            (match (get-pair-status market-id asset)
+              status
+                (begin
+                  (asserts! (>= (get debt-share position) amount) (err ERR_INSUFFICIENT_DEBT))
+                  (let ((new-debt-share (- (get debt-share position) amount)))
+                    (asserts!
+                      (or (is-eq new-debt-share u0) (>= new-debt-share (get debt-floor status)))
+                      (err ERR_BELOW_DEBT_FLOOR)
+                    )
+                    ;; return principal to the pool (pulls from the borrower)
+                    (try! (contract-call? .sse-finance-pool-v1 repay-in market-id borrow-token amount))
+
+                    (map-set vault-collateral {owner: tx-sender, market-id: market-id, asset: asset}
+                      {amount: (get amount position), debt-share: new-debt-share})
+                    (map-set vaults {owner: tx-sender, market-id: market-id}
+                      (merge vault {borrow-principal: (- (get borrow-principal vault) amount)}))
+                    (print {
+                      event: "repay",
+                      owner: tx-sender,
+                      market-id: market-id,
+                      asset: asset,
+                      amount: amount,
+                      debt-share: new-debt-share
+                    })
+                    (ok new-debt-share)
+                  )
+                )
+              (err ERR_PAIR_NOT_ENABLED)
+            )
+          (err ERR_NO_COLLATERAL_POSITION)
+        )
+      (err ERR_NO_VAULT)
     )
   )
 )
