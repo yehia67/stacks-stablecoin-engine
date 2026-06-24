@@ -41,6 +41,7 @@
 (define-constant ERR_INSUFFICIENT_DEBT u310)
 (define-constant ERR_BELOW_DEBT_FLOOR u311)
 (define-constant ERR_BORROW_CAP u312)
+(define-constant ERR_NOT_LIQUIDATOR u313)
 
 ;; ============================================
 ;; Governance (for the wiring the borrow/liquidation tasks add later)
@@ -64,6 +65,28 @@
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR_UNAUTHORIZED))
     (var-set bootstrap-locked true)
+    (ok true)
+  )
+)
+
+(define-private (is-governance-caller)
+  (or
+    (is-eq contract-caller (var-get governance))
+    (and (not (var-get bootstrap-locked)) (is-eq tx-sender CONTRACT-OWNER))
+  )
+)
+
+;; The single liquidation engine permitted to call liquidate-position. Set by
+;; governance at deploy (a principal, not a hardcoded contract literal, so the
+;; vault carries no circular dependency on the liquidation contract).
+(define-data-var liquidator (optional principal) none)
+(define-read-only (get-liquidator) (var-get liquidator))
+
+(define-public (set-liquidator (engine principal))
+  (begin
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
+    (var-set liquidator (some engine))
+    (print {event: "liquidator-set", engine: engine})
     (ok true)
   )
 )
@@ -364,6 +387,60 @@
                   )
                 )
               (err ERR_PAIR_NOT_ENABLED)
+            )
+          (err ERR_NO_COLLATERAL_POSITION)
+        )
+      (err ERR_NO_VAULT)
+    )
+  )
+)
+
+;; ============================================
+;; Liquidation settlement (liquidator-only)
+;; ============================================
+
+;; Settle a liquidation: reduce the position's collateral and debt by the seized /
+;; offset amounts and move the seized collateral to the pool (which distributes it
+;; to LPs and earmarks the protocol penalty cut). Callable only by the configured
+;; liquidation engine. The engine computes the amounts; this just applies them.
+(define-public (liquidate-position
+    (owner principal)
+    (market-id uint)
+    (asset principal)
+    (collateral-token <sse-finance-sip-010-trait>)
+    (debt-to-offset uint)
+    (collateral-to-seize uint)
+  )
+  (begin
+    (asserts! (is-eq (some contract-caller) (var-get liquidator)) (err ERR_NOT_LIQUIDATOR))
+    (asserts! (is-eq (contract-of collateral-token) asset) (err ERR_ASSET_MISMATCH))
+    (match (map-get? vaults {owner: owner, market-id: market-id})
+      vault
+        (match (map-get? vault-collateral {owner: owner, market-id: market-id, asset: asset})
+          position
+            (begin
+              (asserts! (>= (get amount position) collateral-to-seize) (err ERR_INSUFFICIENT_COLLATERAL))
+              (asserts! (>= (get debt-share position) debt-to-offset) (err ERR_INSUFFICIENT_DEBT))
+
+              (map-set vault-collateral {owner: owner, market-id: market-id, asset: asset}
+                {amount: (- (get amount position) collateral-to-seize),
+                 debt-share: (- (get debt-share position) debt-to-offset)})
+              (map-set vaults {owner: owner, market-id: market-id}
+                (merge vault {borrow-principal: (- (get borrow-principal vault) debt-to-offset)}))
+
+              ;; move the seized collateral to the pool for LP distribution +
+              ;; protocol-cut earmarking
+              (try! (as-contract (contract-call? collateral-token transfer collateral-to-seize tx-sender .sse-finance-pool-v1 none)))
+
+              (print {
+                event: "position-liquidated",
+                owner: owner,
+                market-id: market-id,
+                asset: asset,
+                debt-offset: debt-to-offset,
+                collateral-seized: collateral-to-seize
+              })
+              (ok true)
             )
           (err ERR_NO_COLLATERAL_POSITION)
         )

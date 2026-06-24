@@ -72,6 +72,13 @@ path = "contracts/sse-finance-vault-v1.clar"
 epoch = "3.1"
 depends_on = ["sse-finance-sip-010-trait", "sse-finance-oracle-trait", "sse-finance-collateral-matrix-v1", "sse-finance-market-registry-v1", "sse-finance-pool-v1"]
 
+# Liquidation engine (Mechanism A): permissionless trigger, pro-rata in-kind LP
+# distribution, protocol penalty cut to treasury-accrued.
+[contracts.sse-finance-liquidation-v1]
+path = "contracts/sse-finance-liquidation-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-finance-sip-010-trait", "sse-finance-oracle-trait", "sse-finance-collateral-matrix-v1", "sse-finance-market-registry-v1", "sse-finance-pool-v1", "sse-finance-vault-v1"]
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]

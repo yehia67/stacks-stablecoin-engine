@@ -210,6 +210,11 @@ plan:
             path: contracts/sse-finance-vault-v1.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: sse-finance-liquidation-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sse-finance-liquidation-v1.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: sse-governance-v1
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sse-governance-v1.clar
