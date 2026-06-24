@@ -133,6 +133,26 @@ SSE deals with multiple tokens that have different decimal precisions (e.g. sBTC
 
 **Steps 3 and 4 can run in parallel** (frontend update and docs update are independent). But NEVER skip them. A deployment without frontend and docs updates is an incomplete deployment.
 
+## Testing Requirements
+
+- **Every PR ships tests.** All new code must be covered: at minimum every
+  happy-path scenario, plus some failure scenarios. Add unit tests **and**
+  integration tests at the end of each PR — they are part of the PR, never
+  deferred to a later task.
+- **Contracts:** vitest + clarinet-sdk (simnet) under `tests/`. Run a single
+  file with `./node_modules/.bin/vitest run tests/<file>.test.ts`. Do **not** use
+  `npx vitest` — it fetches a wrong global version; root deps come from
+  `npm install` at the repo root.
+- **Cover every public and read-only function and every branch.** If a branch is
+  unreachable by construction (e.g. a monotonic-time underflow guard), remove the
+  dead guard with a comment explaining the invariant rather than leaving it
+  untestable.
+- **Measuring coverage:** `vitest run <file> -- --coverage` writes `lcov.info`.
+  With `initBeforeEach`, lcov emits one `SF` block per test init (the first is an
+  unexecuted baseline), so aggregate `DA`/`BRDA` across all blocks for a file
+  before judging coverage.
+- Pure trait files (`define-trait` only) have no executable lines — nothing to test.
+
 ## Validation Checklist
 
 After changes:

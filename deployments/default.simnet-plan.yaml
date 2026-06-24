@@ -162,6 +162,16 @@ plan:
             path: contracts/price-oracle-egpb-v1.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: sse-finance-oracle-trait
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sse-finance-oracle-trait.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: price-oracle-pegged-usd-v1
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/price-oracle-pegged-usd-v1.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: price-oracle-vgld-v1
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/price-oracle-vgld-v1.clar
@@ -170,6 +180,11 @@ plan:
             contract-name: sbtc-token-v4
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/sbtc-token-v4.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: sse-finance-sip-010-trait
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/sse-finance-sip-010-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: sse-governance-v1
@@ -181,6 +196,9 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/xreserve-adapter-v5.clar
             clarity-version: 3
+      epoch: "3.1"
+    - id: 2
+      transactions:
         - emulated-contract-publish:
             contract-name: sse-timelock-v1
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
