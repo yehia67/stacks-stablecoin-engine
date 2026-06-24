@@ -73,7 +73,7 @@ function openPosition() {
   const { alice } = accounts();
   mint(COLL, alice, 1000);
   simnet.callPublicFn(VAULT, "deposit-collateral", [Cl.uint(0), collCV(), collCV(), Cl.uint(1000)], alice);
-  simnet.callPublicFn(VAULT, "borrow", [Cl.uint(0), collCV(), borrowCV(), oracleCV(), Cl.uint(600)], alice);
+  simnet.callPublicFn(VAULT, "borrow", [Cl.uint(0), collCV(), borrowCV(), oracleCV(), oracleCV(), Cl.uint(600)], alice);
 }
 
 // Drop the pegged oracle to $0.50 (widen the deviation band first).

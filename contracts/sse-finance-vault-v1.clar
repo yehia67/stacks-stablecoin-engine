@@ -42,6 +42,7 @@
 (define-constant ERR_BELOW_DEBT_FLOOR u311)
 (define-constant ERR_BORROW_CAP u312)
 (define-constant ERR_NOT_LIQUIDATOR u313)
+(define-constant ERR_DEPEG u314)
 
 ;; ============================================
 ;; Governance (for the wiring the borrow/liquidation tasks add later)
@@ -280,19 +281,38 @@
 ;; ============================================
 
 ;; Borrow against an existing collateral position. Reverts if the draw would push
-;; the position below the min ratio, over the market's borrow cap, or below the
-;; debt floor. The one-time borrow fee is charged by the pool at draw (netted from
-;; the disbursed amount); the FULL principal `amount` is recorded as flat debt.
+;; the position below the min ratio, over the market's borrow cap, below the debt
+;; floor, OR if the depeg circuit-breaker has tripped (borrow-token price outside
+;; the market's band). The one-time borrow fee is charged by the pool at draw
+;; (netted from the disbursed amount); the FULL principal `amount` is recorded as
+;; flat debt.
+;;
+;; `oracle` prices the COLLATERAL (health); `borrow-oracle` is the market's oracle
+;; pricing the BORROW TOKEN (depeg breaker). Both are validated against their
+;; registered principals and fail closed.
 (define-public (borrow
     (market-id uint)
     (asset principal)
     (borrow-token <sse-finance-sip-010-trait>)
     (oracle <sse-finance-oracle-trait>)
+    (borrow-oracle <sse-finance-oracle-trait>)
     (amount uint)
   )
   (begin
     (asserts! (> amount u0) (err ERR_INVALID_AMOUNT))
     (asserts! (oracle-matches asset oracle) (err ERR_ORACLE_MISMATCH))
+    ;; depeg circuit-breaker: validate the market oracle, price the borrow token,
+    ;; and refuse new borrows when it is outside the market's band
+    (let (
+        (market-oracle (unwrap! (contract-call? .sse-finance-market-registry-v1 get-oracle market-id) (err ERR_ORACLE_MISMATCH)))
+      )
+      (asserts! (is-eq (contract-of borrow-oracle) market-oracle) (err ERR_ORACLE_MISMATCH))
+      (asserts!
+        (contract-call? .sse-finance-market-registry-v1 is-within-depeg-band market-id
+          (unwrap! (contract-call? borrow-oracle get-price) (err ERR_DEPEG)))
+        (err ERR_DEPEG)
+      )
+    )
     (match (map-get? vaults {owner: tx-sender, market-id: market-id})
       vault
         (match (map-get? vault-collateral {owner: tx-sender, market-id: market-id, asset: asset})

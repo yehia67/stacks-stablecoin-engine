@@ -81,7 +81,7 @@ function depositCollateral(amount: number) {
 }
 
 const borrow = (who: string, amount: number) =>
-  simnet.callPublicFn(VAULT, "borrow", [Cl.uint(0), collCV(), borrowCV(), oracleCV(), Cl.uint(amount)], who);
+  simnet.callPublicFn(VAULT, "borrow", [Cl.uint(0), collCV(), borrowCV(), oracleCV(), oracleCV(), Cl.uint(amount)], who);
 const repay = (who: string, amount: number) =>
   simnet.callPublicFn(VAULT, "repay", [Cl.uint(0), collCV(), borrowCV(), Cl.uint(amount)], who);
 
