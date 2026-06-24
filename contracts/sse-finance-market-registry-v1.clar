@@ -32,6 +32,11 @@
 (define-constant MAX-PROTOCOL-LIQ-SHARE u5000)     ;; protocol cut of penalty <= 50%
 (define-constant MAX-EARLY-REPAY u200)             ;; optional early-repay fee <= 2%
 
+;; Depeg circuit-breaker: 8-decimal USD price scale + band cap (bps from $1).
+(define-constant PRICE-SCALE u100000000)
+(define-constant BPS-DENOM u10000)
+(define-constant MAX-DEPEG-BAND u10000)            ;; band <= 100% (keeps lower bound >= 0)
+
 ;; ============================================
 ;; Recorded launch decision (acceptance: explicit, recorded pre-deploy).
 ;; ============================================
@@ -50,6 +55,7 @@
 (define-constant ERR_BOOTSTRAP_LOCKED u801)
 (define-constant ERR_MARKET_NOT_FOUND u802)
 (define-constant ERR_FEE_TOO_HIGH u803)
+(define-constant ERR_INVALID_BAND u804)
 
 ;; ============================================
 ;; Governance (mirrors collateral-registry-v6 / price-oracle-pegged-usd-v1)
@@ -130,6 +136,10 @@
 (define-private (is-authorized-caller)
   (default-to false (map-get? authorized-callers contract-caller))
 )
+
+;; Per-market depeg circuit-breaker band (bps from $1). No row => breaker
+;; disabled for that market (new borrows always allowed by the breaker).
+(define-map depeg-bands {market-id: uint} {band-bps: uint})
 
 ;; ============================================
 ;; Internal validation
@@ -302,6 +312,23 @@
   )
 )
 
+;; ============================================
+;; Depeg circuit-breaker (governance-gated, per market)
+;; ============================================
+
+;; Set a market's depeg band (bps from $1). The market must exist. The vault's
+;; borrow path consults is-within-depeg-band before drawing.
+(define-public (set-depeg-band (market-id uint) (band-bps uint))
+  (begin
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
+    (asserts! (is-some (map-get? markets {market-id: market-id})) (err ERR_MARKET_NOT_FOUND))
+    (asserts! (<= band-bps MAX-DEPEG-BAND) (err ERR_INVALID_BAND))
+    (map-set depeg-bands {market-id: market-id} {band-bps: band-bps})
+    (print {event: "depeg-band-set", market-id: market-id, band-bps: band-bps})
+    (ok true)
+  )
+)
+
 ;; Record protocol fee accrual. Called only by an authorized caller (vault/pool),
 ;; not governance -- it runs during normal borrow/liquidate flows.
 (define-public (accrue-fee (market-id uint) (token principal) (amount uint))
@@ -349,6 +376,23 @@
 
 (define-read-only (get-fee-config (market-id uint))
   (map-get? fee-config {market-id: market-id})
+)
+
+(define-read-only (get-depeg-band (market-id uint))
+  (match (map-get? depeg-bands {market-id: market-id}) entry (some (get band-bps entry)) none)
+)
+
+;; True iff the borrow-token price is within the market's depeg band of $1 (or no
+;; band is configured -> always allowed). band-bps is capped at MAX-DEPEG-BAND, so
+;; the lower bound never underflows.
+(define-read-only (is-within-depeg-band (market-id uint) (price uint))
+  (match (map-get? depeg-bands {market-id: market-id})
+    entry
+      (let ((band (/ (* PRICE-SCALE (get band-bps entry)) BPS-DENOM)))
+        (and (>= price (- PRICE-SCALE band)) (<= price (+ PRICE-SCALE band)))
+      )
+    true
+  )
 )
 
 (define-read-only (get-market-count) (var-get market-count))

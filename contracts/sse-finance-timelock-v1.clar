@@ -42,6 +42,7 @@
 (define-constant FN-REG-SET-FEE-CONFIG u4)
 (define-constant FN-REG-SET-TREASURY u5)
 (define-constant FN-REG-SET-AUTH u6)
+(define-constant FN-REG-SET-DEPEG u7)
 
 (define-constant FN-MTX-ADD u1)
 (define-constant FN-MTX-UPDATE u2)
@@ -239,6 +240,15 @@
       (compute-hash TARGET-REGISTRY FN-REG-SET-AUTH
         (unwrap-panic (to-consensus-buff? {caller: caller, authorized: authorized})))))
     (as-contract (contract-call? .sse-finance-market-registry-v1 set-authorized-caller caller authorized))
+  )
+)
+
+(define-public (execute-reg-set-depeg-band (id uint) (market-id uint) (band-bps uint))
+  (begin
+    (try! (consume id TARGET-REGISTRY FN-REG-SET-DEPEG
+      (compute-hash TARGET-REGISTRY FN-REG-SET-DEPEG
+        (unwrap-panic (to-consensus-buff? {market-id: market-id, band-bps: band-bps})))))
+    (as-contract (contract-call? .sse-finance-market-registry-v1 set-depeg-band market-id band-bps))
   )
 )
 
