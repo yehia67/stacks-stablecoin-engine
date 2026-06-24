@@ -283,6 +283,31 @@ describe("collateral-matrix: set-pair-enabled", () => {
   });
 });
 
+describe("collateral-matrix: collateral oracle", () => {
+  it("none when unset; governance sets and re-points it", () => {
+    const { deployer, wallet1, wallet2 } = accounts();
+    const { sbtc } = collats();
+    expect(read("get-collateral-oracle", [Cl.principal(sbtc)], deployer).result).toBeNone();
+
+    expect(
+      simnet.callPublicFn(MATRIX, "set-collateral-oracle", [Cl.principal(sbtc), Cl.principal(wallet1)], deployer).result
+    ).toBeOk(Cl.bool(true));
+    expect(read("get-collateral-oracle", [Cl.principal(sbtc)], deployer).result).toBeSome(Cl.principal(wallet1));
+
+    // re-point
+    simnet.callPublicFn(MATRIX, "set-collateral-oracle", [Cl.principal(sbtc), Cl.principal(wallet2)], deployer);
+    expect(read("get-collateral-oracle", [Cl.principal(sbtc)], deployer).result).toBeSome(Cl.principal(wallet2));
+  });
+
+  it("rejects a non-governance caller", () => {
+    const { wallet1, wallet3 } = accounts();
+    const { sbtc } = collats();
+    expect(
+      simnet.callPublicFn(MATRIX, "set-collateral-oracle", [Cl.principal(sbtc), Cl.principal(wallet1)], wallet3).result
+    ).toBeErr(Cl.uint(ERR_UNAUTHORIZED));
+  });
+});
+
 describe("collateral-matrix: governance gating", () => {
   beforeEach(() => registerMarket0(accounts().deployer));
 

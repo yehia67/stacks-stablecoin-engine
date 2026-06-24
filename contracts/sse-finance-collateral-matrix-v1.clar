@@ -86,6 +86,12 @@
 (define-map market-collateral-count {market-id: uint} {count: uint})
 (define-map market-collateral-list {market-id: uint, index: uint} {collateral: principal})
 
+;; The price oracle for each collateral asset, GLOBAL (one oracle per asset, shared
+;; across every market that accepts it -- mirrors how collateral-registry-v6 stores
+;; the oracle on its global per-asset config). The vault validates the caller's
+;; oracle trait against this principal before pricing, and fails closed on mismatch.
+(define-map collateral-oracles {asset: principal} {oracle: principal})
+
 ;; ============================================
 ;; Internal validation
 ;; ============================================
@@ -210,9 +216,25 @@
   )
 )
 
+;; Set (or re-point) the global price oracle for a collateral asset. Governance-
+;; gated. Re-pointing here lets a collateral move to a different oracle principal
+;; (e.g. a live feed) with no redeploy.
+(define-public (set-collateral-oracle (asset principal) (oracle principal))
+  (begin
+    (asserts! (is-governance-caller) (err ERR_UNAUTHORIZED))
+    (map-set collateral-oracles {asset: asset} {oracle: oracle})
+    (print {event: "collateral-oracle-set", asset: asset, oracle: oracle})
+    (ok true)
+  )
+)
+
 ;; ============================================
 ;; Read-Only Functions
 ;; ============================================
+
+(define-read-only (get-collateral-oracle (asset principal))
+  (match (map-get? collateral-oracles {asset: asset}) entry (some (get oracle entry)) none)
+)
 
 ;; The full risk row for a pair (enabled + all five params) in one call. None
 ;; means the pair is not borrowable.

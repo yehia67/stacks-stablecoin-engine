@@ -65,6 +65,13 @@ path = "contracts/sse-finance-pool-v1.clar"
 epoch = "3.1"
 depends_on = ["sse-finance-sip-010-trait", "sse-finance-market-registry-v1"]
 
+# Borrower vault: multi-asset collateral custody + health-checked withdraw, keyed
+# {owner, market-id}. Prices via per-collateral oracle in the matrix.
+[contracts.sse-finance-vault-v1]
+path = "contracts/sse-finance-vault-v1.clar"
+epoch = "3.1"
+depends_on = ["sse-finance-sip-010-trait", "sse-finance-oracle-trait", "sse-finance-collateral-matrix-v1"]
+
 # ── Governance ────────────────────────────────────────────────────────────────
 
 [contracts.sse-governance-v1]
