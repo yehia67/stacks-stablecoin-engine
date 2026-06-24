@@ -58,6 +58,15 @@ const circuitByProvider = new Map<string, CircuitState>();
 const FAILURE_THRESHOLD = 3;
 const OPEN_MS = 2 * 60 * 1000;
 
+// Hard per-upstream timeout. Without it, a single slow/hung provider stalls the
+// whole fetch (observed: /v2/info hanging ~150s with no response), and since
+// every page mount fans out ~20+ reads, the UI appears to "load forever". With a
+// timeout the request aborts fast, counts as a provider failure, and the chain
+// moves to the next provider instead of blocking. Env-tunable.
+const UPSTREAM_TIMEOUT_MS = Number(process.env.RPC_UPSTREAM_TIMEOUT_MS) > 0
+  ? Number(process.env.RPC_UPSTREAM_TIMEOUT_MS)
+  : 6000;
+
 function getCircuitState(providerId: string): CircuitState {
   const current = circuitByProvider.get(providerId);
   if (current) return current;
@@ -166,6 +175,8 @@ async function fetchFromProviders(
         headers,
         body: method === "POST" ? bodyText : undefined,
         cache: "no-store",
+        // Abort a slow/hung provider so the chain fails over instead of stalling.
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       });
 
       const result: ProxyResult = {
