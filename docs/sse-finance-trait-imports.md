@@ -19,7 +19,7 @@ externally-deployed trait contract.
 | `sse-finance-market-registry-v1` | — | — (stores `borrow-token` & `oracle` as **plain principals**, mirroring how `collateral-registry-v6` stores its oracle; trait typing happens at the vault/pool call sites that actually invoke `transfer` / `get-price`) |
 | `sse-finance-pool-v1` | — | `sse-finance-sip-010-trait` (borrow token on supply/withdraw/borrow-out/repay-in, collateral on claim). Reads the market's borrow-token principal via `contract-call?` to `sse-finance-market-registry-v1`. |
 | `sse-finance-vault-v1` | — | `sse-finance-sip-010-trait` (collateral transfers), `sse-finance-oracle-trait` (collateral pricing). Reads the per-collateral oracle principal + pair risk params via `contract-call?` to `sse-finance-collateral-matrix-v1`. |
-| `sse-finance-liquidation-v1` *(later)* | — | `sse-finance-sip-010-trait`, `sse-finance-oracle-trait` |
+| `sse-finance-liquidation-v1` | — | `sse-finance-sip-010-trait` (collateral, passed to the vault), `sse-finance-oracle-trait` (collateral pricing). Calls vault `liquidate-position`, pool `distribute-liquidation-reward`, registry `accrue-fee`; reads risk/oracle from the matrix and `protocol-liq-share-bps` from the registry. |
 
 Rows marked *(later)* are placeholders for contracts in subsequent tasks; update
 this table as each lands.
