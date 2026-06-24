@@ -162,6 +162,14 @@ Setters `asserts!` against these; values can move freely *below* the cap.
 **No interest-based reserve factor** — the protocol is interest-free, so there is no interest to skim;
 all protocol revenue is the one-time borrow fee + the liquidation-penalty cut.
 
+**Recorded launch decision — `borrow-fee-lp-share-bps = u0` (pure liquidation-only).** The LP
+baseline-incentive dial launches at **0**: the whole one-time borrow fee accrues to the protocol and
+LPs earn solely from the liquidation discount. This is implemented as the contract constant
+`LAUNCH-BORROW-FEE-LP-SHARE-BPS` in `sse-finance-market-registry-v1` (documentation only — the value
+actually stored per market is whatever `register-market` is called with at onboarding). The dial
+remains governance-settable up to `MAX-BORROW-FEE-LP-SHARE-BPS` via `set-fee-config`, so a baseline LP
+return can be switched on later without a redeploy.
+
 The **collateral↔market matrix** (which collateral is allowed for which market, and at what ratio)
 reuses the existing per-stablecoin override mechanism in `collateral-registry-v6`
 (`stablecoin-collateral-configs` keyed by `{stablecoin-id, asset}` → here `{market-id, asset}`).
