@@ -388,3 +388,43 @@ describe("pool: one-time borrow fee (netted from disbursed)", () => {
     expect(borrowOut(vault, borrower, 1000).result).toBeErr(Cl.uint(REG_ERR_UNAUTHORIZED));
   });
 });
+
+describe("pool: treasury fee sweep", () => {
+  // Set fee, authorize pool in registry, and point the treasury at a wallet.
+  function setFeeAuthorizeAndTreasury(treasury: string) {
+    const { deployer } = accounts();
+    const { poolAddr } = principals();
+    simnet.callPublicFn(REG, "set-fee-config", [Cl.uint(0), Cl.uint(200), Cl.uint(0), Cl.uint(2000), Cl.uint(0)], deployer);
+    simnet.callPublicFn(REG, "set-authorized-caller", [Cl.principal(poolAddr), Cl.bool(true)], deployer);
+    simnet.callPublicFn(REG, "set-treasury", [Cl.principal(treasury)], deployer);
+  }
+  const sweep = (caller: string, marketId = 0) =>
+    simnet.callPublicFn(POOL, "sweep-fees", [Cl.uint(marketId), borrowTokenCV()], caller);
+  const treasuryAccrued = () => {
+    const { deployer } = accounts();
+    const { borrowToken } = principals();
+    return Number((simnet.callReadOnlyFn(REG, "get-treasury-accrued", [Cl.uint(0), Cl.principal(borrowToken)], deployer).result as any).value as bigint);
+  };
+
+  beforeEach(setup);
+
+  it("anyone can sweep; funds land at the treasury; accrual zeroes; cash reduced", () => {
+    const { lp1, vault, borrower } = accounts();
+    const treasuryWallet = simnet.getAccounts().get("wallet_5")!;
+    setFeeAuthorizeAndTreasury(treasuryWallet);
+    mintBorrow(lp1, 10_000);
+    supply(lp1, 10_000);
+    borrowOut(vault, borrower, 1000); // fee 20 -> treasury-accrued, cash 9020
+    expect(treasuryAccrued()).toBe(20);
+
+    // permissionless: a random wallet triggers the sweep
+    expect(sweep(borrower).result).toBeOk(Cl.uint(20));
+    expect(tokenBalance(BORROW_TOKEN, treasuryWallet)).toBe(20); // landed at treasury
+    expect(treasuryAccrued()).toBe(0); // accrual zeroed
+    expect(state()).toEqual({ supplied: 10_000, borrows: 1000, cash: 9000 }); // cash reduced
+
+    // sweeping again moves nothing
+    expect(sweep(borrower).result).toBeOk(Cl.uint(0));
+    expect(tokenBalance(BORROW_TOKEN, treasuryWallet)).toBe(20);
+  });
+});
