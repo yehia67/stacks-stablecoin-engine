@@ -41,7 +41,13 @@ SSE Core or a separate proposal — do not quietly add contract scope to this tr
 
 ## SSE Finance (lending market)
 
-**Status:** Design / planning phase — **no implementation yet**.
+**Status:** Contracts implemented and simnet-tested — **not yet deployed to any
+network**. All 8 contracts exist (`contracts/sse-finance-*.clar`: vault, pool,
+market-registry, collateral-matrix, liquidation, timelock, both traits) with a
+matching 9-file test suite, 104/104 tests passing as of 2026-08-22. No entry in
+`sse.config.json` or `settings/{Devnet,Testnet,Mainnet}.toml` yet — deployment
+hasn't started. (Corrected 2026-08-22 — the architecture doc's own status line
+said "no implementation yet," which had gone stale against the actual code.)
 
 Different hypothesis from SSE Core: interest-free, Liquity-style peer-to-pool lending. A
 borrower locks collateral and borrows **pre-existing third-party stablecoins** (USDC, USDA)
