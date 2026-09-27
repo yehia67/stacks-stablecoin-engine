@@ -1,0 +1,62 @@
+# Routes bmad-build's implementation and review dispatch to this repo's
+# named project subagents (.claude/agents/*.md — see .claude/agents/README.md
+# for the ownership map) instead of always spawning a generic subagent.
+
+[workflow]
+
+implementation_handoff = """
+Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the files {spec_file}'s frontmatter `context:` list touches, using this routing:
+- `frontend/src/components/**` or `frontend/src/app/**` (pages) -> `ui`
+- `frontend/src/hooks/**`, `frontend/src/lib/**`, Supabase/custodial/VelumX code, the RPC proxy (`frontend/src/app/api/**`), or `frontend/netlify.toml` -> `fullstack-integration`
+- Anything sBTC-specific (sbtc-token, price-oracle-dia-btc*, sBTC collateral/oracle config) -> `sbtc-integration`
+- Clarinet devnet config, `.github/workflows/ci.yml`, `tests/**`, or deployment-readiness work -> `devnet-health`
+- `frontend/cypress/**`, Cypress config, or browser-driven E2E flow work -> `qa-e2e`
+- New Clarity contract logic from scratch, or scope spanning multiple of the above with no single clear owner -> no named subagent; use the generic default below.
+
+If exactly one subagent clearly owns the touched files, launch it (`subagent_type: "<name>"`) with this prompt:
+
+> Read {spec_file} fully and implement it — the spec is the sole source of truth. Load every file listed in its frontmatter `context:` before you start. Follow your own agent instructions (`.claude/agents/<name>.md`) for scope and boundaries; if the spec asks you to do something outside those boundaries, implement what's in-boundary, then report the out-of-boundary part as unimplemented and name which other subagent should own it instead of doing it yourself.
+>
+> When done, report what you changed, how you verified it, and anything left incomplete or risky.
+
+Otherwise (no single clear owner, or scope spans multiple named subagents), fall back to the default:
+
+Launch a subagent with no prior conversation context, with this prompt:
+
+> Read {spec_file} fully and implement it — the spec is the sole source of truth. Load every file listed in its frontmatter `context:` before you start.
+>
+> When done, report what you changed, how you verified it, and anything left incomplete or risky.
+"""
+
+[[workflow.review_layers]]
+id = "domain-specialist-review"
+name = "Domain Specialist Review"
+instruction = """
+Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the files touched in {diff_output}, using the same routing as `implementation_handoff` (ui / fullstack-integration / sbtc-integration / devnet-health / qa-e2e / none).
+
+If exactly one subagent clearly owns the touched files, launch it (`subagent_type: "<name>"`) with this prompt:
+
+> Review this diff against your own domain's correctness bar (`.claude/agents/<name>.md`) — not general code quality, the other review layers already cover that. Flag anything that violates your agent's stated boundaries, rules, or known pitfalls.
+>
+> DIFF:
+> {diff_output}
+>
+> Do not invoke any skill. Return only the review result. If nothing in your domain is implicated, say so explicitly and return an empty finding list.
+
+If no single subagent clearly owns the touched files, skip this layer and say so — don't force a review through the wrong lens.
+"""
+
+[[workflow.oneshot_review_layers]]
+id = "domain-specialist-review"
+name = "Domain Specialist Review"
+instruction = """
+Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the changed files in the current worktree, using the same routing as `implementation_handoff` (ui / fullstack-integration / sbtc-integration / devnet-health / qa-e2e / none).
+
+If exactly one subagent clearly owns the touched files, launch it (`subagent_type: "<name>"`) with this prompt:
+
+> Review the changed files in the current worktree (inspect them directly) against your own domain's correctness bar (`.claude/agents/<name>.md`) — not general code quality, the other review layers already cover that. Flag anything that violates your agent's stated boundaries, rules, or known pitfalls.
+>
+> Do not invoke any skill. Return only the review result. If nothing in your domain is implicated, say so explicitly and return an empty finding list.
+
+If no single subagent clearly owns the touched files, skip this layer and say so — don't force a review through the wrong lens.
+"""

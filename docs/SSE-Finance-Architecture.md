@@ -1,6 +1,6 @@
 # SSE Finance  Architecture & Planning
 
-**Status:** Design / planning phase (no implementation yet)
+**Status:** Contracts implemented and simnet-tested (all 8 contracts, 104/104 tests passing across 9 test files as of 2026-08-22) — **not yet deployed** to any network (no devnet/testnet/mainnet deployment yet). See `docs/product/PRODUCT-LINES.md`.
 **Scope:** A collateralized financing marketplace that lets users unlock liquidity from
 productive assets by **borrowing existing stablecoins (USDC, USDA, …)** against collateral 
 *without* issuing a new protocol stablecoin.
