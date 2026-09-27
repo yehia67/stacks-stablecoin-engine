@@ -10,6 +10,7 @@ Determine which of this repo's project subagents (`.claude/agents/*.md`) owns th
 - `frontend/src/hooks/**`, `frontend/src/lib/**`, Supabase/custodial/VelumX code, the RPC proxy (`frontend/src/app/api/**`), or `frontend/netlify.toml` -> `fullstack-integration`
 - Anything sBTC-specific (sbtc-token, price-oracle-dia-btc*, sBTC collateral/oracle config) -> `sbtc-integration`
 - Clarinet devnet config, `.github/workflows/ci.yml`, `tests/**`, or deployment-readiness work -> `devnet-health`
+- `frontend/cypress/**`, Cypress config, or browser-driven E2E flow work -> `qa-e2e`
 - New Clarity contract logic from scratch, or scope spanning multiple of the above with no single clear owner -> no named subagent; use the generic default below.
 
 If exactly one subagent clearly owns the touched files, launch it (`subagent_type: "<name>"`) with this prompt:
@@ -31,7 +32,7 @@ Launch a subagent with no prior conversation context, with this prompt:
 id = "domain-specialist-review"
 name = "Domain Specialist Review"
 instruction = """
-Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the files touched in {diff_output}, using the same routing as `implementation_handoff` (ui / fullstack-integration / sbtc-integration / devnet-health / none).
+Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the files touched in {diff_output}, using the same routing as `implementation_handoff` (ui / fullstack-integration / sbtc-integration / devnet-health / qa-e2e / none).
 
 If exactly one subagent clearly owns the touched files, launch it (`subagent_type: "<name>"`) with this prompt:
 
@@ -49,7 +50,7 @@ If no single subagent clearly owns the touched files, skip this layer and say so
 id = "domain-specialist-review"
 name = "Domain Specialist Review"
 instruction = """
-Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the changed files in the current worktree, using the same routing as `implementation_handoff` (ui / fullstack-integration / sbtc-integration / devnet-health / none).
+Determine which of this repo's project subagents (`.claude/agents/*.md`) owns the changed files in the current worktree, using the same routing as `implementation_handoff` (ui / fullstack-integration / sbtc-integration / devnet-health / qa-e2e / none).
 
 If exactly one subagent clearly owns the touched files, launch it (`subagent_type: "<name>"`) with this prompt:
 

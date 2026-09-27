@@ -1,11 +1,11 @@
 # SSE subagents — who owns what, and how they hand off
 
-Four project subagents exist. Each has a narrow, non-overlapping mandate; this
+Five project subagents exist. Each has a narrow, non-overlapping mandate; this
 file is the map between them. Dispatch to the right one instead of doing
 cross-cutting work ad hoc in the main thread — that's the entire reason they
 exist (see each `.claude/agents/*.md` for full detail).
 
-## The four
+## The five
 
 | Agent | Owns | Does NOT own |
 |---|---|---|
@@ -13,6 +13,7 @@ exist (see each `.claude/agents/*.md` for full detail).
 | `devnet-health` | Local Clarinet devnet health-flow, simnet↔devnet distinction, CI test coverage | Real testnet/mainnet broadcasts; screen design; contract-call wiring |
 | `ui` | Frontend screens, components, copy, UX flow | Hook internals, Supabase, custodial signing, contract-call shapes |
 | `fullstack-integration` | Every seam: contract ↔ hooks ↔ Supabase ↔ custodial signer ↔ RPC infra ↔ deploy infra | Screen design; new Clarity protocol logic from scratch; sBTC-specific judgment calls; real mainnet execution |
+| `qa-e2e` | Browser-driven Cypress E2E, video-recorded, proving the frontend works for a real user | Protocol-level health checks (that's `devnet-health`); screen design; wiring fixes beyond reporting them |
 
 None of them commits or pushes — that's a standing rule for every agent in this
 repo (root `AGENTS.md` inherits from project memory: user commits manually).
@@ -30,6 +31,9 @@ fullstack-integration  ───────  hooks, Supabase, custodial signer,
         │  consumed by
         ▼
 ui  ───────────────────────────  screens, components, UX copy
+        │  proven end-to-end by
+        ▼
+qa-e2e  ───────────────────────  Cypress, real browser, video-recorded
 ```
 
 `sbtc-integration` is not a layer — it's a **cross-cutting specialist** consulted
@@ -37,6 +41,13 @@ by any of the above whenever sBTC-specific correctness is in question (oracle
 principal, custody path, decimal assumption, upstream Stacks/dual-stacking
 change). Same relationship the Product Boundaries doc has to the whole repo:
 not a phase, a standing constraint-checker.
+
+`qa-e2e` closes the loop back to `devnet-health`: where `devnet-health` proves
+the *protocol* works (contracts, no browser), `qa-e2e` proves the *product*
+works (real browser, real clicks, on top of whatever chain `devnet-health` and
+`fullstack-integration` made available). A `qa-e2e` failure that traces to
+wrong on-chain state is a `devnet-health`/`fullstack-integration` bug, not a
+`qa-e2e` bug — it just found it first.
 
 ## Hand-off protocol for a typical feature
 
@@ -55,7 +66,11 @@ Example: "add a new SSE Finance frontend flow for market X."
    pattern without adding rate-limit risk.
 4. **`ui`** builds the screen against what `fullstack-integration` exposed —
    never invents a contract-call shape itself, never touches hook internals.
-5. Anything security-critical surfaced at any step (privileged role, custodial
+5. **`qa-e2e`** writes/runs the Cypress spec proving the flow works end-to-end
+   in a real browser, video-recorded. A failure here that traces back to a
+   wiring or protocol bug routes back to `fullstack-integration` or
+   `devnet-health`, not fixed in the test itself.
+6. Anything security-critical surfaced at any step (privileged role, custodial
    signing, governance/timelock path, mint/burn) gets flagged up rather than
    resolved silently — per root `AGENTS.md`'s Product Boundaries guardrails.
 
@@ -67,7 +82,7 @@ The table above is what decides *who* picks it up, not a rigid pipeline order.
 ## BMad wiring
 
 `bmad-build`'s implementation and review dispatch is overridden (team scope) at
-`_bmad/custom/bmad-build.toml` to route to these four subagents instead of
+`_bmad/custom/bmad-build.toml` to route to these five subagents instead of
 always spawning a generic context-free one:
 
 - **step-03 implement** (`implementation_handoff`): picks the one subagent whose

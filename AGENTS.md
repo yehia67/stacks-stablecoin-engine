@@ -17,7 +17,8 @@ Overcollateralized-stablecoin infrastructure on Stacks. Root = Clarity contracts
 - Local devnet health-flow checks, test/CI coverage for deployment readiness: dispatch to the `devnet-health` subagent (`.claude/agents/devnet-health.md`). It does not perform real testnet/mainnet deploys.
 - Frontend screens/components/UX: dispatch to the `ui` subagent (`.claude/agents/ui.md`).
 - Cross-stack wiring (contract ↔ hooks ↔ Supabase ↔ custodial signer ↔ RPC/infra): dispatch to the `fullstack-integration` subagent (`.claude/agents/fullstack-integration.md`).
-- How these subagents hand off to each other: `.claude/agents/README.md`.
+- Browser-driven E2E testing (Cypress, video-recorded): dispatch to the `qa-e2e` subagent (`.claude/agents/qa-e2e.md`).
+- How these subagents hand off to each other, and how `bmad-build` routes to them: `.claude/agents/README.md`.
 
 ## Known pitfalls
 
